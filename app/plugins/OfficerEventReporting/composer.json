@@ -1,0 +1,32 @@
+{
+    "name": "kmp/officer-event-reporting",
+    "description": "Officer and Event Reporting Plugin for KMP",
+    "type": "cakephp-plugin",
+    "keywords": ["cakephp", "plugin", "reporting", "forms"],
+    "homepage": "https://github.com/jhandel/KMP",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "KMP Development Team",
+            "homepage": "https://github.com/jhandel/KMP"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "cakephp/cakephp": "^5.0"
+    },
+    "require-dev": {
+        "cakephp/bake": "^3.0",
+        "phpunit/phpunit": "^10.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "OfficerEventReporting\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "OfficerEventReporting\\Test\\": "tests/"
+        }
+    }
+}
