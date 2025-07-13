@@ -29,6 +29,9 @@ return [
     'Awards' => [
         'migrationOrder' => 3,
     ],
+    'OfficerEventReporting' => [
+        'migrationOrder' => 4,
+    ],
     'CsvView' => [],
     'Queue' => [],
     'Tools' => [],
