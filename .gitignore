@@ -10,3 +10,12 @@ nohup.out
 security-reports/
 security-reports/**/.*
 .DS_Store
+**/config/app_local.php
+.vscode/
+**/logs/
+**/tmp/
+# Build artifacts - exclude compiled assets but keep source
+**/webroot/js/*.js
+**/webroot/css/*.css
+**/webroot/mix-manifest.json
+**/node_modules/
