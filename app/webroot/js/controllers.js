@@ -21901,6 +21901,186 @@ window.Controllers["recommendation-kanban"] = RecommendationKanbanController;
 
 /***/ }),
 
+/***/ "./plugins/Events/assets/js/controllers/hello-world-controller.js":
+/*!************************************************************************!*\
+  !*** ./plugins/Events/assets/js/controllers/hello-world-controller.js ***!
+  \************************************************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
+
+
+/**
+ * Hello World Stimulus Controller
+ * 
+ * This controller demonstrates the Stimulus.js pattern used in KMP plugins.
+ * Stimulus controllers provide interactive behavior for frontend components
+ * without requiring a full JavaScript framework.
+ * 
+ * Key Concepts:
+ * - Targets: DOM elements the controller interacts with
+ * - Values: Properties that can be set from HTML attributes
+ * - Actions: Event handlers triggered by user interaction
+ * - Outlets: Connections to other Stimulus controllers
+ * 
+ * Usage in HTML:
+ * <div data-controller="hello-world"
+ *      data-hello-world-message-value="Hello from Stimulus!">
+ *   <input data-hello-world-target="input" type="text">
+ *   <button data-action="click->hello-world#greet">Greet</button>
+ *   <div data-hello-world-target="output"></div>
+ * </div>
+ */
+class HelloWorldController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
+  // Define targets - elements this controller interacts with
+  static targets = ["input", "output", "counter"];
+
+  // Define values - properties that can be set from HTML data attributes
+  static values = {
+    message: {
+      type: String,
+      default: "Hello, World!"
+    },
+    count: {
+      type: Number,
+      default: 0
+    }
+  };
+
+  /**
+   * Initialize the controller
+   * Called once when the controller is first instantiated
+   */
+  initialize() {
+    console.log("HelloWorld controller initialized");
+  }
+
+  /**
+   * Connect the controller to the DOM
+   * Called when the controller is connected to the DOM
+   */
+  connect() {
+    console.log("HelloWorld controller connected to:", this.element);
+    this.updateCounter();
+  }
+
+  /**
+   * Disconnect the controller from the DOM
+   * Called when the controller is disconnected from the DOM
+   * Use for cleanup (removing event listeners, timers, etc.)
+   */
+  disconnect() {
+    console.log("HelloWorld controller disconnected");
+  }
+
+  /**
+   * Greet action - Display a greeting message
+   * Triggered by: data-action="click->hello-world#greet"
+   */
+  greet(event) {
+    event.preventDefault();
+
+    // Get the input value if available
+    const name = this.hasInputTarget ? this.inputTarget.value : "World";
+
+    // Create greeting message
+    const greeting = name ? `${this.messageValue}, ${name}!` : this.messageValue;
+
+    // Display in output target
+    if (this.hasOutputTarget) {
+      this.outputTarget.textContent = greeting;
+      this.outputTarget.classList.add("alert", "alert-success", "mt-3");
+    }
+
+    // Increment counter
+    this.countValue++;
+  }
+
+  /**
+   * Clear action - Clear the output
+   * Triggered by: data-action="click->hello-world#clear"
+   */
+  clear(event) {
+    event.preventDefault();
+    if (this.hasInputTarget) {
+      this.inputTarget.value = "";
+    }
+    if (this.hasOutputTarget) {
+      this.outputTarget.textContent = "";
+      this.outputTarget.className = "";
+    }
+  }
+
+  /**
+   * Value changed callback - Called when message value changes
+   * Automatically called when messageValue is updated
+   */
+  messageValueChanged() {
+    console.log("Message value changed to:", this.messageValue);
+  }
+
+  /**
+   * Value changed callback - Called when count value changes
+   * Automatically called when countValue is updated
+   */
+  countValueChanged() {
+    this.updateCounter();
+  }
+
+  /**
+   * Update the counter display
+   */
+  updateCounter() {
+    if (this.hasCounterTarget) {
+      this.counterTarget.textContent = this.countValue;
+    }
+  }
+
+  /**
+   * Example of a method that could be called from other controllers
+   * or JavaScript code
+   */
+  showMessage(message) {
+    if (this.hasOutputTarget) {
+      this.outputTarget.textContent = message;
+      this.outputTarget.classList.add("alert", "alert-info", "mt-3");
+    }
+  }
+
+  /**
+   * Example of an async method - fetch data from server
+   */
+  async fetchData(url) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      if (this.hasOutputTarget) {
+        this.outputTarget.textContent = "Error loading data";
+        this.outputTarget.classList.add("alert", "alert-danger", "mt-3");
+      }
+      return null;
+    }
+  }
+}
+
+// Register the controller globally
+// This makes it available to the Stimulus application
+if (!window.Controllers) {
+  window.Controllers = {};
+}
+window.Controllers["hello-world"] = HelloWorldController;
+/* harmony default export */ __webpack_exports__["default"] = (HelloWorldController);
+
+/***/ }),
+
 /***/ "./plugins/GitHubIssueSubmitter/assets/js/controllers/github-submitter-controller.js":
 /*!*******************************************************************************************!*\
   !*** ./plugins/GitHubIssueSubmitter/assets/js/controllers/github-submitter-controller.js ***!
@@ -24209,12 +24389,192 @@ if (!window.Controllers) {
 }
 window.Controllers["officer-roster-table"] = OfficerRosterTableForm;
 
+/***/ }),
+
+/***/ "./plugins/Template/assets/js/controllers/hello-world-controller.js":
+/*!**************************************************************************!*\
+  !*** ./plugins/Template/assets/js/controllers/hello-world-controller.js ***!
+  \**************************************************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
+
+
+/**
+ * Hello World Stimulus Controller
+ * 
+ * This controller demonstrates the Stimulus.js pattern used in KMP plugins.
+ * Stimulus controllers provide interactive behavior for frontend components
+ * without requiring a full JavaScript framework.
+ * 
+ * Key Concepts:
+ * - Targets: DOM elements the controller interacts with
+ * - Values: Properties that can be set from HTML attributes
+ * - Actions: Event handlers triggered by user interaction
+ * - Outlets: Connections to other Stimulus controllers
+ * 
+ * Usage in HTML:
+ * <div data-controller="hello-world"
+ *      data-hello-world-message-value="Hello from Stimulus!">
+ *   <input data-hello-world-target="input" type="text">
+ *   <button data-action="click->hello-world#greet">Greet</button>
+ *   <div data-hello-world-target="output"></div>
+ * </div>
+ */
+class HelloWorldController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
+  // Define targets - elements this controller interacts with
+  static targets = ["input", "output", "counter"];
+
+  // Define values - properties that can be set from HTML data attributes
+  static values = {
+    message: {
+      type: String,
+      default: "Hello, World!"
+    },
+    count: {
+      type: Number,
+      default: 0
+    }
+  };
+
+  /**
+   * Initialize the controller
+   * Called once when the controller is first instantiated
+   */
+  initialize() {
+    console.log("HelloWorld controller initialized");
+  }
+
+  /**
+   * Connect the controller to the DOM
+   * Called when the controller is connected to the DOM
+   */
+  connect() {
+    console.log("HelloWorld controller connected to:", this.element);
+    this.updateCounter();
+  }
+
+  /**
+   * Disconnect the controller from the DOM
+   * Called when the controller is disconnected from the DOM
+   * Use for cleanup (removing event listeners, timers, etc.)
+   */
+  disconnect() {
+    console.log("HelloWorld controller disconnected");
+  }
+
+  /**
+   * Greet action - Display a greeting message
+   * Triggered by: data-action="click->hello-world#greet"
+   */
+  greet(event) {
+    event.preventDefault();
+
+    // Get the input value if available
+    const name = this.hasInputTarget ? this.inputTarget.value : "World";
+
+    // Create greeting message
+    const greeting = name ? `${this.messageValue}, ${name}!` : this.messageValue;
+
+    // Display in output target
+    if (this.hasOutputTarget) {
+      this.outputTarget.textContent = greeting;
+      this.outputTarget.classList.add("alert", "alert-success", "mt-3");
+    }
+
+    // Increment counter
+    this.countValue++;
+  }
+
+  /**
+   * Clear action - Clear the output
+   * Triggered by: data-action="click->hello-world#clear"
+   */
+  clear(event) {
+    event.preventDefault();
+    if (this.hasInputTarget) {
+      this.inputTarget.value = "";
+    }
+    if (this.hasOutputTarget) {
+      this.outputTarget.textContent = "";
+      this.outputTarget.className = "";
+    }
+  }
+
+  /**
+   * Value changed callback - Called when message value changes
+   * Automatically called when messageValue is updated
+   */
+  messageValueChanged() {
+    console.log("Message value changed to:", this.messageValue);
+  }
+
+  /**
+   * Value changed callback - Called when count value changes
+   * Automatically called when countValue is updated
+   */
+  countValueChanged() {
+    this.updateCounter();
+  }
+
+  /**
+   * Update the counter display
+   */
+  updateCounter() {
+    if (this.hasCounterTarget) {
+      this.counterTarget.textContent = this.countValue;
+    }
+  }
+
+  /**
+   * Example of a method that could be called from other controllers
+   * or JavaScript code
+   */
+  showMessage(message) {
+    if (this.hasOutputTarget) {
+      this.outputTarget.textContent = message;
+      this.outputTarget.classList.add("alert", "alert-info", "mt-3");
+    }
+  }
+
+  /**
+   * Example of an async method - fetch data from server
+   */
+  async fetchData(url) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      if (this.hasOutputTarget) {
+        this.outputTarget.textContent = "Error loading data";
+        this.outputTarget.classList.add("alert", "alert-danger", "mt-3");
+      }
+      return null;
+    }
+  }
+}
+
+// Register the controller globally
+// This makes it available to the Stimulus application
+if (!window.Controllers) {
+  window.Controllers = {};
+}
+window.Controllers["hello-world"] = HelloWorldController;
+/* harmony default export */ __webpack_exports__["default"] = (HelloWorldController);
+
 /***/ })
 
 },
 /******/ function(__webpack_require__) { // webpackRuntimeModules
 /******/ var __webpack_exec__ = function(moduleId) { return __webpack_require__(__webpack_require__.s = moduleId); }
-/******/ __webpack_require__.O(0, ["js/core","css/app","css/dashboard","css/cover","css/signin"], function() { return __webpack_exec__("./assets/js/controllers/app-setting-form-controller.js"), __webpack_exec__("./assets/js/controllers/auto-complete-controller.js"), __webpack_exec__("./assets/js/controllers/branch-links-controller.js"), __webpack_exec__("./assets/js/controllers/csv-download-controller.js"), __webpack_exec__("./assets/js/controllers/delayed-forward-controller.js"), __webpack_exec__("./assets/js/controllers/detail-tabs-controller.js"), __webpack_exec__("./assets/js/controllers/filter-grid-controller.js"), __webpack_exec__("./assets/js/controllers/guifier-controller.js"), __webpack_exec__("./assets/js/controllers/image-preview-controller.js"), __webpack_exec__("./assets/js/controllers/kanban-controller.js"), __webpack_exec__("./assets/js/controllers/member-card-profile-controller.js"), __webpack_exec__("./assets/js/controllers/member-mobile-card-profile-controller.js"), __webpack_exec__("./assets/js/controllers/member-mobile-card-pwa-controller.js"), __webpack_exec__("./assets/js/controllers/member-unique-email-controller.js"), __webpack_exec__("./assets/js/controllers/member-verify-form-controller.js"), __webpack_exec__("./assets/js/controllers/modal-opener-controller.js"), __webpack_exec__("./assets/js/controllers/nav-bar-controller.js"), __webpack_exec__("./assets/js/controllers/outlet-button-controller.js"), __webpack_exec__("./assets/js/controllers/permission-add-role-controller.js"), __webpack_exec__("./assets/js/controllers/permission-manage-policies-controller.js"), __webpack_exec__("./assets/js/controllers/revoke-form-controller.js"), __webpack_exec__("./assets/js/controllers/role-add-member-controller.js"), __webpack_exec__("./assets/js/controllers/role-add-permission-controller.js"), __webpack_exec__("./assets/js/controllers/select-all-switch-list-controller.js"), __webpack_exec__("./assets/js/controllers/session-extender-controller.js"), __webpack_exec__("./plugins/Activities/assets/js/controllers/approve-and-assign-auth-controller.js"), __webpack_exec__("./plugins/Activities/assets/js/controllers/gw-sharing-controller.js"), __webpack_exec__("./plugins/Activities/assets/js/controllers/renew-auth-controller.js"), __webpack_exec__("./plugins/Activities/assets/js/controllers/request-auth-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/award-form-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-add-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-bulk-edit-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-edit-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-quick-edit-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-table-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/recommendation-kanban-controller.js"), __webpack_exec__("./plugins/GitHubIssueSubmitter/assets/js/controllers/github-submitter-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/assign-officer-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/edit-officer-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/office-form-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/officer-roster-search-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/officer-roster-table-controller.js"), __webpack_exec__("./assets/css/app.css"), __webpack_exec__("./assets/css/signin.css"), __webpack_exec__("./assets/css/cover.css"), __webpack_exec__("./assets/css/dashboard.css"); });
+/******/ __webpack_require__.O(0, ["js/core","css/app","css/dashboard","css/cover","css/signin"], function() { return __webpack_exec__("./assets/js/controllers/app-setting-form-controller.js"), __webpack_exec__("./assets/js/controllers/auto-complete-controller.js"), __webpack_exec__("./assets/js/controllers/branch-links-controller.js"), __webpack_exec__("./assets/js/controllers/csv-download-controller.js"), __webpack_exec__("./assets/js/controllers/delayed-forward-controller.js"), __webpack_exec__("./assets/js/controllers/detail-tabs-controller.js"), __webpack_exec__("./assets/js/controllers/filter-grid-controller.js"), __webpack_exec__("./assets/js/controllers/guifier-controller.js"), __webpack_exec__("./assets/js/controllers/image-preview-controller.js"), __webpack_exec__("./assets/js/controllers/kanban-controller.js"), __webpack_exec__("./assets/js/controllers/member-card-profile-controller.js"), __webpack_exec__("./assets/js/controllers/member-mobile-card-profile-controller.js"), __webpack_exec__("./assets/js/controllers/member-mobile-card-pwa-controller.js"), __webpack_exec__("./assets/js/controllers/member-unique-email-controller.js"), __webpack_exec__("./assets/js/controllers/member-verify-form-controller.js"), __webpack_exec__("./assets/js/controllers/modal-opener-controller.js"), __webpack_exec__("./assets/js/controllers/nav-bar-controller.js"), __webpack_exec__("./assets/js/controllers/outlet-button-controller.js"), __webpack_exec__("./assets/js/controllers/permission-add-role-controller.js"), __webpack_exec__("./assets/js/controllers/permission-manage-policies-controller.js"), __webpack_exec__("./assets/js/controllers/revoke-form-controller.js"), __webpack_exec__("./assets/js/controllers/role-add-member-controller.js"), __webpack_exec__("./assets/js/controllers/role-add-permission-controller.js"), __webpack_exec__("./assets/js/controllers/select-all-switch-list-controller.js"), __webpack_exec__("./assets/js/controllers/session-extender-controller.js"), __webpack_exec__("./plugins/Activities/assets/js/controllers/approve-and-assign-auth-controller.js"), __webpack_exec__("./plugins/Activities/assets/js/controllers/gw-sharing-controller.js"), __webpack_exec__("./plugins/Activities/assets/js/controllers/renew-auth-controller.js"), __webpack_exec__("./plugins/Activities/assets/js/controllers/request-auth-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/award-form-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-add-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-bulk-edit-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-edit-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-quick-edit-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/rec-table-controller.js"), __webpack_exec__("./plugins/Awards/Assets/js/controllers/recommendation-kanban-controller.js"), __webpack_exec__("./plugins/Events/assets/js/controllers/hello-world-controller.js"), __webpack_exec__("./plugins/GitHubIssueSubmitter/assets/js/controllers/github-submitter-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/assign-officer-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/edit-officer-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/office-form-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/officer-roster-search-controller.js"), __webpack_exec__("./plugins/Officers/assets/js/controllers/officer-roster-table-controller.js"), __webpack_exec__("./plugins/Template/assets/js/controllers/hello-world-controller.js"), __webpack_exec__("./assets/css/app.css"), __webpack_exec__("./assets/css/signin.css"), __webpack_exec__("./assets/css/cover.css"), __webpack_exec__("./assets/css/dashboard.css"); });
 /******/ var __webpack_exports__ = __webpack_require__.O();
 /******/ }
 ]);
