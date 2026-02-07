@@ -11,12 +11,13 @@ nohup.out
 security-reports/
 security-reports/**/.*
 .DS_Store
-amp_no_commit.sql
+*.sql
+!dev_seed_clean.sql
 node_modules/
 test-results/.claude/settings.local.json
-
+test-results/*.png
+.playwright-cli/
 # Docker development (keep .env.example, ignore local .env)
 .env
 app/cookie.txt
-amp_uat.sql
-uat_dump.sql
+
