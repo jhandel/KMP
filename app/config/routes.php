@@ -221,6 +221,57 @@ return function (RouteBuilder $routes): void {
          * @note Remove fallback routes in production for better performance
          * @note Define explicit routes for better security and control
          */
+        // Workflow Engine admin routes
+        $builder->scope('/workflow-engine', function (RouteBuilder $builder) {
+            $builder->setExtensions(['json']);
+            $builder->connect('/', ['controller' => 'WorkflowDefinitions', 'action' => 'index']);
+            $builder->connect('/editor/{id}', ['controller' => 'WorkflowDefinitions', 'action' => 'editor'])
+                ->setPass(['id']);
+            $builder->connect('/create', ['controller' => 'WorkflowDefinitions', 'action' => 'add']);
+            $builder->connect('/delete/{id}', ['controller' => 'WorkflowDefinitions', 'action' => 'delete'])
+                ->setPass(['id']);
+            $builder->connect('/analytics', ['controller' => 'WorkflowDefinitions', 'action' => 'analytics']);
+
+            // Workflow Editor JSON API (session-authenticated, used by the visual editor)
+            $builder->scope('/api', function (RouteBuilder $builder) {
+                $builder->connect('/definition/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'getDefinition'])
+                    ->setPass(['id'])->setMethods(['GET']);
+                $builder->connect('/definition/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'saveDefinition'])
+                    ->setPass(['id'])->setMethods(['PUT']);
+                $builder->connect('/states', ['controller' => 'WorkflowEditorApi', 'action' => 'createState'])
+                    ->setMethods(['POST']);
+                $builder->connect('/states/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'updateState'])
+                    ->setPass(['id'])->setMethods(['PUT']);
+                $builder->connect('/states/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'deleteState'])
+                    ->setPass(['id'])->setMethods(['DELETE']);
+                $builder->connect('/transitions', ['controller' => 'WorkflowEditorApi', 'action' => 'createTransition'])
+                    ->setMethods(['POST']);
+                $builder->connect('/transitions/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'updateTransition'])
+                    ->setPass(['id'])->setMethods(['PUT']);
+                $builder->connect('/transitions/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'deleteTransition'])
+                    ->setPass(['id'])->setMethods(['DELETE']);
+                $builder->connect('/visibility-rules', ['controller' => 'WorkflowEditorApi', 'action' => 'saveVisibilityRules'])
+                    ->setMethods(['POST']);
+                $builder->connect('/approval-gates', ['controller' => 'WorkflowEditorApi', 'action' => 'saveApprovalGate'])
+                    ->setMethods(['POST']);
+                $builder->connect('/gate/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'updateApprovalGate'])
+                    ->setPass(['id'])->setMethods(['PUT']);
+                $builder->connect('/gate', ['controller' => 'WorkflowEditorApi', 'action' => 'saveApprovalGate'])
+                    ->setMethods(['POST']);
+                $builder->connect('/approval-gates/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'deleteApprovalGate'])
+                    ->setPass(['id'])->setMethods(['DELETE']);
+                $builder->connect('/definition/{id}/publish', ['controller' => 'WorkflowEditorApi', 'action' => 'publishDefinition'])
+                    ->setPass(['id'])->setMethods(['POST']);
+                $builder->connect('/definition/{id}/export', ['controller' => 'WorkflowEditorApi', 'action' => 'exportDefinition'])
+                    ->setPass(['id'])->setMethods(['GET']);
+                $builder->connect('/import', ['controller' => 'WorkflowEditorApi', 'action' => 'importDefinition'])
+                    ->setMethods(['POST']);
+                $builder->connect('/definition/{id}/validate', ['controller' => 'WorkflowEditorApi', 'action' => 'validateDefinition'])
+                    ->setPass(['id'])->setMethods(['POST']);
+            });
+        });
+
+
         $builder->fallbacks();
     });
     /**

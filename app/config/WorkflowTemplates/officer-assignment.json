@@ -1,0 +1,135 @@
+{
+    "name": "Officer Assignment",
+    "slug": "officer-assignment",
+    "description": "Manages the lifecycle of officer assignments including temporal status transitions, warrant integration, role grants, and notification processing.",
+    "entity_type": "Officers.Officers",
+    "plugin_name": "Officers",
+    "workflow_states": [
+        {
+            "name": "Upcoming",
+            "slug": "upcoming",
+            "label": "Upcoming",
+            "state_type": "initial",
+            "status_category": "Upcoming",
+            "metadata": {},
+            "position_x": 100,
+            "position_y": 200
+        },
+        {
+            "name": "Current",
+            "slug": "current",
+            "label": "Current",
+            "state_type": "intermediate",
+            "status_category": "Current",
+            "metadata": {},
+            "position_x": 400,
+            "position_y": 200
+        },
+        {
+            "name": "Expired",
+            "slug": "expired",
+            "label": "Expired",
+            "state_type": "terminal",
+            "status_category": "Expired",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 100
+        },
+        {
+            "name": "Released",
+            "slug": "released",
+            "label": "Released",
+            "state_type": "terminal",
+            "status_category": "Released",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 250
+        },
+        {
+            "name": "Replaced",
+            "slug": "replaced",
+            "label": "Replaced",
+            "state_type": "terminal",
+            "status_category": "Replaced",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 400
+        }
+    ],
+    "workflow_transitions": [
+        {
+            "name": "Activate",
+            "slug": "activate",
+            "label": "Activate",
+            "from_state_slug": "upcoming",
+            "to_state_slug": "current",
+            "priority": 10,
+            "is_automatic": true,
+            "trigger_type": "scheduled",
+            "conditions": [
+                {"type": "time", "field": "entity.start_on", "operator": "<=", "value": "{{now}}"}
+            ],
+            "actions": [],
+            "trigger_config": {"schedule": "daily", "description": "Check if start_on <= now to activate upcoming officers"}
+        },
+        {
+            "name": "Expire",
+            "slug": "expire",
+            "label": "Expire",
+            "from_state_slug": "current",
+            "to_state_slug": "expired",
+            "priority": 10,
+            "is_automatic": true,
+            "trigger_type": "scheduled",
+            "conditions": [
+                {"type": "time", "field": "entity.expires_on", "operator": "<=", "value": "{{now}}"},
+                {"type": "field", "field": "entity.expires_on", "operator": "!=", "value": null}
+            ],
+            "actions": [],
+            "trigger_config": {"schedule": "daily", "description": "Check if expires_on <= now to expire current officers"}
+        },
+        {
+            "name": "Release",
+            "slug": "release",
+            "label": "Release",
+            "from_state_slug": "current",
+            "to_state_slug": "released",
+            "priority": 0,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": [
+                {"type": "permission", "policy": "Officers.Officer", "action": "canRelease"}
+            ],
+            "actions": []
+        },
+        {
+            "name": "Replace",
+            "slug": "replace",
+            "label": "Replace",
+            "from_state_slug": "current",
+            "to_state_slug": "replaced",
+            "priority": 5,
+            "is_automatic": true,
+            "trigger_type": "event",
+            "conditions": [
+                {"type": "field", "field": "entity.office.only_one_per_branch", "operator": "==", "value": true}
+            ],
+            "actions": [],
+            "trigger_config": {"event": "Officers.Officers.assigned", "description": "Fires when a new officer is assigned to the same office+branch"}
+        },
+        {
+            "name": "Cancel",
+            "slug": "cancel",
+            "label": "Cancel",
+            "from_state_slug": "upcoming",
+            "to_state_slug": "released",
+            "priority": 0,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": [
+                {"type": "permission", "policy": "Officers.Officer", "action": "canRelease"}
+            ],
+            "actions": []
+        }
+    ]
+}

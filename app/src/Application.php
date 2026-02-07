@@ -66,6 +66,14 @@ use App\Services\ImpersonationService;
 use App\Services\ICalendarService;
 use App\Services\WarrantManager\DefaultWarrantManager;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
+use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\RuleEvaluatorInterface;
+use App\Services\WorkflowEngine\DefaultRuleEvaluator;
+use App\Services\WorkflowEngine\ActionExecutorInterface;
+use App\Services\WorkflowEngine\DefaultActionExecutor;
+use App\Services\WorkflowEngine\VisibilityEvaluatorInterface;
+use App\Services\WorkflowEngine\DefaultVisibilityEvaluator;
 use Authentication\AuthenticationService;
 use Authentication\AuthenticationServiceInterface;
 use Authentication\AuthenticationServiceProviderInterface;
@@ -542,6 +550,26 @@ class Application extends BaseApplication implements
         $container->add(
             ImpersonationService::class,
         );
+
+        // Register Workflow Engine core services
+        $container->add(
+            RuleEvaluatorInterface::class,
+            DefaultRuleEvaluator::class,
+        );
+        $container->add(
+            ActionExecutorInterface::class,
+            DefaultActionExecutor::class,
+        );
+        $container->add(
+            VisibilityEvaluatorInterface::class,
+            DefaultVisibilityEvaluator::class,
+        );
+        $container->add(
+            WorkflowEngineInterface::class,
+            DefaultWorkflowEngine::class,
+        )->addArgument(RuleEvaluatorInterface::class)
+          ->addArgument(ActionExecutorInterface::class)
+          ->addArgument(VisibilityEvaluatorInterface::class);
     }
 
     /**
