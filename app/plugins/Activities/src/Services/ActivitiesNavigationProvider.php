@@ -196,6 +196,18 @@ class ActivitiesNavigationProvider
                     "plugin" => "Activities",
                 ],
                 "icon" => "bi-person-lines-fill",
+            ],
+            [
+                "type" => "link",
+                "mergePath" => ["Reports"],
+                "label" => "All Authorizations",
+                "order" => 15,
+                "url" => [
+                    "controller" => "Reports",
+                    "action" => "allAuthorizations",
+                    "plugin" => "Activities",
+                ],
+                "icon" => "bi-list-check",
             ]
         ];
     }

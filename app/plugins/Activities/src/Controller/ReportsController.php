@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Activities\Controller;
 
+use App\Controller\DataverseGridTrait;
+use App\Services\CsvExportService;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
 use Cake\I18n\DateTime;
@@ -20,6 +22,7 @@ use Cake\I18n\DateTime;
 
 class ReportsController extends AppController
 {
+    use DataverseGridTrait;
     /**
      * Initialize controller with authorization settings.
      *
@@ -28,8 +31,6 @@ class ReportsController extends AppController
     public function initialize(): void
     {
         parent::initialize();
-        // Future: Implement model-level authorization for standardized access control
-        //$this->Authorization->authorizeModel('index','add','searchMembers','addPermission','deletePermission');
     }
 
     /**
@@ -157,6 +158,84 @@ class ReportsController extends AppController
             'memberListQuery',     // Detailed member authorization listings
             'activities',          // Selected activity IDs for filtering
         ));
+    }
+
+    /**
+     * Display the all authorizations admin report page.
+     *
+     * @return void
+     */
+    public function allAuthorizations()
+    {
+        $this->authorizeCurrentUrl();
+    }
+
+    /**
+     * Dataverse grid data endpoint for all authorizations report.
+     *
+     * @param \App\Services\CsvExportService $csvExportService Injected CSV export service
+     * @return \Cake\Http\Response|null|void
+     */
+    public function allAuthorizationsGridData(CsvExportService $csvExportService)
+    {
+        $this->authorizeCurrentUrl();
+
+        $authTbl = $this->fetchTable('Activities.Authorizations');
+        $baseQuery = $authTbl->find()
+            ->contain([
+                'Activities' => function ($q) {
+                    return $q->select(['id', 'name']);
+                },
+                'Members' => function ($q) {
+                    return $q->select(['id', 'sca_name', 'branch_id']);
+                },
+                'Members.Branches' => function ($q) {
+                    return $q->select(['id', 'name']);
+                },
+            ]);
+
+        $systemViews = \Activities\KMP\GridColumns\AllAuthorizationsGridColumns::getSystemViews();
+
+        $result = $this->processDataverseGrid([
+            'gridKey' => 'Activities.Reports.allAuthorizations',
+            'gridColumnsClass' => \Activities\KMP\GridColumns\AllAuthorizationsGridColumns::class,
+            'baseQuery' => $baseQuery,
+            'tableName' => 'Authorizations',
+            'defaultSort' => ['Authorizations.created' => 'desc'],
+            'defaultPageSize' => 25,
+            'systemViews' => $systemViews,
+            'defaultSystemView' => 'all',
+            'showAllTab' => false,
+            'canFilter' => true,
+            'canExportCsv' => true,
+            'showViewTabs' => true,
+            'enableColumnPicker' => true,
+        ]);
+
+        if (!empty($result['isCsvExport'])) {
+            return $this->handleCsvExport($result, $csvExportService, 'all-authorizations', 'Activities.Authorizations');
+        }
+
+        $this->set($result);
+        $this->set('customElement', 'Activities.all_authorizations_table');
+
+        // Determine which template to render based on Turbo-Frame header
+        $turboFrame = $this->request->getHeaderLine('Turbo-Frame');
+
+        // Use main app's element templates (not plugin templates)
+        $this->viewBuilder()->setPlugin(null);
+
+        if ($turboFrame === 'all-authorizations-grid-table') {
+            $this->set('tableFrameId', 'all-authorizations-grid-table');
+            $this->viewBuilder()->disableAutoLayout();
+            $this->viewBuilder()->setTemplatePath('element');
+            $this->viewBuilder()->setTemplate('dv_grid_table');
+        } else {
+            $this->set('frameId', 'all-authorizations-grid');
+            $this->viewBuilder()->disableAutoLayout();
+            $this->viewBuilder()->setTemplatePath('element');
+            $this->viewBuilder()->setTemplate('dv_grid_content');
+        }
     }
 
     /**

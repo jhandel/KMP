@@ -128,7 +128,7 @@ $allColumns = $gridState['columns']['all'] ?? [];
                     </span>
                     <?php endif; ?>
                     <?php if ($hasMoreApprovalsToGo): ?>
-                    <button type="button" class="btn btn-primary approve-btn" data-bs-toggle="modal"
+                    <button type="button" class="btn-sm btn btn-primary approve-btn" data-bs-toggle="modal"
                         data-bs-target="#approveAndAssignModal" data-controller="outlet-btn"
                         data-action="click->outlet-btn#fireNotice"
                         data-outlet-btn-btn-data-value='{"id":<?= $request->id ?>}'>Approve</button>

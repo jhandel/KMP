@@ -52,4 +52,33 @@ class ReportsControllerPolicy extends BasePolicy
         $method = __FUNCTION__;
         return $this->_hasPolicyForUrl($user, $method, $urlProps);
     }
+
+    /**
+     * Check if user can access the all authorizations admin report.
+     *
+     * @param \App\KMP\KmpIdentityInterface $user The requesting user
+     * @param array $urlProps URL properties for authorization context
+     * @return bool True if user has permission for all authorizations report
+     */
+    public function canAllAuthorizations(
+        KmpIdentityInterface $user,
+        array $urlProps,
+    ): bool {
+        $method = __FUNCTION__;
+        return $this->_hasPolicyForUrl($user, $method, $urlProps);
+    }
+
+    /**
+     * Check if user can access the all authorizations grid data endpoint.
+     *
+     * @param \App\KMP\KmpIdentityInterface $user The requesting user
+     * @param array $urlProps URL properties for authorization context
+     * @return bool True if user has permission
+     */
+    public function canAllAuthorizationsGridData(
+        KmpIdentityInterface $user,
+        array $urlProps,
+    ): bool {
+        return $this->canAllAuthorizations($user, $urlProps);
+    }
 }

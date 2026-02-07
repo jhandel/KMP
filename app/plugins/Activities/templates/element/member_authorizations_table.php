@@ -144,14 +144,17 @@ $hasActions = $isCurrentView || $isPendingView;
                         <?= h(($authorization->approval_count ?? 0)) ?>/<?= h($authsNeeded) ?>
                     </span>
                     <?php endif; ?>
-                    <?= $this->Form->postLink(
-                                    __("Retract"),
-                                    ["controller" => "Authorizations", "action" => "retract", $authorization->id],
-                                    [
-                                        "confirm" => __("Are you sure you want to retract this authorization request?"),
-                                        "class" => "btn-sm btn btn-warning retract-btn",
-                                    ],
-                                ) ?>
+                    <?= $this->Form->create(null, [
+                        'url' => ['controller' => 'Authorizations', 'action' => 'retract', $authorization->id],
+                        'style' => 'display:inline;',
+                        'data-turbo' => 'false',
+                        'onsubmit' => 'return confirm(' . json_encode(__("Are you sure you want to retract this authorization request?")) . ')',
+                    ]) ?>
+                    <?= $this->Form->button(__("Retract"), [
+                        "type" => "submit",
+                        "class" => "btn-sm btn btn-warning retract-btn",
+                    ]) ?>
+                    <?= $this->Form->end() ?>
                 </td>
                 <?php endif; ?>
             </tr>
