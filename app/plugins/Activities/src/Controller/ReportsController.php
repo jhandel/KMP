@@ -206,6 +206,7 @@ class ReportsController extends AppController
             'systemViews' => $systemViews,
             'defaultSystemView' => 'all',
             'showAllTab' => false,
+            'canAddViews' => true,
             'canFilter' => true,
             'canExportCsv' => true,
             'showViewTabs' => true,
