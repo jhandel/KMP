@@ -1,0 +1,229 @@
+{
+    "name": "Warrant Lifecycle",
+    "slug": "warrant",
+    "description": "Individual warrant lifecycle from pending through current to terminal states. Supports time-based expiration and manual deactivation.",
+    "entity_type": "Warrants",
+    "plugin_name": null,
+    "workflow_states": [
+        {
+            "name": "Pending",
+            "slug": "pending",
+            "label": "Pending",
+            "state_type": "start",
+            "status_category": "Pending",
+            "metadata": {},
+            "position_x": 100,
+            "position_y": 300
+        },
+        {
+            "name": "Current",
+            "slug": "current",
+            "label": "Current",
+            "state_type": "intermediate",
+            "status_category": "Current",
+            "metadata": {},
+            "position_x": 400,
+            "position_y": 200
+        },
+        {
+            "name": "Upcoming",
+            "slug": "upcoming",
+            "label": "Upcoming",
+            "state_type": "intermediate",
+            "status_category": "Upcoming",
+            "metadata": {},
+            "position_x": 400,
+            "position_y": 400
+        },
+        {
+            "name": "Expired",
+            "slug": "expired",
+            "label": "Expired",
+            "state_type": "end",
+            "status_category": "Expired",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 100
+        },
+        {
+            "name": "Deactivated",
+            "slug": "deactivated",
+            "label": "Deactivated",
+            "state_type": "end",
+            "status_category": "Deactivated",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 200
+        },
+        {
+            "name": "Cancelled",
+            "slug": "cancelled",
+            "label": "Cancelled",
+            "state_type": "end",
+            "status_category": "Cancelled",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 300
+        },
+        {
+            "name": "Declined",
+            "slug": "declined",
+            "label": "Declined",
+            "state_type": "end",
+            "status_category": "Declined",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 400
+        },
+        {
+            "name": "Replaced",
+            "slug": "replaced",
+            "label": "Replaced",
+            "state_type": "end",
+            "status_category": "Replaced",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 500
+        },
+        {
+            "name": "Released",
+            "slug": "released",
+            "label": "Released",
+            "state_type": "end",
+            "status_category": "Released",
+            "metadata": {},
+            "position_x": 750,
+            "position_y": 600
+        }
+    ],
+    "workflow_transitions": [
+        {
+            "name": "Activate Warrant",
+            "slug": "activate",
+            "label": "Activate",
+            "from_state_slug": "pending",
+            "to_state_slug": "current",
+            "priority": 10,
+            "is_automatic": true,
+            "trigger_type": "automatic",
+            "conditions": {
+                "type": "composite",
+                "operator": "and",
+                "conditions": [
+                    {"type": "field", "field": "start_on", "operator": "<=", "value": "{{now}}"},
+                    {"type": "roster_approved"}
+                ]
+            },
+            "actions": [{"action": "activate_warrant", "params": {}}],
+            "trigger_config": {"trigger": "on_roster_approval"}
+        },
+        {
+            "name": "Schedule Warrant",
+            "slug": "schedule",
+            "label": "Schedule",
+            "from_state_slug": "pending",
+            "to_state_slug": "upcoming",
+            "priority": 20,
+            "is_automatic": true,
+            "trigger_type": "automatic",
+            "conditions": {
+                "type": "composite",
+                "operator": "and",
+                "conditions": [
+                    {"type": "field", "field": "start_on", "operator": ">", "value": "{{now}}"},
+                    {"type": "roster_approved"}
+                ]
+            },
+            "actions": [],
+            "trigger_config": {"trigger": "on_roster_approval"}
+        },
+        {
+            "name": "Start Warrant",
+            "slug": "start",
+            "label": "Start",
+            "from_state_slug": "upcoming",
+            "to_state_slug": "current",
+            "priority": 10,
+            "is_automatic": true,
+            "trigger_type": "scheduled",
+            "conditions": {"type": "field", "field": "start_on", "operator": "<=", "value": "{{now}}"},
+            "actions": [{"action": "activate_warrant", "params": {}}],
+            "trigger_config": {"check_field": "start_on", "interval": "daily"}
+        },
+        {
+            "name": "Expire Warrant",
+            "slug": "expire",
+            "label": "Expire",
+            "from_state_slug": "current",
+            "to_state_slug": "expired",
+            "priority": 10,
+            "is_automatic": true,
+            "trigger_type": "scheduled",
+            "conditions": {"type": "field", "field": "expires_on", "operator": "<", "value": "{{now}}"},
+            "actions": [],
+            "trigger_config": {"check_field": "expires_on", "interval": "daily"}
+        },
+        {
+            "name": "Deactivate Warrant",
+            "slug": "deactivate",
+            "label": "Deactivate",
+            "from_state_slug": "current",
+            "to_state_slug": "deactivated",
+            "priority": 20,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {"type": "permission", "permission": "warrant.warrants.deactivate"},
+            "actions": [{"action": "cancel_warrant", "params": {"reason": "{{context.reason}}"}}]
+        },
+        {
+            "name": "Release Warrant",
+            "slug": "release",
+            "label": "Release",
+            "from_state_slug": "current",
+            "to_state_slug": "released",
+            "priority": 30,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {},
+            "actions": [{"action": "cancel_warrant", "params": {"reason": "Voluntarily released"}}]
+        },
+        {
+            "name": "Cancel Warrant",
+            "slug": "cancel",
+            "label": "Cancel",
+            "from_state_slug": "pending",
+            "to_state_slug": "cancelled",
+            "priority": 30,
+            "is_automatic": true,
+            "trigger_type": "automatic",
+            "conditions": {"type": "roster_declined"},
+            "actions": [{"action": "cancel_warrant", "params": {"reason": "Warrant Roster Declined"}}],
+            "trigger_config": {"trigger": "on_roster_decline"}
+        },
+        {
+            "name": "Decline Warrant",
+            "slug": "decline",
+            "label": "Decline",
+            "from_state_slug": "pending",
+            "to_state_slug": "declined",
+            "priority": 40,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {"type": "permission", "permission": "warrant.warrants.declineWarrantInRoster"},
+            "actions": [{"action": "cancel_warrant", "params": {"reason": "{{context.reason}}"}}]
+        },
+        {
+            "name": "Replace Warrant",
+            "slug": "replace",
+            "label": "Replace",
+            "from_state_slug": "current",
+            "to_state_slug": "replaced",
+            "priority": 40,
+            "is_automatic": true,
+            "trigger_type": "automatic",
+            "conditions": {"type": "new_warrant_approved"},
+            "actions": [],
+            "trigger_config": {"trigger": "on_replacement"}
+        }
+    ]
+}

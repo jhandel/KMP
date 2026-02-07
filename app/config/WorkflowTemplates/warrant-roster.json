@@ -1,0 +1,65 @@
+{
+    "name": "Warrant Roster Approval",
+    "slug": "warrant-roster",
+    "description": "Multi-signer batch approval workflow for warrant rosters. Requires configurable number of approvals before warrants are activated.",
+    "entity_type": "WarrantRosters",
+    "plugin_name": null,
+    "workflow_states": [
+        {
+            "name": "Pending",
+            "slug": "pending",
+            "label": "Pending",
+            "state_type": "start",
+            "status_category": "Pending",
+            "metadata": {},
+            "position_x": 100,
+            "position_y": 200
+        },
+        {
+            "name": "Approved",
+            "slug": "approved",
+            "label": "Approved",
+            "state_type": "end",
+            "status_category": "Approved",
+            "metadata": {},
+            "position_x": 500,
+            "position_y": 100
+        },
+        {
+            "name": "Declined",
+            "slug": "declined",
+            "label": "Declined",
+            "state_type": "end",
+            "status_category": "Declined",
+            "metadata": {},
+            "position_x": 500,
+            "position_y": 300
+        }
+    ],
+    "workflow_transitions": [
+        {
+            "name": "Approve Roster",
+            "slug": "approve-roster",
+            "label": "Approve",
+            "from_state_slug": "pending",
+            "to_state_slug": "approved",
+            "priority": 10,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {"type": "permission", "permission": "warrant.rosters.approve"},
+            "actions": {"on_complete": [{"action": "activate_warrant", "params": {}}]}
+        },
+        {
+            "name": "Decline Roster",
+            "slug": "decline-roster",
+            "label": "Decline",
+            "from_state_slug": "pending",
+            "to_state_slug": "declined",
+            "priority": 20,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {"type": "permission", "permission": "warrant.rosters.decline"},
+            "actions": {"on_complete": [{"action": "cancel_warrant", "params": {"reason": "Warrant Roster Declined"}}]}
+        }
+    ]
+}

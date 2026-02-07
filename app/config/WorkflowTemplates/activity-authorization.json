@@ -1,0 +1,145 @@
+{
+    "name": "Activity Authorization",
+    "slug": "activity-authorization",
+    "description": "Manages member activity authorization lifecycle including multi-level approval chains, role granting, time-based expiration, and revocation.",
+    "entity_type": "Authorizations",
+    "plugin_name": "Activities",
+    "workflow_states": [
+        {
+            "name": "Pending",
+            "slug": "pending",
+            "label": "Pending",
+            "state_type": "initial",
+            "status_category": "Pending",
+            "metadata": {},
+            "position_x": 100,
+            "position_y": 250
+        },
+        {
+            "name": "Approved",
+            "slug": "approved",
+            "label": "Approved",
+            "state_type": "intermediate",
+            "status_category": "Approved",
+            "metadata": {},
+            "position_x": 400,
+            "position_y": 150
+        },
+        {
+            "name": "Denied",
+            "slug": "denied",
+            "label": "Denied",
+            "state_type": "final",
+            "status_category": "Denied",
+            "metadata": {},
+            "position_x": 400,
+            "position_y": 350
+        },
+        {
+            "name": "Revoked",
+            "slug": "revoked",
+            "label": "Revoked",
+            "state_type": "final",
+            "status_category": "Revoked",
+            "metadata": {},
+            "position_x": 700,
+            "position_y": 100
+        },
+        {
+            "name": "Expired",
+            "slug": "expired",
+            "label": "Expired",
+            "state_type": "final",
+            "status_category": "Expired",
+            "metadata": {},
+            "position_x": 700,
+            "position_y": 250
+        },
+        {
+            "name": "Retracted",
+            "slug": "retracted",
+            "label": "Retracted",
+            "state_type": "final",
+            "status_category": "Retracted",
+            "metadata": {},
+            "position_x": 400,
+            "position_y": 500
+        }
+    ],
+    "workflow_transitions": [
+        {
+            "name": "Approve Authorization",
+            "slug": "approve",
+            "label": "Approve",
+            "from_state_slug": "pending",
+            "to_state_slug": "approved",
+            "priority": 10,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {"type": "approval_gate_met"},
+            "actions": []
+        },
+        {
+            "name": "Deny Authorization",
+            "slug": "deny",
+            "label": "Deny",
+            "from_state_slug": "pending",
+            "to_state_slug": "denied",
+            "priority": 20,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {"type": "permission", "permission": "canApproveActivityAuthorization"},
+            "actions": []
+        },
+        {
+            "name": "Retract Authorization",
+            "slug": "retract",
+            "label": "Retract",
+            "from_state_slug": "pending",
+            "to_state_slug": "retracted",
+            "priority": 30,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {"type": "ownership", "field": "member_id"},
+            "actions": []
+        },
+        {
+            "name": "Expire Pending Authorization",
+            "slug": "expire-pending",
+            "label": "Expire",
+            "from_state_slug": "pending",
+            "to_state_slug": "expired",
+            "priority": 40,
+            "is_automatic": true,
+            "trigger_type": "scheduled",
+            "conditions": {"type": "time", "field": "created", "operator": "<", "value": "{{now}}", "offset": "-30 days"},
+            "actions": [],
+            "trigger_config": {"check_field": "created", "interval": "daily"}
+        },
+        {
+            "name": "Expire Authorization",
+            "slug": "expire-approved",
+            "label": "Expire",
+            "from_state_slug": "approved",
+            "to_state_slug": "expired",
+            "priority": 10,
+            "is_automatic": true,
+            "trigger_type": "scheduled",
+            "conditions": {"type": "field", "field": "expires_on", "operator": "<", "value": "{{now}}"},
+            "actions": [],
+            "trigger_config": {"check_field": "expires_on", "interval": "daily"}
+        },
+        {
+            "name": "Revoke Authorization",
+            "slug": "revoke",
+            "label": "Revoke",
+            "from_state_slug": "approved",
+            "to_state_slug": "revoked",
+            "priority": 20,
+            "is_automatic": false,
+            "trigger_type": "manual",
+            "conditions": {"type": "permission", "permission": "canRevoke"},
+            "actions": []
+        }
+    ]
+}
