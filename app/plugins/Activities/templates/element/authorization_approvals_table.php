@@ -58,6 +58,7 @@ $allColumns = $gridState['columns']['all'] ?? [];
             <?php
                     // Calculate if more approvals are needed (for pending view)
                     $hasMoreApprovalsToGo = false;
+                    $authsNeeded = 1;
                     if ($isPendingView && isset($request->authorization)) {
                         $authsNeeded = $request->authorization->is_renewal
                             ? $request->authorization->activity->num_required_renewers
@@ -114,6 +115,11 @@ $allColumns = $gridState['columns']['all'] ?? [];
                 <?php endforeach; ?>
                 <?php if ($isPendingView): ?>
                 <td class="actions text-end text-nowrap">
+                    <?php if ($authsNeeded > 1): ?>
+                    <span class="badge bg-info me-1" title="Multi-approver chain progress">
+                        <?= h($request->authorization->approval_count + 1) ?>/<?= h($authsNeeded) ?>
+                    </span>
+                    <?php endif; ?>
                     <?php if ($hasMoreApprovalsToGo): ?>
                     <button type="button" class="btn btn-primary approve-btn" data-bs-toggle="modal"
                         data-bs-target="#approveAndAssignModal" data-controller="outlet-btn"

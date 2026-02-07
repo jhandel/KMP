@@ -64,7 +64,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             'context' => json_encode([]),
             'started_at' => new \DateTime(),
             'completed_at' => null,
+            'status' => 'active',
             'created_by' => $initiatedBy,
+            'modified_by' => $initiatedBy,
         ]);
 
         if (!$instancesTable->save($instance)) {
@@ -128,13 +130,18 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 return new ServiceResult(false, "New state '{$newStateSlug}' not found in definition.");
             }
 
-            // Update instance
+            // Update instance — re-fetch to avoid stale entity from marking store
+            $instance = $instancesTable->get($instanceId);
             $instance->previous_state_id = $previousStateId;
             $instance->current_state_id = $newState->id;
+            $instance->modified_by = $triggeredBy;
 
             // Mark completed if final state
             if ($newState->state_type === 'final') {
                 $instance->completed_at = new \DateTime();
+                $instance->status = 'completed';
+            } else {
+                $instance->status = 'active';
             }
 
             // Update context
@@ -257,7 +264,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         // Find all active instances
         $instances = $instancesTable->find()
-            ->where(['completed_at IS' => null])
+            ->where(['status' => 'active'])
             ->all();
 
         $processed = 0;

@@ -100,7 +100,7 @@ class WorkflowInstancesTable extends BaseTable
             ->where([
                 'entity_type' => $entityType,
                 'entity_id' => $entityId,
-                'completed_at IS' => null,
+                'status' => 'active',
             ])
             ->first();
     }

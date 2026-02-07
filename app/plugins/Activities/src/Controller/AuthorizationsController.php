@@ -318,7 +318,7 @@ class AuthorizationsController extends AppController
                         ->contain("Approvers");
                 },
                 "Activities" => function (SelectQuery $q) {
-                    return $q->select(["Activities.name", "Activities.id"]);
+                    return $q->select(["Activities.name", "Activities.id", "Activities.num_required_authorizors", "Activities.num_required_renewers"]);
                 },
                 "RevokedBy" => function (SelectQuery $q) {
                     return $q->select(["RevokedBy.sca_name"]);

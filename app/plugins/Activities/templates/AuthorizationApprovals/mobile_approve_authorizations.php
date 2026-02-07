@@ -103,6 +103,15 @@ $deniedCount = count($denied);
                                 <span class="approval-activity">
                                     <i class="bi bi-shield-check me-1"></i><?= h($request->authorization->activity->name) ?>
                                 </span>
+                                <?php
+                                $authsNeeded = $request->authorization->is_renewal
+                                    ? $request->authorization->activity->num_required_renewers
+                                    : $request->authorization->activity->num_required_authorizors;
+                                if ($authsNeeded > 1): ?>
+                                <span class="badge bg-info ms-1" style="font-size: 11px;">
+                                    <?= h($request->authorization->approval_count + 1) ?>/<?= h($authsNeeded) ?>
+                                </span>
+                                <?php endif; ?>
                             </div>
                         </div>
 

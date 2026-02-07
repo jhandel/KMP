@@ -66,6 +66,7 @@ use App\Services\ImpersonationService;
 use App\Services\ICalendarService;
 use App\Services\WarrantManager\DefaultWarrantManager;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WorkflowEngine\ApprovalGateService;
 use App\Services\WorkflowEngine\DefaultWorkflowEngine;
 use App\Services\WorkflowEngine\WorkflowBridge;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
@@ -552,6 +553,7 @@ class Application extends BaseApplication implements
             WorkflowEngineInterface::class,
             DefaultWorkflowEngine::class,
         )->addArgument(WorkflowBridge::class);
+        $container->add(ApprovalGateService::class);
     }
 
     /**

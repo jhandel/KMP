@@ -48,19 +48,14 @@ class ActivitiesApproveAndAssignAuthorization extends Controller {
             fetch(url, this.optionsForFetch())
                 .then(response => response.json())
                 .then(data => {
-                    const emptyOption = this.approversTarget.options[0];
-                    this.approversTarget.innerHTML = '';
-                    if (emptyOption) {
-                        this.approversTarget.appendChild(emptyOption);
-                    }
-
+                    let list = [];
                     data.forEach((item) => {
-                        const option = document.createElement('option');
-                        option.value = item.id;
-                        option.textContent = item.sca_name;
-                        this.approversTarget.appendChild(option);
+                        list.push({
+                            value: item.id,
+                            text: item.sca_name
+                        });
                     });
-
+                    this.approversTarget.options = list;
                     this.submitBtnTarget.disabled = true;
                     this.approversTarget.disabled = false;
                 });

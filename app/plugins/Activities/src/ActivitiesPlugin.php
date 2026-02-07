@@ -16,11 +16,17 @@ use Cake\Event\EventManager;
 use Activities\Event\CallForCellsHandler;
 use Activities\Services\AuthorizationManagerInterface;
 use Activities\Services\DefaultAuthorizationManager;
+use Activities\Services\WorkflowAuthorizationManager;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
+use App\Services\WorkflowEngine\ApprovalGateService;
 use App\Services\NavigationRegistry;
 use App\Services\ViewCellRegistry;
 use Activities\Services\ActivitiesNavigationProvider;
 use Activities\Services\ActivitiesViewCellProvider;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
+use Activities\Services\WorkflowEngine\Actions\GrantActivityRoleAction;
+use Activities\Services\WorkflowEngine\Actions\RevokeActivityRoleAction;
+use Activities\Services\WorkflowEngine\Actions\SendAuthorizationNotificationAction;
 use App\KMP\StaticHelpers;
 use Cake\I18n\DateTime;
 
@@ -251,10 +257,37 @@ class ActivitiesPlugin extends BasePlugin implements KMPPluginInterface, KMPApiP
      */
     public function services(ContainerInterface $container): void
     {
-        // Register core authorization management service with dependency injection
+        // Register workflow-based authorization management service with dependency injection
         $container->add(
             AuthorizationManagerInterface::class,
-            DefaultAuthorizationManager::class,
-        )->addArgument(ActiveWindowManagerInterface::class);
+            WorkflowAuthorizationManager::class,
+        )->addArgument(WorkflowEngineInterface::class)
+         ->addArgument(ApprovalGateService::class)
+         ->addArgument(ActiveWindowManagerInterface::class);
+
+        // Register plugin workflow actions with the workflow engine
+        $grantAction = new GrantActivityRoleAction();
+        $revokeAction = new RevokeActivityRoleAction();
+        $notifyAction = new SendAuthorizationNotificationAction();
+
+        $container->extend(WorkflowEngineInterface::class)
+            ->addMethodCall('registerActionType', [
+                'grant_activity_role',
+                function (array $params, array $context) use ($grantAction) {
+                    return $grantAction->execute($params, $context);
+                },
+            ])
+            ->addMethodCall('registerActionType', [
+                'revoke_activity_role',
+                function (array $params, array $context) use ($revokeAction) {
+                    return $revokeAction->execute($params, $context);
+                },
+            ])
+            ->addMethodCall('registerActionType', [
+                'send_authorization_notification',
+                function (array $params, array $context) use ($notifyAction) {
+                    return $notifyAction->execute($params, $context);
+                },
+            ]);
     }
 }

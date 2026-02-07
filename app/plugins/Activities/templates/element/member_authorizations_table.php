@@ -56,6 +56,18 @@ $hasActions = $isCurrentView || $isPendingView;
             </tr>
             <?php else: ?>
             <?php foreach ($data as $authorization): ?>
+            <?php
+                // Determine status badge for display
+                $statusBadgeMap = [
+                    'Pending' => 'bg-warning',
+                    'Approved' => 'bg-success',
+                    'Denied' => 'bg-danger',
+                    'Revoked' => 'bg-secondary',
+                    'Expired' => 'bg-secondary',
+                    'Retracted' => 'bg-secondary',
+                ];
+                $badgeClass = $statusBadgeMap[$authorization->status ?? ''] ?? 'bg-secondary';
+            ?>
             <tr>
                 <?php foreach ($visibleColumns as $columnKey): ?>
                 <?php $column = $allColumns[$columnKey] ?? null; ?>
@@ -122,6 +134,16 @@ $hasActions = $isCurrentView || $isPendingView;
                 </td>
                 <?php elseif ($isPendingView): ?>
                 <td class="actions text-end text-nowrap">
+                    <span class="badge <?= $badgeClass ?> me-1"><?= h($authorization->status ?? 'Pending') ?></span>
+                    <?php
+                    $authsNeeded = ($authorization->is_renewal ?? false)
+                        ? ($authorization->activity->num_required_renewers ?? 1)
+                        : ($authorization->activity->num_required_authorizors ?? 1);
+                    if ($authsNeeded > 1): ?>
+                    <span class="badge bg-info me-1" title="Approval chain progress">
+                        <?= h(($authorization->approval_count ?? 0)) ?>/<?= h($authsNeeded) ?>
+                    </span>
+                    <?php endif; ?>
                     <?= $this->Form->postLink(
                                     __("Retract"),
                                     ["controller" => "Authorizations", "action" => "retract", $authorization->id],

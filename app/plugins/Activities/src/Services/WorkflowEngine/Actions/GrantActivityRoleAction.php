@@ -3,25 +3,57 @@ declare(strict_types=1);
 
 namespace Activities\Services\WorkflowEngine\Actions;
 
+use App\Services\ActiveWindowManager\DefaultActiveWindowManager;
 use App\Services\ServiceResult;
 use App\Services\WorkflowEngine\Actions\ActionInterface;
+use Cake\I18n\DateTime;
 use Cake\Log\Log;
+use Cake\ORM\TableRegistry;
 
 /**
- * Grants an activity authorization role when an authorization is approved.
+ * Grants the activity role to a member when authorization transitions to approved state.
+ *
+ * Loads the authorization with its activity, then delegates to ActiveWindowManager
+ * to start the active window (role assignment with term length).
  */
 class GrantActivityRoleAction implements ActionInterface
 {
     public function execute(array $params, array $context): ServiceResult
     {
         $entityId = $context['entity_id'] ?? null;
-        $memberId = $context['triggered_by'] ?? null;
-        $roleName = $params['role_name'] ?? 'unknown';
+        $triggeredBy = $context['triggered_by'] ?? null;
 
-        // Stub: full integration in Phase 6
-        Log::info("Activities: Granting role '{$roleName}' for authorization #{$entityId} to member #{$memberId}");
+        if ($entityId === null) {
+            return new ServiceResult(false, "grant_activity_role: 'entity_id' is required in context");
+        }
 
-        return new ServiceResult(true, null, ['granted' => true, 'role_name' => $roleName]);
+        try {
+            $authTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
+            $authorization = $authTable->get($entityId, contain: ['Activities']);
+
+            $activeWindowManager = new DefaultActiveWindowManager();
+            $awResult = $activeWindowManager->start(
+                'Activities.Authorizations',
+                $authorization->id,
+                $triggeredBy ?? $authorization->member_id,
+                DateTime::now(),
+                null,
+                $authorization->activity->term_length,
+                $authorization->activity->grants_role_id,
+            );
+
+            if (!$awResult->success) {
+                return new ServiceResult(false, 'Failed to start active window: ' . ($awResult->message ?? ''));
+            }
+
+            Log::info("Activities: Granted role for authorization #{$entityId}");
+
+            return new ServiceResult(true, 'Activity role granted', ['authorization_id' => $entityId]);
+        } catch (\Exception $e) {
+            Log::error("Activities: Failed to grant role for authorization #{$entityId}: " . $e->getMessage());
+
+            return new ServiceResult(false, 'Failed to grant activity role: ' . $e->getMessage());
+        }
     }
 
     public function getName(): string
@@ -31,17 +63,11 @@ class GrantActivityRoleAction implements ActionInterface
 
     public function getDescription(): string
     {
-        return 'Grants an activity authorization role when approved';
+        return 'Grant the activity role to the member when authorization is approved';
     }
 
     public function getParameterSchema(): array
     {
-        return [
-            'role_name' => [
-                'type' => 'string',
-                'required' => true,
-                'description' => 'Name of the activity role to grant',
-            ],
-        ];
+        return [];
     }
 }

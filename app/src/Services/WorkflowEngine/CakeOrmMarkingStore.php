@@ -52,42 +52,7 @@ class CakeOrmMarkingStore implements MarkingStoreInterface
             $subject->{$this->property} = $places;
         }
 
-        // Persist to DB if instance ID is available
-        if (!empty($subject->workflowInstanceId)) {
-            $this->persistToDb($subject, $context);
-        }
-    }
-
-    private function persistToDb(object $subject, array $context): void
-    {
-        try {
-            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
-            $statesTable = TableRegistry::getTableLocator()->get('WorkflowStates');
-
-            $instance = $instancesTable->get($subject->workflowInstanceId);
-
-            // Resolve current state slug to state ID
-            $currentStateSlug = $this->singleState
-                ? $subject->{$this->property}
-                : ($subject->{$this->property}[0] ?? null);
-
-            if ($currentStateSlug) {
-                $state = $statesTable->find()
-                    ->where([
-                        'WorkflowStates.workflow_definition_id' => $instance->workflow_definition_id,
-                        'WorkflowStates.slug' => $currentStateSlug,
-                    ])
-                    ->first();
-
-                if ($state) {
-                    $instance->previous_state_id = $instance->current_state_id;
-                    $instance->current_state_id = $state->id;
-                    $instancesTable->save($instance);
-                }
-            }
-        } catch (\Exception $e) {
-            // Log but don't fail — DB persistence is best-effort during transition
-            Log::warning('WorkflowEngine: Failed to persist marking to DB: ' . $e->getMessage());
-        }
+        // DB persistence is handled by DefaultWorkflowEngine::transition()
+        // to avoid stale-entity race conditions with double saves.
     }
 }
