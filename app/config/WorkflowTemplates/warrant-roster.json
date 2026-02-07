@@ -1,0 +1,29 @@
+{
+    "name": "Ansteorra Warrant Roster",
+    "slug": "warrant-roster",
+    "description": "Ansteorra 6-month batch roster cycle with multi-approval workflow",
+    "entity_type": "WarrantRosters",
+    "plugin_name": "Officers",
+    "type": "state_machine",
+    "states": [
+        {"slug": "draft", "label": "Draft", "state_type": "initial", "status_category": "In Progress"},
+        {"slug": "submitted", "label": "Submitted", "state_type": "intermediate", "status_category": "In Progress"},
+        {"slug": "under-review", "label": "Under Review", "state_type": "intermediate", "status_category": "Approval"},
+        {"slug": "partially-approved", "label": "Partially Approved", "state_type": "intermediate", "status_category": "Approval"},
+        {"slug": "approved", "label": "Approved", "state_type": "intermediate", "status_category": "Active"},
+        {"slug": "issued", "label": "Issued", "state_type": "intermediate", "status_category": "Active"},
+        {"slug": "expired", "label": "Expired", "state_type": "final", "status_category": "Closed"},
+        {"slug": "rejected", "label": "Rejected", "state_type": "final", "status_category": "Closed"}
+    ],
+    "transitions": [
+        {"slug": "submit", "label": "Submit Roster", "from": "draft", "to": "submitted"},
+        {"slug": "start-review", "label": "Start Review", "from": "submitted", "to": "under-review"},
+        {"slug": "partial-approve", "label": "Record Partial Approval", "from": "under-review", "to": "partially-approved"},
+        {"slug": "add-approval", "label": "Add Another Approval", "from": "partially-approved", "to": "partially-approved"},
+        {"slug": "approve", "label": "Final Approve", "from": "partially-approved", "to": "approved"},
+        {"slug": "issue", "label": "Issue Warrants", "from": "approved", "to": "issued"},
+        {"slug": "expire", "label": "Expire", "from": "issued", "to": "expired"},
+        {"slug": "reject-from-review", "label": "Reject", "from": "under-review", "to": "rejected"},
+        {"slug": "reject-from-partial", "label": "Reject", "from": "partially-approved", "to": "rejected"}
+    ]
+}

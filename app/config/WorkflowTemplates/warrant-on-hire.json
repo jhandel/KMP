@@ -1,0 +1,23 @@
+{
+    "name": "Warrant on Hire",
+    "slug": "warrant-on-hire",
+    "description": "Individual warrant-on-hire workflow with single approval",
+    "entity_type": "Warrants",
+    "plugin_name": "Officers",
+    "type": "state_machine",
+    "states": [
+        {"slug": "requested", "label": "Requested", "state_type": "initial", "status_category": "In Progress"},
+        {"slug": "pending-approval", "label": "Pending Approval", "state_type": "intermediate", "status_category": "In Progress"},
+        {"slug": "active", "label": "Active", "state_type": "intermediate", "status_category": "Active"},
+        {"slug": "revoked", "label": "Revoked", "state_type": "final", "status_category": "Closed"},
+        {"slug": "expired", "label": "Expired", "state_type": "final", "status_category": "Closed"},
+        {"slug": "denied", "label": "Denied", "state_type": "final", "status_category": "Closed"}
+    ],
+    "transitions": [
+        {"slug": "request", "label": "Request Warrant", "from": "requested", "to": "pending-approval"},
+        {"slug": "approve", "label": "Approve", "from": "pending-approval", "to": "active"},
+        {"slug": "deny", "label": "Deny", "from": "pending-approval", "to": "denied"},
+        {"slug": "revoke", "label": "Revoke", "from": "active", "to": "revoked"},
+        {"slug": "expire", "label": "Expire", "from": "active", "to": "expired"}
+    ]
+}

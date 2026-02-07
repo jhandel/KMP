@@ -66,6 +66,9 @@ use App\Services\ImpersonationService;
 use App\Services\ICalendarService;
 use App\Services\WarrantManager\DefaultWarrantManager;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\WorkflowBridge;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use Authentication\AuthenticationService;
 use Authentication\AuthenticationServiceInterface;
 use Authentication\AuthenticationServiceProviderInterface;
@@ -542,6 +545,13 @@ class Application extends BaseApplication implements
         $container->add(
             ImpersonationService::class,
         );
+
+        // Register Workflow Engine services
+        $container->addShared(WorkflowBridge::class);
+        $container->add(
+            WorkflowEngineInterface::class,
+            DefaultWorkflowEngine::class,
+        )->addArgument(WorkflowBridge::class);
     }
 
     /**

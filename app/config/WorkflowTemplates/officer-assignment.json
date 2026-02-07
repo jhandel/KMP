@@ -1,0 +1,26 @@
+{
+    "name": "Officer Assignment",
+    "slug": "officer-assignment",
+    "description": "Officer hire/release lifecycle workflow",
+    "entity_type": "Officers",
+    "plugin_name": "Officers",
+    "type": "state_machine",
+    "states": [
+        {"slug": "nominated", "label": "Nominated", "state_type": "initial", "status_category": "In Progress"},
+        {"slug": "pending-approval", "label": "Pending Approval", "state_type": "intermediate", "status_category": "Approval"},
+        {"slug": "approved", "label": "Approved", "state_type": "intermediate", "status_category": "Active"},
+        {"slug": "active", "label": "Active", "state_type": "intermediate", "status_category": "Active"},
+        {"slug": "pending-release", "label": "Pending Release", "state_type": "intermediate", "status_category": "In Progress"},
+        {"slug": "released", "label": "Released", "state_type": "final", "status_category": "Closed"},
+        {"slug": "rejected", "label": "Rejected", "state_type": "final", "status_category": "Closed"}
+    ],
+    "transitions": [
+        {"slug": "submit-nomination", "label": "Submit Nomination", "from": "nominated", "to": "pending-approval"},
+        {"slug": "approve", "label": "Approve", "from": "pending-approval", "to": "approved"},
+        {"slug": "reject", "label": "Reject", "from": "pending-approval", "to": "rejected"},
+        {"slug": "activate", "label": "Activate", "from": "approved", "to": "active"},
+        {"slug": "request-release", "label": "Request Release", "from": "active", "to": "pending-release"},
+        {"slug": "confirm-release", "label": "Confirm Release", "from": "pending-release", "to": "released"},
+        {"slug": "cancel-release", "label": "Cancel Release", "from": "pending-release", "to": "active"}
+    ]
+}

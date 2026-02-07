@@ -1,0 +1,38 @@
+{
+    "name": "Award Recommendations",
+    "slug": "award-recommendations",
+    "description": "Standard workflow for managing award recommendation lifecycle",
+    "entity_type": "AwardsRecommendations",
+    "plugin_name": "Awards",
+    "type": "state_machine",
+    "states": [
+        {"slug": "submitted", "label": "Submitted", "state_type": "initial", "status_category": "In Progress"},
+        {"slug": "in-consideration", "label": "In Consideration", "state_type": "intermediate", "status_category": "In Progress"},
+        {"slug": "awaiting-feedback", "label": "Awaiting Feedback", "state_type": "intermediate", "status_category": "In Progress"},
+        {"slug": "deferred", "label": "Deferred till Later", "state_type": "intermediate", "status_category": "In Progress"},
+        {"slug": "king-approved", "label": "King Approved", "state_type": "intermediate", "status_category": "In Progress"},
+        {"slug": "queen-approved", "label": "Queen Approved", "state_type": "intermediate", "status_category": "In Progress"},
+        {"slug": "need-to-schedule", "label": "Need to Schedule", "state_type": "intermediate", "status_category": "Scheduling",
+         "metadata": {"visible": ["planToGiveBlock"], "disabled": ["domain", "award", "member", "branch"]}},
+        {"slug": "scheduled", "label": "Scheduled", "state_type": "intermediate", "status_category": "To Give",
+         "metadata": {"required": ["planToGiveEvent"], "visible": ["planToGiveBlock"], "disabled": ["domain", "award", "member", "branch"]}},
+        {"slug": "announced-not-given", "label": "Announced Not Given", "state_type": "intermediate", "status_category": "To Give"},
+        {"slug": "given", "label": "Given", "state_type": "final", "status_category": "Closed",
+         "metadata": {"required": ["planToGiveEvent", "givenDate"], "visible": ["planToGiveBlock", "givenBlock"], "set": {"close_reason": "Given"}}},
+        {"slug": "no-action", "label": "No Action", "state_type": "final", "status_category": "Closed",
+         "metadata": {"required": ["closeReason"], "visible": ["closeReasonBlock"]}}
+    ],
+    "transitions": [
+        {"slug": "to-in-consideration", "label": "Move to In Consideration", "from": ["submitted", "awaiting-feedback", "deferred", "king-approved", "queen-approved"], "to": "in-consideration"},
+        {"slug": "to-awaiting-feedback", "label": "Move to Awaiting Feedback", "from": ["submitted", "in-consideration", "deferred", "king-approved", "queen-approved"], "to": "awaiting-feedback"},
+        {"slug": "to-deferred", "label": "Defer", "from": ["submitted", "in-consideration", "awaiting-feedback", "king-approved", "queen-approved"], "to": "deferred"},
+        {"slug": "to-king-approved", "label": "King Approved", "from": ["submitted", "in-consideration", "awaiting-feedback", "deferred", "queen-approved"], "to": "king-approved"},
+        {"slug": "to-queen-approved", "label": "Queen Approved", "from": ["submitted", "in-consideration", "awaiting-feedback", "deferred", "king-approved"], "to": "queen-approved"},
+        {"slug": "schedule", "label": "Schedule", "from": ["submitted", "in-consideration", "awaiting-feedback", "deferred", "king-approved", "queen-approved"], "to": "need-to-schedule"},
+        {"slug": "mark-scheduled", "label": "Mark Scheduled", "from": ["need-to-schedule", "announced-not-given"], "to": "scheduled"},
+        {"slug": "reschedule", "label": "Reschedule", "from": "scheduled", "to": "need-to-schedule"},
+        {"slug": "mark-given", "label": "Mark as Given", "from": ["scheduled", "announced-not-given"], "to": "given"},
+        {"slug": "announce-not-given", "label": "Announced Not Given", "from": "scheduled", "to": "announced-not-given"},
+        {"slug": "close-no-action", "label": "Close - No Action", "from": ["submitted", "in-consideration", "awaiting-feedback", "deferred", "king-approved", "queen-approved", "need-to-schedule", "scheduled", "announced-not-given"], "to": "no-action"}
+    ]
+}
