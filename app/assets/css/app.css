@@ -605,3 +605,88 @@ tr.row-expanded .toggle-icon.bi-chevron-down {
     max-height: 350px;
     overflow-y: auto;
 }
+
+/* ── Workflow Visualizer ──────────────────────────────── */
+
+.wf-diagram-wrap {
+    overflow-x: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #fafbfc 0%, #f4f5f7 100%);
+    padding: 8px;
+}
+.wf-svg {
+    display: block;
+    width: 100%;
+    min-height: 200px;
+    max-height: 620px;
+}
+.wf-svg .wf-node {
+    transition: opacity .18s ease;
+}
+.wf-svg .wf-edge path {
+    opacity: .3;
+    transition: opacity .18s ease, stroke .18s ease, stroke-width .18s ease;
+}
+/* Hover: dim non-connected, highlight connected */
+.wf-svg.wf-focus .wf-node.wf-lo { opacity: .18; }
+.wf-svg.wf-focus .wf-edge:not(.wf-hi) path { opacity: .05; }
+.wf-svg.wf-focus .wf-edge.wf-hi path {
+    opacity: .85;
+    stroke: #0d6efd;
+    stroke-width: 2.5;
+}
+
+/* Workflow index cards */
+.wf-card {
+    transition: box-shadow .2s ease, transform .15s ease;
+    border: 1px solid #e5e7eb;
+}
+.wf-card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,.08);
+    transform: translateY(-2px);
+}
+.wf-pipeline {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.wf-pipeline .wf-stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: .72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.wf-pipeline .wf-arrow {
+    color: #adb5bd;
+    font-size: .65rem;
+}
+
+/* Legend */
+.wf-legend {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 6px 12px;
+    font-size: .78rem;
+    color: #6b7280;
+    border-top: 1px solid #f0f0f0;
+}
+.wf-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.wf-legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    border: 1.5px solid;
+    flex-shrink: 0;
+}
