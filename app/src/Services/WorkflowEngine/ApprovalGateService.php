@@ -25,7 +25,7 @@ class ApprovalGateService
      * @param string|null $notes
      * @return ServiceResult Contains gate status after recording
      */
-    public function recordApproval(int $instanceId, int $gateId, int $approverId, string $decision, ?string $notes = null): ServiceResult
+    public function recordApproval(int $instanceId, int $gateId, int $approverId, string $decision, ?string $notes = null, array $context = []): ServiceResult
     {
         $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
         $gatesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalGates');
@@ -68,7 +68,7 @@ class ApprovalGateService
             $approvalsTable->save($approval);
         }
 
-        $status = $this->getGateStatus($instanceId, $gateId);
+        $status = $this->getGateStatus($instanceId, $gateId, $context);
 
         $autoTransition = null;
         if ($status['satisfied'] && $gate->on_satisfied_transition_id) {

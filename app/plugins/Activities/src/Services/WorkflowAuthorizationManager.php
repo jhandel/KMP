@@ -129,6 +129,19 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
             return new ServiceResult(false, "Failed to start workflow: " . ($wfResult->reason ?? 'unknown error'));
         }
 
+        // Auto-transition from 'requested' to 'pending-approval'
+        $instance = $wfResult->data;
+        $submitResult = $this->workflowEngine->transition(
+            $instance->id,
+            'submit-for-approval',
+            $requesterId,
+            $this->buildWorkflowContext($auth, 'submit-for-approval', $requesterId),
+        );
+        if (!$submitResult->success) {
+            $table->getConnection()->rollback();
+            return new ServiceResult(false, "Failed to submit for approval: " . ($submitResult->reason ?? 'unknown error'));
+        }
+
         // Send notification to approver
         if (
             !$this->sendApprovalRequestNotification(
@@ -225,13 +238,14 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
             ->first();
 
         if ($gate) {
-            // Record approval in the gate service
+            // Record approval in the gate service with entity context for threshold resolution
             $gateResult = $this->approvalGateService->recordApproval(
                 $instanceId,
                 $gate->id,
                 $approverId,
                 'approved',
                 null,
+                $this->buildWorkflowContext($authorization),
             );
 
             if (!$gateResult->success) {
