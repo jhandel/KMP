@@ -7,6 +7,7 @@ namespace Activities\Services;
 use Activities\Model\Entity\Authorization;
 use App\KMP\StaticHelpers;
 use Cake\I18n\DateTime;
+use Cake\Log\Log;
 use Cake\Mailer\MailerAwareTrait;
 use Cake\ORM\TableRegistry;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
@@ -299,6 +300,9 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
                     null,
                 );
 
+                // Update workflow context with post-approval entity state
+                $this->updateInstanceContext($instanceId, $authorization);
+
                 $transConnection->commit();
                 return new ServiceResult(true);
             }
@@ -392,6 +396,7 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
                 $instanceId, 'deny', $approverId,
                 $this->buildWorkflowContext($approval->authorization, 'deny', $approverId),
             );
+            $this->updateInstanceContext($instanceId, $approval->authorization);
         }
 
         // Notify requester
@@ -454,6 +459,7 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
                 $instanceId, 'revoke', $revokerId,
                 $this->buildWorkflowContext($authorization, 'revoke', $revokerId),
             );
+            $this->updateInstanceContext($instanceId, $authorization);
         }
 
         // Notify requester
@@ -534,6 +540,7 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
                 $instanceId, 'retract', $requesterId,
                 $this->buildWorkflowContext($authorization, 'retract', $requesterId),
             );
+            $this->updateInstanceContext($instanceId, $authorization);
         }
 
         // Reload authorization after status update
@@ -598,6 +605,25 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
         }
 
         return $context;
+    }
+
+    /**
+     * Update the workflow instance context with the current entity state.
+     * Called after entity status changes so the instance reflects reality.
+     */
+    private function updateInstanceContext(int $instanceId, $authorization): void
+    {
+        try {
+            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+            $instance = $instancesTable->get($instanceId);
+            $existingContext = json_decode($instance->context ?? '{}', true) ?? [];
+            $existingContext['entity'] = $this->buildWorkflowContext($authorization)['entity'];
+            $instance->context = json_encode($existingContext);
+            $instancesTable->save($instance);
+        } catch (\Exception $e) {
+            // Non-critical — don't fail the business operation
+            Log::warning('WorkflowEngine: Failed to update instance context: ' . $e->getMessage());
+        }
     }
 
     /**

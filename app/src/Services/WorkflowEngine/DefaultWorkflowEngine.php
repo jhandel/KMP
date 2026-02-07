@@ -112,6 +112,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             }
 
             $previousStateId = $instance->current_state_id;
+            $previousStateSlug = $subject->currentState;
             $workflow->apply($subject, $transitionSlug, array_merge($context, [
                 'triggered_by' => $triggeredBy,
             ]));
@@ -144,9 +145,22 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 $instance->status = 'active';
             }
 
-            // Update context
+            // Update context — merge new data and record transition event
             $existingContext = json_decode($instance->context ?? '{}', true) ?? [];
-            $instance->context = json_encode(array_merge($existingContext, $context));
+            // Update entity snapshot with latest data from caller
+            if (isset($context['entity'])) {
+                $existingContext['entity'] = $context['entity'];
+            }
+            // Append to transition history
+            $existingContext['transitions'] = $existingContext['transitions'] ?? [];
+            $existingContext['transitions'][] = [
+                'from' => $previousStateSlug,
+                'to' => $newStateSlug,
+                'by' => $triggeredBy,
+                'action' => $context['action'] ?? $transitionSlug,
+                'at' => (new \DateTime())->format('Y-m-d H:i:s'),
+            ];
+            $instance->context = json_encode($existingContext);
 
             $instancesTable->save($instance);
 
