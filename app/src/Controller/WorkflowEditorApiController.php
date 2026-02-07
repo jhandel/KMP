@@ -230,12 +230,18 @@ class WorkflowEditorApiController extends AppController
      */
     public function saveApprovalGate()
     {
-        $this->request->allowMethod(['post']);
+        $this->request->allowMethod(['post', 'put']);
         $table = $this->fetchTable('WorkflowApprovalGates');
         $data = $this->request->getData();
 
-        if (isset($data['approver_rule']) && is_array($data['approver_rule'])) {
+        if (isset($data['approver_rule']) && is_string($data['approver_rule'])) {
+            // Already JSON string, keep as-is
+        } elseif (isset($data['approver_rule']) && is_array($data['approver_rule'])) {
             $data['approver_rule'] = json_encode($data['approver_rule']);
+        }
+
+        if (isset($data['threshold_config']) && is_array($data['threshold_config'])) {
+            $data['threshold_config'] = json_encode($data['threshold_config']);
         }
 
         $gate = isset($data['id']) ? $table->get($data['id']) : $table->newEmptyEntity();
@@ -259,6 +265,31 @@ class WorkflowEditorApiController extends AppController
         $success = (bool)$table->delete($gate);
         $this->set(compact('success'));
         $this->viewBuilder()->setOption('serialize', ['success']);
+    }
+
+    /**
+     * PUT /workflow-engine/api/gate/{id}
+     */
+    public function updateApprovalGate($id)
+    {
+        $this->request->allowMethod(['put']);
+        $table = $this->fetchTable('WorkflowApprovalGates');
+        $data = $this->request->getData();
+
+        if (isset($data['threshold_config']) && is_array($data['threshold_config'])) {
+            $data['threshold_config'] = json_encode($data['threshold_config']);
+        }
+        if (isset($data['approver_rule']) && is_string($data['approver_rule'])) {
+            // keep as-is
+        } elseif (isset($data['approver_rule']) && is_array($data['approver_rule'])) {
+            $data['approver_rule'] = json_encode($data['approver_rule']);
+        }
+
+        $gate = $table->get($id);
+        $gate = $table->patchEntity($gate, $data);
+        $success = (bool)$table->save($gate);
+        $this->set(compact('success', 'gate'));
+        $this->viewBuilder()->setOption('serialize', ['success', 'gate']);
     }
 
     /**

@@ -83,5 +83,6 @@ class DefaultActionExecutor implements ActionExecutorInterface
         $this->registerActionType('send_email', new Actions\SendEmailAction());
         $this->registerActionType('set_context', new Actions\SetContextAction());
         $this->registerActionType('webhook', new Actions\WebhookAction());
+        $this->registerActionType('request_approval', new Actions\RequestApprovalAction());
     }
 }

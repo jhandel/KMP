@@ -254,6 +254,10 @@ return function (RouteBuilder $routes): void {
                     ->setMethods(['POST']);
                 $builder->connect('/approval-gates', ['controller' => 'WorkflowEditorApi', 'action' => 'saveApprovalGate'])
                     ->setMethods(['POST']);
+                $builder->connect('/gate/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'updateApprovalGate'])
+                    ->setPass(['id'])->setMethods(['PUT']);
+                $builder->connect('/gate', ['controller' => 'WorkflowEditorApi', 'action' => 'saveApprovalGate'])
+                    ->setMethods(['POST']);
                 $builder->connect('/approval-gates/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'deleteApprovalGate'])
                     ->setPass(['id'])->setMethods(['DELETE']);
                 $builder->connect('/definition/{id}/publish', ['controller' => 'WorkflowEditorApi', 'action' => 'publishDefinition'])

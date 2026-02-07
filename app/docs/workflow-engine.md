@@ -152,10 +152,13 @@ transition can proceed. Configuration:
 | Field | Description |
 |-------|-------------|
 | `approval_type` | `threshold`, `unanimous`, `any_one`, or `chain` |
-| `required_count` | Number of approvals needed |
+| `required_count` | Number of approvals needed (static fallback) |
+| `threshold_config` | JSON — dynamic threshold source (see below) |
 | `approver_rule` | JSON condition defining who can approve |
 | `timeout_hours` | Optional automatic timeout |
 | `timeout_transition_id` | Transition to fire on timeout |
+| `on_satisfied_transition_id` | Auto-fire this transition when gate is met |
+| `on_denied_transition_id` | Auto-fire this transition on denial |
 | `allow_delegation` | Whether approvers can delegate |
 
 **Approval types:**
@@ -164,6 +167,50 @@ transition can proceed. Configuration:
 - **unanimous**: All required approvers must approve; any denial blocks
 - **any_one**: Single approval from any qualified approver suffices
 - **chain**: Sequential multi-level approval (e.g., authorization chains)
+
+**Dynamic threshold configuration (`threshold_config`):**
+
+The `threshold_config` JSON column allows the required approval count to be
+resolved dynamically at runtime rather than hardcoded:
+
+```json
+// Fixed value (equivalent to required_count)
+{"type": "fixed", "value": 2}
+
+// Read from AppSettings at runtime
+{"type": "app_setting", "key": "Warrant.RosterApprovalsRequired", "default": 2}
+
+// Read from the entity being processed
+{"type": "entity_field", "field": "num_required_authorizors", "default": 1}
+```
+
+**Unique approver enforcement:**
+
+Each approver can only record one decision per gate per workflow instance.
+Duplicate attempts return a clear error. This is enforced both in application
+logic (`recordApproval()`) and via a database unique index.
+
+**Token-based approval flow:**
+
+The engine supports email-based approve/deny links via secure tokens:
+
+1. `generateApprovalToken($instanceId, $gateId, $approverId)` — creates a
+   pending approval row with a 64-character hex token
+2. Email the token URL to the approver
+3. `resolveApprovalByToken($token, $decision, $notes)` — looks up the token,
+   validates it hasn't been used, records the decision
+
+**Approval delegation:**
+
+When `allow_delegation = true`, an approver can reassign their token to another
+user via `delegateApproval($approvalId, $delegateId)`. The original approval is
+marked as abstained and a new token is generated for the delegate.
+
+**Auto-transitions:**
+
+When `on_satisfied_transition_id` is set, the engine automatically fires that
+transition once the gate's threshold is met. Similarly, `on_denied_transition_id`
+fires on denial (for `unanimous` gates, a single denial triggers this).
 
 ---
 

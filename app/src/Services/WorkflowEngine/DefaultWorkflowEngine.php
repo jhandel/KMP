@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\WorkflowEngine;
 
 use App\Model\Entity\WorkflowInstance;
+use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WorkflowState;
 use App\Model\Entity\WorkflowTransition;
 use App\Services\ServiceResult;
@@ -397,7 +398,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         // Load approval gate status for approval-type states
         if ($currentState && $currentState->state_type === WorkflowState::TYPE_APPROVAL) {
-            $context['approval_gates'] = $this->getApprovalGateStatus($currentState->id, $instance->id);
+            $context['approval_gates'] = $this->getApprovalGateStatus($currentState->id, $instance->id, $context);
         }
 
         if ($transition) {
@@ -492,9 +493,26 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     }
 
     /**
-     * Get approval gate status for a state.
+     * Resolve the required approval count for a gate, supporting dynamic sources.
      */
-    protected function getApprovalGateStatus(int $stateId, int $instanceId): array
+    protected function resolveThreshold(\App\Model\Entity\WorkflowApprovalGate $gate, array $context): int
+    {
+        $config = $gate->decoded_threshold_config;
+
+        return match ($config['type'] ?? 'fixed') {
+            'app_setting' => (int)\App\KMP\StaticHelpers::getAppSetting(
+                $config['key'] ?? '',
+                (string)($config['default'] ?? $gate->required_count),
+            ),
+            'entity_field' => (int)(($context['entity'] ?? [])[$config['field'] ?? ''] ?? ($config['default'] ?? $gate->required_count)),
+            default => (int)($config['value'] ?? $gate->required_count),
+        };
+    }
+
+    /**
+     * Get approval gate status for a state, with dynamic threshold resolution.
+     */
+    protected function getApprovalGateStatus(int $stateId, int $instanceId, array $context = []): array
     {
         $gatesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalGates');
         $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
@@ -505,27 +523,40 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         $status = [];
         foreach ($gates as $gate) {
+            $resolvedCount = $this->resolveThreshold($gate, $context);
+
+            // Count unique approvers only
             $approvals = $approvalsTable->find()
                 ->where([
                     'workflow_instance_id' => $instanceId,
                     'approval_gate_id' => $gate->id,
-                    'decision' => \App\Model\Entity\WorkflowApproval::DECISION_APPROVED,
+                    'decision' => WorkflowApproval::DECISION_APPROVED,
                 ])
+                ->select(['approver_id'])
+                ->distinct(['approver_id'])
                 ->count();
 
             $denials = $approvalsTable->find()
                 ->where([
                     'workflow_instance_id' => $instanceId,
                     'approval_gate_id' => $gate->id,
-                    'decision' => \App\Model\Entity\WorkflowApproval::DECISION_DENIED,
+                    'decision' => WorkflowApproval::DECISION_DENIED,
                 ])
+                ->select(['approver_id'])
+                ->distinct(['approver_id'])
                 ->count();
 
             $isMet = match ($gate->approval_type) {
-                'threshold' => $approvals >= $gate->required_count,
-                'unanimous' => $approvals >= $gate->required_count && $denials === 0,
+                'threshold' => $approvals >= $resolvedCount,
+                'unanimous' => $approvals >= $resolvedCount && $denials === 0,
                 'any_one' => $approvals >= 1,
-                'chain' => $approvals >= $gate->required_count,
+                'chain' => $approvals >= $resolvedCount,
+                default => false,
+            };
+
+            $isDenied = match ($gate->approval_type) {
+                'unanimous' => $denials > 0,
+                'threshold' => false, // TODO: check reachability if we know total approver pool
                 default => false,
             };
 
@@ -533,13 +564,236 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 'gate' => $gate,
                 'approved_count' => $approvals,
                 'denied_count' => $denials,
-                'required_count' => $gate->required_count,
+                'required_count' => $resolvedCount,
                 'is_met' => $isMet,
-                'is_denied' => $denials > 0 && $gate->approval_type === 'unanimous',
+                'is_denied' => $isDenied,
             ];
         }
 
         return $status;
+    }
+
+    /**
+     * Record an approval decision, enforcing unique approvers.
+     * Auto-fires satisfaction/denial transitions when configured.
+     */
+    public function recordApproval(int $instanceId, int $gateId, int $approverId, string $decision, ?string $notes = null): ServiceResult
+    {
+        if (!in_array($decision, WorkflowApproval::VALID_DECISIONS, true)) {
+            return new ServiceResult(false, "Invalid decision: {$decision}");
+        }
+
+        $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+        $gatesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalGates');
+        $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+
+        $instance = $instancesTable->get($instanceId);
+        $gate = $gatesTable->get($gateId);
+
+        // Check for existing approval from this user on this gate+instance
+        $existing = $approvalsTable->find()
+            ->where([
+                'workflow_instance_id' => $instanceId,
+                'approval_gate_id' => $gateId,
+                'approver_id' => $approverId,
+                'decision IS NOT' => null,
+            ])
+            ->first();
+
+        if ($existing) {
+            return new ServiceResult(false, 'This approver has already recorded a decision for this gate.');
+        }
+
+        // Check for a pending token-based approval row to update
+        $pending = $approvalsTable->find()
+            ->where([
+                'workflow_instance_id' => $instanceId,
+                'approval_gate_id' => $gateId,
+                'approver_id' => $approverId,
+                'decision IS' => null,
+            ])
+            ->first();
+
+        if ($pending) {
+            $pending->decision = $decision;
+            $pending->notes = $notes;
+            $pending->responded_at = new \DateTime();
+            $approvalsTable->save($pending);
+        } else {
+            $approval = $approvalsTable->newEntity([
+                'workflow_instance_id' => $instanceId,
+                'approval_gate_id' => $gateId,
+                'approver_id' => $approverId,
+                'decision' => $decision,
+                'notes' => $notes,
+                'requested_at' => new \DateTime(),
+                'responded_at' => new \DateTime(),
+            ]);
+            if (!$approvalsTable->save($approval)) {
+                return new ServiceResult(false, 'Failed to save approval record.');
+            }
+        }
+
+        // Re-evaluate gate status
+        $context = $this->buildContext($instance, null, null, $approverId);
+        $gateStatus = $this->getApprovalGateStatus($gate->workflow_state_id, $instanceId, $context);
+        $thisGateStatus = $gateStatus[$gateId] ?? null;
+
+        // Auto-transition on satisfaction
+        if ($thisGateStatus && $thisGateStatus['is_met'] && $gate->on_satisfied_transition_id) {
+            $transitionsTable = TableRegistry::getTableLocator()->get('WorkflowTransitions');
+            try {
+                $satisfiedTransition = $transitionsTable->get($gate->on_satisfied_transition_id);
+                $this->transition($instanceId, $satisfiedTransition->slug, null, ['trigger' => 'approval_gate_satisfied']);
+            } catch (\Exception $e) {
+                Log::warning("Auto-transition on satisfaction failed for gate {$gateId}: " . $e->getMessage());
+            }
+        }
+
+        // Auto-transition on denial
+        if ($thisGateStatus && $thisGateStatus['is_denied'] && $gate->on_denied_transition_id) {
+            $transitionsTable = TableRegistry::getTableLocator()->get('WorkflowTransitions');
+            try {
+                $deniedTransition = $transitionsTable->get($gate->on_denied_transition_id);
+                $this->transition($instanceId, $deniedTransition->slug, null, ['trigger' => 'approval_gate_denied']);
+            } catch (\Exception $e) {
+                Log::warning("Auto-transition on denial failed for gate {$gateId}: " . $e->getMessage());
+            }
+        }
+
+        return new ServiceResult(true, null, ['gate_status' => $thisGateStatus]);
+    }
+
+    /**
+     * Generate a secure approval token for a specific approver.
+     */
+    public function generateApprovalToken(int $instanceId, int $gateId, int $approverId, ?int $approvalOrder = null): ServiceResult
+    {
+        $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+        // Check for existing pending token
+        $existing = $approvalsTable->find()
+            ->where([
+                'workflow_instance_id' => $instanceId,
+                'approval_gate_id' => $gateId,
+                'approver_id' => $approverId,
+            ])
+            ->first();
+
+        if ($existing && $existing->decision !== null) {
+            return new ServiceResult(false, 'Approver already has a recorded decision.');
+        }
+
+        if ($existing && $existing->token) {
+            return new ServiceResult(true, null, ['token' => $existing->token]);
+        }
+
+        $token = bin2hex(random_bytes(32));
+
+        $approval = $approvalsTable->newEntity([
+            'workflow_instance_id' => $instanceId,
+            'approval_gate_id' => $gateId,
+            'approver_id' => $approverId,
+            'token' => $token,
+            'requested_at' => new \DateTime(),
+            'approval_order' => $approvalOrder,
+        ]);
+
+        if (!$approvalsTable->save($approval)) {
+            return new ServiceResult(false, 'Failed to generate approval token.');
+        }
+
+        return new ServiceResult(true, null, ['token' => $token, 'approval_id' => $approval->id]);
+    }
+
+    /**
+     * Resolve an approval by its secure token.
+     */
+    public function resolveApprovalByToken(string $token, string $decision, ?string $notes = null): ServiceResult
+    {
+        if (!in_array($decision, WorkflowApproval::VALID_DECISIONS, true)) {
+            return new ServiceResult(false, "Invalid decision: {$decision}");
+        }
+
+        $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+        $approval = $approvalsTable->find()
+            ->where(['token' => $token])
+            ->first();
+
+        if (!$approval) {
+            return new ServiceResult(false, 'Invalid approval token.');
+        }
+
+        if ($approval->responded_at !== null) {
+            return new ServiceResult(false, 'This approval has already been responded to.');
+        }
+
+        // Use recordApproval for the actual logic (uniqueness, auto-transition)
+        return $this->recordApproval(
+            $approval->workflow_instance_id,
+            $approval->approval_gate_id,
+            $approval->approver_id,
+            $decision,
+            $notes,
+        );
+    }
+
+    /**
+     * Delegate an approval to another user.
+     */
+    public function delegateApproval(int $approvalId, int $delegateId): ServiceResult
+    {
+        $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+        $gatesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalGates');
+
+        $original = $approvalsTable->get($approvalId);
+
+        if ($original->responded_at !== null) {
+            return new ServiceResult(false, 'Cannot delegate an already-responded approval.');
+        }
+
+        $gate = $gatesTable->get($original->approval_gate_id);
+        if (!$gate->allow_delegation) {
+            return new ServiceResult(false, 'This approval gate does not allow delegation.');
+        }
+
+        // Mark original as abstained (delegated)
+        $original->decision = WorkflowApproval::DECISION_ABSTAINED;
+        $original->notes = "Delegated to member #{$delegateId}";
+        $original->responded_at = new \DateTime();
+        $approvalsTable->save($original);
+
+        // Generate a new token for the delegate
+        $result = $this->generateApprovalToken(
+            $original->workflow_instance_id,
+            $original->approval_gate_id,
+            $delegateId,
+            $original->approval_order,
+        );
+
+        if (!$result->success) {
+            return $result;
+        }
+
+        // Link the delegation
+        $delegateApproval = $approvalsTable->find()
+            ->where([
+                'workflow_instance_id' => $original->workflow_instance_id,
+                'approval_gate_id' => $original->approval_gate_id,
+                'approver_id' => $delegateId,
+            ])
+            ->first();
+
+        if ($delegateApproval) {
+            $delegateApproval->delegated_from_id = $approvalId;
+            $approvalsTable->save($delegateApproval);
+        }
+
+        return new ServiceResult(true, null, [
+            'token' => $result->data['token'],
+            'delegated_from' => $approvalId,
+        ]);
     }
 
     /**

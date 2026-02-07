@@ -90,4 +90,56 @@ interface WorkflowEngineInterface
      * @return ServiceResult Contains count of transitions processed
      */
     public function processScheduledTransitions(): ServiceResult;
+
+    /**
+     * Record an approval decision for an approval gate on a workflow instance.
+     *
+     * Enforces unique approvers per gate. Auto-fires transitions when gate
+     * is satisfied or denied (if configured).
+     *
+     * @param int $instanceId Workflow instance ID
+     * @param int $gateId Approval gate ID
+     * @param int $approverId Member ID of approver
+     * @param string $decision One of 'approved', 'denied', 'abstained'
+     * @param string|null $notes Optional notes from approver
+     * @return ServiceResult Contains gate status after recording
+     */
+    public function recordApproval(int $instanceId, int $gateId, int $approverId, string $decision, ?string $notes = null): ServiceResult;
+
+    /**
+     * Generate a secure approval token for a specific approver on a gate.
+     *
+     * Creates a workflow_approvals row with a unique token and requested_at
+     * timestamp. The approver can later resolve this via resolveApprovalByToken().
+     *
+     * @param int $instanceId Workflow instance ID
+     * @param int $gateId Approval gate ID
+     * @param int $approverId Member ID of approver
+     * @param int|null $approvalOrder Order position for chain approvals
+     * @return ServiceResult Contains the token string on success
+     */
+    public function generateApprovalToken(int $instanceId, int $gateId, int $approverId, ?int $approvalOrder = null): ServiceResult;
+
+    /**
+     * Resolve an approval by its secure token.
+     *
+     * Validates the token exists, hasn't been used, and records the decision.
+     *
+     * @param string $token The approval token
+     * @param string $decision One of 'approved', 'denied', 'abstained'
+     * @param string|null $notes Optional notes
+     * @return ServiceResult Contains gate status after recording
+     */
+    public function resolveApprovalByToken(string $token, string $decision, ?string $notes = null): ServiceResult;
+
+    /**
+     * Delegate an approval to another user.
+     *
+     * Only works when the gate has allow_delegation = true.
+     *
+     * @param int $approvalId The original approval row ID
+     * @param int $delegateId Member ID to delegate to
+     * @return ServiceResult Contains the new delegated approval token
+     */
+    public function delegateApproval(int $approvalId, int $delegateId): ServiceResult;
 }

@@ -15,9 +15,13 @@ use Cake\ORM\Entity;
  * @property int $workflow_state_id
  * @property string $approval_type
  * @property int $required_count
+ * @property string|null $threshold_config
  * @property string|null $approver_rule
  * @property int|null $timeout_transition_id
  * @property int|null $timeout_hours
+ * @property int|null $on_satisfied_transition_id
+ * @property int|null $on_denied_transition_id
+ * @property bool $allow_delegation
  * @property \Cake\I18n\DateTime|null $created
  * @property \Cake\I18n\DateTime|null $modified
  *
@@ -57,5 +61,20 @@ class WorkflowApprovalGate extends Entity
             return json_decode($rule, true) ?? [];
         }
         return (array)$rule;
+    }
+
+    /**
+     * Decode threshold_config JSON to array.
+     */
+    protected function _getDecodedThresholdConfig(): array
+    {
+        $config = $this->threshold_config;
+        if (empty($config)) {
+            return ['type' => 'fixed', 'value' => $this->required_count];
+        }
+        if (is_string($config)) {
+            return json_decode($config, true) ?? ['type' => 'fixed', 'value' => $this->required_count];
+        }
+        return (array)$config;
     }
 }

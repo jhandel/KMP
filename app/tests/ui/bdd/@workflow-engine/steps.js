@@ -51,6 +51,15 @@ When('I click the edit button for the first workflow', async ({ page }) => {
     await page.waitForTimeout(1000);
 });
 
+When('I open the editor for the {string} workflow', async ({ page }, name) => {
+    // Navigate directly to the editor by finding the workflow ID from the table
+    // or use direct URL navigation for known workflows
+    const row = page.locator('.workflowDefinitions table tbody tr').filter({ hasText: name }).first();
+    const editLink = row.getByRole('link', { name: 'Edit' });
+    await editLink.click({ timeout: 10000 });
+    await page.waitForTimeout(2000);
+});
+
 // --- Index Page Assertions ---
 
 Then('I should see the workflow definitions list', async ({ page }) => {
@@ -194,4 +203,34 @@ Then('I should see the flash message containing {string}', async ({ page }, text
     await expect(alert.first()).toBeVisible();
     const alertText = await alert.first().textContent();
     expect(alertText.toLowerCase()).toContain(text.toLowerCase());
+});
+
+// --- Approval Gate Editor Steps ---
+
+When('I click on an approval state node', async ({ page }) => {
+    // Wait for the editor to load nodes
+    await page.waitForSelector('.workflow-node', { timeout: 10000 });
+    // Approval states have class 'workflow-node-approval'
+    const approvalNode = page.locator('.workflow-node-approval').first();
+    if (await approvalNode.count() > 0) {
+        await approvalNode.click();
+        await page.waitForTimeout(500);
+    } else {
+        // Fallback: click nodes looking for one that triggers the approval panel
+        const nodes = page.locator('.workflow-node');
+        const count = await nodes.count();
+        for (let i = 0; i < count; i++) {
+            await nodes.nth(i).click();
+            await page.waitForTimeout(500);
+            const gateSection = page.locator('text=Approval Gate');
+            if (await gateSection.count() > 0) break;
+        }
+    }
+});
+
+Then('I should see the approval gate configuration section', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Approval Gate' })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-gate-field="approval_type"]')).toBeVisible();
+    await expect(page.locator('[data-gate-field="threshold_type"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save Approval Gate' })).toBeVisible();
 });

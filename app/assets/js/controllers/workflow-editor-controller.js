@@ -28,6 +28,22 @@ class WorkflowEditorController extends Controller {
             const response = await fetch(`${this.apiUrlValue}/definition/${this.definitionIdValue}.json`);
             const data = await response.json();
             this.definition = data.definition;
+            // Attach first approval gate to each state for the property panel
+            if (this.definition?.workflow_states) {
+                this.definition.workflow_states.forEach(state => {
+                    if (state.workflow_approval_gates?.length) {
+                        state._approval_gate = state.workflow_approval_gates[0];
+                        // Parse JSON strings in the gate
+                        const g = state._approval_gate;
+                        if (typeof g.threshold_config === 'string') {
+                            try { g.threshold_config = JSON.parse(g.threshold_config); } catch { g.threshold_config = {}; }
+                        }
+                        if (typeof g.approver_rule === 'string') {
+                            try { g.approver_rule = JSON.parse(g.approver_rule); } catch { g.approver_rule = {}; }
+                        }
+                    }
+                });
+            }
             this.render();
         } catch (error) {
             console.error('Failed to load workflow definition:', error);
@@ -421,12 +437,162 @@ class WorkflowEditorController extends Controller {
                         <label class="form-label small">On Exit Actions (JSON)</label>
                         <textarea class="form-control form-control-sm" rows="3" data-field="on_exit_actions">${safeJsonArr(s.on_exit_actions)}</textarea>
                     </div>
+                    ${s.state_type === 'approval' ? this.renderApprovalGateConfig(s) : ''}
                     <button class="btn btn-primary btn-sm w-100" data-action="click->workflow-editor#saveSelectedState">
                         Save State
                     </button>
                 </div>
             </div>
         `;
+    }
+
+    renderApprovalGateConfig(state) {
+        const gate = state._approval_gate || {};
+        const tc = gate.threshold_config || {};
+        const tcType = tc.type || 'fixed';
+        const transitions = this.definition?.transitions || [];
+        const fromThis = transitions.filter(t => String(t.from_state_id) === String(state.id));
+
+        const transitionOptions = (selectedId) => {
+            let opts = `<option value="">(None)</option>`;
+            fromThis.forEach(t => {
+                const sel = String(t.id) === String(selectedId) ? 'selected' : '';
+                opts += `<option value="${t.id}" ${sel}>${this.escHtml(t.name || t.slug)}</option>`;
+            });
+            return opts;
+        };
+
+        return `
+            <hr class="my-3">
+            <h6 class="text-warning"><i class="bi bi-shield-check"></i> Approval Gate</h6>
+            <div class="mb-2">
+                <label class="form-label small">Approval Type</label>
+                <select class="form-select form-select-sm" data-gate-field="approval_type">
+                    <option value="threshold" ${gate.approval_type === 'threshold' ? 'selected' : ''}>Threshold (N approvers)</option>
+                    <option value="unanimous" ${gate.approval_type === 'unanimous' ? 'selected' : ''}>Unanimous</option>
+                    <option value="any_one" ${gate.approval_type === 'any_one' ? 'selected' : ''}>Any One</option>
+                    <option value="chain" ${gate.approval_type === 'chain' ? 'selected' : ''}>Sequential Chain</option>
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">Threshold Source</label>
+                <select class="form-select form-select-sm" data-gate-field="threshold_type" data-action="change->workflow-editor#onThresholdTypeChange">
+                    <option value="fixed" ${tcType === 'fixed' ? 'selected' : ''}>Fixed Value</option>
+                    <option value="app_setting" ${tcType === 'app_setting' ? 'selected' : ''}>App Setting</option>
+                    <option value="entity_field" ${tcType === 'entity_field' ? 'selected' : ''}>Entity Field</option>
+                </select>
+            </div>
+            <div class="mb-2 threshold-fixed" style="display:${tcType === 'fixed' ? 'block' : 'none'}">
+                <label class="form-label small">Required Count</label>
+                <input type="number" class="form-control form-control-sm" data-gate-field="threshold_value" value="${tc.value || gate.required_count || 1}" min="1">
+            </div>
+            <div class="mb-2 threshold-app-setting" style="display:${tcType === 'app_setting' ? 'block' : 'none'}">
+                <label class="form-label small">App Setting Key</label>
+                <input type="text" class="form-control form-control-sm" data-gate-field="threshold_key" value="${this.escAttr(tc.key || '')}" placeholder="e.g. Warrant.RosterApprovalsRequired">
+                <label class="form-label small mt-1">Default</label>
+                <input type="number" class="form-control form-control-sm" data-gate-field="threshold_default" value="${tc.default || 1}" min="1">
+            </div>
+            <div class="mb-2 threshold-entity-field" style="display:${tcType === 'entity_field' ? 'block' : 'none'}">
+                <label class="form-label small">Entity Field</label>
+                <input type="text" class="form-control form-control-sm" data-gate-field="threshold_field" value="${this.escAttr(tc.field || '')}" placeholder="e.g. num_required_authorizors">
+                <label class="form-label small mt-1">Default</label>
+                <input type="number" class="form-control form-control-sm" data-gate-field="threshold_entity_default" value="${tc.default || 1}" min="1">
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">Approver Rule (JSON)</label>
+                <textarea class="form-control form-control-sm" rows="2" data-gate-field="approver_rule">${JSON.stringify(gate.approver_rule || {}, null, 2)}</textarea>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">On Satisfied → Transition</label>
+                <select class="form-select form-select-sm" data-gate-field="on_satisfied_transition_id">
+                    ${transitionOptions(gate.on_satisfied_transition_id)}
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">On Denied → Transition</label>
+                <select class="form-select form-select-sm" data-gate-field="on_denied_transition_id">
+                    ${transitionOptions(gate.on_denied_transition_id)}
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">Timeout (hours)</label>
+                <input type="number" class="form-control form-control-sm" data-gate-field="timeout_hours" value="${gate.timeout_hours || ''}" placeholder="Optional">
+            </div>
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" data-gate-field="allow_delegation" ${gate.allow_delegation ? 'checked' : ''}>
+                <label class="form-check-label small">Allow Delegation</label>
+            </div>
+            <button class="btn btn-warning btn-sm w-100 mb-2" data-action="click->workflow-editor#saveApprovalGate">
+                Save Approval Gate
+            </button>
+        `;
+    }
+
+    onThresholdTypeChange(event) {
+        const panel = this.propertyPanelTarget;
+        const val = event.target.value;
+        panel.querySelector('.threshold-fixed').style.display = val === 'fixed' ? 'block' : 'none';
+        panel.querySelector('.threshold-app-setting').style.display = val === 'app_setting' ? 'block' : 'none';
+        panel.querySelector('.threshold-entity-field').style.display = val === 'entity_field' ? 'block' : 'none';
+    }
+
+    async saveApprovalGate() {
+        if (!this.selectedElement || this.selectedElement.type !== 'state') return;
+        const state = this.selectedElement;
+        const panel = this.propertyPanelTarget;
+
+        const getVal = (field) => {
+            const el = panel.querySelector(`[data-gate-field="${field}"]`);
+            return el ? (el.type === 'checkbox' ? el.checked : el.value) : null;
+        };
+
+        const thresholdType = getVal('threshold_type');
+        let thresholdConfig = {};
+        if (thresholdType === 'fixed') {
+            thresholdConfig = { type: 'fixed', value: parseInt(getVal('threshold_value')) || 1 };
+        } else if (thresholdType === 'app_setting') {
+            thresholdConfig = { type: 'app_setting', key: getVal('threshold_key'), default: parseInt(getVal('threshold_default')) || 1 };
+        } else if (thresholdType === 'entity_field') {
+            thresholdConfig = { type: 'entity_field', field: getVal('threshold_field'), default: parseInt(getVal('threshold_entity_default')) || 1 };
+        }
+
+        let approverRule = {};
+        try { approverRule = JSON.parse(getVal('approver_rule')); } catch {}
+
+        const gateData = {
+            workflow_state_id: state.id,
+            approval_type: getVal('approval_type') || 'threshold',
+            required_count: thresholdConfig.value || thresholdConfig.default || 1,
+            threshold_config: JSON.stringify(thresholdConfig),
+            approver_rule: JSON.stringify(approverRule),
+            on_satisfied_transition_id: getVal('on_satisfied_transition_id') || null,
+            on_denied_transition_id: getVal('on_denied_transition_id') || null,
+            timeout_hours: getVal('timeout_hours') ? parseInt(getVal('timeout_hours')) : null,
+            allow_delegation: getVal('allow_delegation') ? 1 : 0,
+        };
+
+        const existingGate = state._approval_gate;
+        const url = existingGate?.id
+            ? `${this.apiUrlValue}/gate/${existingGate.id}.json`
+            : `${this.apiUrlValue}/gate.json`;
+        const method = existingGate?.id ? 'PUT' : 'POST';
+
+        try {
+            const resp = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.getCsrfToken() },
+                body: JSON.stringify(gateData),
+            });
+            const data = await resp.json();
+            if (data.success) {
+                state._approval_gate = data.gate || { ...gateData, id: data.id };
+                this.renderPropertyPanel();
+            } else {
+                alert('Failed to save gate: ' + (data.message || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Error saving gate: ' + err.message);
+        }
     }
 
     renderTransitionProperties(panel) {

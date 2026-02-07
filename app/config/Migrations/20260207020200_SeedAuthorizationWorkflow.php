@@ -202,12 +202,13 @@ class SeedAuthorizationWorkflow extends BaseMigration
         // Chain-type approval: sequential multi-level, count varies per activity
         $this->execute(
             "INSERT INTO workflow_approval_gates
-                (workflow_state_id, approval_type, required_count, approver_rule, timeout_hours, timeout_transition_id, allow_delegation, created, modified)
+                (workflow_state_id, approval_type, required_count, approver_rule, threshold_config, timeout_hours, timeout_transition_id, allow_delegation, created, modified)
              VALUES (
                 {$sid['pending']},
                 'chain',
                 1,
                 '" . addslashes('{"type":"activity_config","new_field":"num_required_authorizors","renewal_field":"num_required_renewers","permission":"canApproveActivityAuthorization"}') . "',
+                '" . addslashes('{"type":"entity_field","field":"num_required_authorizors","default":1}') . "',
                 NULL,
                 NULL,
                 1,

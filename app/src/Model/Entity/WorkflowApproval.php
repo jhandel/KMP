@@ -16,7 +16,9 @@ use Cake\ORM\Entity;
  * @property int|null $approver_id
  * @property string|null $token
  * @property string|null $decision
- * @property string|null $comment
+ * @property string|null $notes
+ * @property int|null $approval_order
+ * @property int|null $delegated_from_id
  * @property \Cake\I18n\DateTime|null $requested_at
  * @property \Cake\I18n\DateTime|null $responded_at
  * @property \Cake\I18n\DateTime|null $created

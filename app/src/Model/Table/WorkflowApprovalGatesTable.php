@@ -38,6 +38,18 @@ class WorkflowApprovalGatesTable extends BaseTable
             'joinType' => 'LEFT',
         ]);
 
+        $this->belongsTo('SatisfiedTransition', [
+            'className' => 'WorkflowTransitions',
+            'foreignKey' => 'on_satisfied_transition_id',
+            'joinType' => 'LEFT',
+        ]);
+
+        $this->belongsTo('DeniedTransition', [
+            'className' => 'WorkflowTransitions',
+            'foreignKey' => 'on_denied_transition_id',
+            'joinType' => 'LEFT',
+        ]);
+
         $this->hasMany('WorkflowApprovals', [
             'foreignKey' => 'approval_gate_id',
             'dependent' => true,

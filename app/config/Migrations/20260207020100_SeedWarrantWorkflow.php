@@ -66,12 +66,13 @@ class SeedWarrantWorkflow extends AbstractMigration
 
         // Approval gate on Pending state (threshold-based, reads count from app setting)
         $this->execute(
-            "INSERT INTO workflow_approval_gates (workflow_state_id, approval_type, required_count, approver_rule, timeout_hours, allow_delegation, created, modified)
+            "INSERT INTO workflow_approval_gates (workflow_state_id, approval_type, required_count, approver_rule, threshold_config, timeout_hours, allow_delegation, created, modified)
              VALUES (
                 @wr_pending_id,
                 'threshold',
                 2,
                 '{\"type\":\"setting\",\"key\":\"Warrant.RosterApprovalsRequired\",\"default\":2,\"permission\":\"warrant.rosters.approve\"}',
+                '{\"type\":\"app_setting\",\"key\":\"Warrant.RosterApprovalsRequired\",\"default\":2}',
                 NULL,
                 0,
                 NOW(),

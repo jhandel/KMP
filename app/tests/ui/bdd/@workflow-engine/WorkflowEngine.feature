@@ -60,6 +60,12 @@ Feature: Workflow Engine Administration
         And I click the edit button for the first workflow
         Then I should see the "Add State" button in the toolbar
 
+    Scenario: Approval gate config appears for approval states
+        When I navigate to the workflow engine page
+        And I open the editor for the "Warrant Roster Approval" workflow
+        And I click on an approval state node
+        Then I should see the approval gate configuration section
+
     Scenario: Delete a workflow definition
         When I navigate to the create workflow page
         And I fill in the workflow form for deletion test
