@@ -158,9 +158,28 @@ $catStyles = [
 
     <div data-controller="workflow-visualizer"
          data-workflow-visualizer-states-value='<?= h(json_encode($statesData)) ?>'
-         data-workflow-visualizer-transitions-value='<?= h(json_encode($transitionsData)) ?>'>
+         data-workflow-visualizer-transitions-value='<?= h(json_encode($transitionsData)) ?>'
+         data-workflow-visualizer-mode-value="flow">
 
-        <div class="wf-diagram-wrap" data-workflow-visualizer-target="canvas"></div>
+        <!-- Mode toggle -->
+        <div class="d-flex justify-content-end mb-2">
+            <div class="btn-group btn-group-sm wf-mode-toggle" role="group" aria-label="<?= __('View mode') ?>">
+                <button type="button" class="btn btn-outline-secondary active"
+                        data-action="click->workflow-visualizer#setFlowMode"
+                        data-workflow-visualizer-target="modeBtn"
+                        data-mode="flow">
+                    <i class="bi bi-layout-text-window-reverse"></i> <?= __('Flow') ?>
+                </button>
+                <button type="button" class="btn btn-outline-secondary"
+                        data-action="click->workflow-visualizer#setDiagramMode"
+                        data-workflow-visualizer-target="modeBtn"
+                        data-mode="diagram">
+                    <i class="bi bi-diagram-3"></i> <?= __('Diagram') ?>
+                </button>
+            </div>
+        </div>
+
+        <div data-workflow-visualizer-target="canvas"></div>
 
         <?php if (!empty($legendCategories)) : ?>
         <div class="wf-legend mt-2">

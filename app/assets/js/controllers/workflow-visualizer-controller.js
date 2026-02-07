@@ -3,36 +3,23 @@ import { Controller } from "@hotwired/stimulus";
 /**
  * WorkflowVisualizer Stimulus Controller
  *
- * Renders an interactive SVG state-machine diagram from workflow states and
- * transitions. States are grouped into swim-lane columns by status_category
- * and colored accordingly. Hover on a node to highlight its connections.
+ * Renders workflow definitions in two modes:
+ *   - "flow" (default): Power Automate / Azure Logic Apps–style vertical card flow
+ *   - "diagram": Horizontal SVG swim-lane state-machine diagram
  *
- * Values:
- *   states      - Array of {id, name, slug, label, state_type, status_category}
- *   transitions - Array of {id, name, label, from_state_id, to_state_id, is_automatic}
- *
- * Targets:
- *   canvas - Container element where the SVG is rendered
+ * Values:  states, transitions, mode ("flow"|"diagram")
+ * Targets: canvas, modeBtn
  */
 class WorkflowVisualizerController extends Controller {
     static values = {
         states: Array,
         transitions: Array,
+        mode: { type: String, default: "flow" },
     };
+    static targets = ["canvas", "modeBtn"];
 
-    static targets = ["canvas"];
+    /* ── category ordering & color palette ──────────────── */
 
-    // Layout constants
-    NODE_W = 156;
-    NODE_H = 48;
-    NODE_R = 10;
-    COL_GAP = 110;
-    ROW_GAP = 64;
-    PAD_X = 40;
-    PAD_TOP = 52;
-    PAD_BOT = 32;
-
-    // Category display order (left → right)
     CAT_ORDER = [
         "In Progress", "Pending", "Draft",
         "Review", "In Review", "Approval",
@@ -41,290 +28,411 @@ class WorkflowVisualizerController extends Controller {
         "Completed", "Closed",
         "Rejected", "Cancelled",
     ];
-
-    // Category → color scheme (Bootstrap-inspired)
-    CAT_STYLE = {
-        "In Progress": { bg: "#fff3cd", bd: "#ffc107", tx: "#664d03", lane: "rgba(255,193,7,.07)" },
-        "Pending":     { bg: "#fff3cd", bd: "#ffc107", tx: "#664d03", lane: "rgba(255,193,7,.07)" },
-        "Draft":       { bg: "#fff3cd", bd: "#e5a100", tx: "#664d03", lane: "rgba(229,161,0,.07)" },
-        "Review":      { bg: "#cfe2ff", bd: "#0d6efd", tx: "#052c65", lane: "rgba(13,110,253,.05)" },
-        "In Review":   { bg: "#cfe2ff", bd: "#0d6efd", tx: "#052c65", lane: "rgba(13,110,253,.05)" },
-        "Approval":    { bg: "#d0e4ff", bd: "#3b82f6", tx: "#1e3a5f", lane: "rgba(59,130,246,.05)" },
-        "Scheduling":  { bg: "#e0cffc", bd: "#6f42c1", tx: "#3d1f7c", lane: "rgba(111,66,193,.05)" },
-        "To Give":     { bg: "#cff4fc", bd: "#0dcaf0", tx: "#055160", lane: "rgba(13,202,240,.05)" },
-        "Active":      { bg: "#d1e7dd", bd: "#198754", tx: "#0a3622", lane: "rgba(25,135,84,.05)" },
-        "Completed":   { bg: "#d1e7dd", bd: "#20c997", tx: "#0a3622", lane: "rgba(32,201,151,.05)" },
-        "Closed":      { bg: "#e2e3e5", bd: "#6c757d", tx: "#41464b", lane: "rgba(108,117,125,.06)" },
-        "Rejected":    { bg: "#f8d7da", bd: "#dc3545", tx: "#58151c", lane: "rgba(220,53,69,.05)" },
-        "Cancelled":   { bg: "#e2e3e5", bd: "#adb5bd", tx: "#495057", lane: "rgba(173,181,189,.06)" },
+    STYLES = {
+        "In Progress": { accent: "#f59e0b", bg: "#fffbeb", tx: "#92400e", icon: "bi-hourglass-split" },
+        "Pending":     { accent: "#f59e0b", bg: "#fffbeb", tx: "#92400e", icon: "bi-hourglass" },
+        "Draft":       { accent: "#d97706", bg: "#fffbeb", tx: "#92400e", icon: "bi-pencil-square" },
+        "Review":      { accent: "#3b82f6", bg: "#eff6ff", tx: "#1e3a8a", icon: "bi-search" },
+        "In Review":   { accent: "#3b82f6", bg: "#eff6ff", tx: "#1e3a8a", icon: "bi-search" },
+        "Approval":    { accent: "#6366f1", bg: "#eef2ff", tx: "#3730a3", icon: "bi-shield-check" },
+        "Scheduling":  { accent: "#8b5cf6", bg: "#f5f3ff", tx: "#5b21b6", icon: "bi-calendar-event" },
+        "To Give":     { accent: "#06b6d4", bg: "#ecfeff", tx: "#155e75", icon: "bi-gift" },
+        "Active":      { accent: "#10b981", bg: "#ecfdf5", tx: "#065f46", icon: "bi-lightning-charge" },
+        "Completed":   { accent: "#14b8a6", bg: "#f0fdfa", tx: "#115e59", icon: "bi-check-circle" },
+        "Closed":      { accent: "#6b7280", bg: "#f9fafb", tx: "#374151", icon: "bi-lock" },
+        "Rejected":    { accent: "#ef4444", bg: "#fef2f2", tx: "#991b1b", icon: "bi-x-circle" },
+        "Cancelled":   { accent: "#9ca3af", bg: "#f9fafb", tx: "#4b5563", icon: "bi-slash-circle" },
     };
-    DEFAULT_STYLE = { bg: "#f8f9fa", bd: "#adb5bd", tx: "#495057", lane: "rgba(173,181,189,.06)" };
+    DEF = { accent: "#9ca3af", bg: "#f9fafb", tx: "#4b5563", icon: "bi-circle" };
 
-    /* ── lifecycle ─────────────────────────────────────── */
+    /* ── lifecycle ──────────────────────────────────────── */
 
     connect() { this.render(); }
     statesValueChanged() { this.render(); }
     transitionsValueChanged() { this.render(); }
+    modeValueChanged() {
+        this.render();
+        this._syncModeBtns();
+    }
 
-    /* ── public render ─────────────────────────────────── */
+    /* ── public actions (mode toggle) ──────────────────── */
+
+    setFlowMode() { this.modeValue = "flow"; }
+    setDiagramMode() { this.modeValue = "diagram"; }
+
+    /* ── main render dispatcher ─────────────────────────── */
 
     render() {
-        const states = this.statesValue || [];
-        const trans = this.transitionsValue || [];
-
-        if (!states.length) {
+        const S = this.statesValue || [];
+        const T = this.transitionsValue || [];
+        if (!S.length) {
             this.canvasTarget.innerHTML =
                 '<div class="text-center text-muted py-5">' +
                 '<i class="bi bi-diagram-3 fs-1 d-block mb-2"></i>' +
-                'No states defined yet. Add states to visualize the workflow.</div>';
+                'No states defined yet.</div>';
             return;
         }
-
-        const layout = this._layout(states);
-        this.canvasTarget.innerHTML = this._svg(layout, states, trans);
-        this._interactions();
+        this._prep(S, T);
+        this.modeValue === "diagram" ? this._svgRender(S, T) : this._flowRender(S, T);
     }
 
-    /* ── layout ────────────────────────────────────────── */
+    /* ── shared data prep ──────────────────────────────── */
 
-    _style(cat) { return this.CAT_STYLE[cat] || this.DEFAULT_STYLE; }
+    _s(cat) { return this.STYLES[cat] || this.DEF; }
 
-    _layout(states) {
-        // Group by status_category
-        const groups = new Map();
-        states.forEach(s => {
-            const cat = s.status_category || "Other";
-            if (!groups.has(cat)) groups.set(cat, []);
-            groups.get(cat).push(s);
+    _prep(S, T) {
+        this._sm = new Map(S.map(s => [s.id, s]));
+        this._out = new Map(); this._in = new Map();
+        S.forEach(s => { this._out.set(s.id, []); this._in.set(s.id, []); });
+        T.forEach(t => {
+            this._out.get(t.from_state_id)?.push(t);
+            this._in.get(t.to_state_id)?.push(t);
+        });
+    }
+
+    _phases(S) {
+        const g = new Map();
+        S.forEach(s => {
+            const c = s.status_category || "Other";
+            if (!g.has(c)) g.set(c, []);
+            g.get(c).push(s);
+        });
+        const order = [];
+        this.CAT_ORDER.forEach(c => { if (g.has(c)) order.push(c); });
+        g.forEach((_, c) => { if (!order.includes(c)) order.push(c); });
+        const rank = { initial: 0, intermediate: 1, final: 2 };
+        return order.map(c => ({
+            cat: c, style: this._s(c),
+            states: g.get(c).sort((a, b) => {
+                const d = (rank[a.state_type] ?? 1) - (rank[b.state_type] ?? 1);
+                return d || (a.label || "").localeCompare(b.label || "");
+            }),
+        }));
+    }
+
+    _syncModeBtns() {
+        if (!this.hasModeBtnTarget) return;
+        this.modeBtnTargets.forEach(b => {
+            const m = b.dataset.mode;
+            b.classList.toggle("active", m === this.modeValue);
+        });
+    }
+
+    /* ════════════════════════════════════════════════════
+       FLOW MODE  (Power Automate / Logic Apps style)
+       ════════════════════════════════════════════════════ */
+
+    _flowRender(S, T) {
+        const phases = this._phases(S);
+        const p = [];
+
+        p.push('<div class="wf-flow">');
+        p.push(this._pill("start"));
+        p.push(this._conn());
+
+        phases.forEach((ph, i) => {
+            p.push(this._scope(ph));
+            if (i < phases.length - 1) {
+                const cross = this._crossTrans(ph, phases[i + 1]);
+                p.push(this._conn(cross));
+            }
         });
 
-        // Order categories
-        const cats = [];
-        this.CAT_ORDER.forEach(c => { if (groups.has(c)) cats.push(c); });
-        groups.forEach((_, c) => { if (!cats.includes(c)) cats.push(c); });
+        p.push(this._conn());
+        p.push(this._pill("end"));
+        p.push('</div>');
 
-        // Sort within each group: initial → alphabetical → final
-        const typeRank = { initial: 0, intermediate: 1, final: 2 };
-        groups.forEach(list => list.sort((a, b) => {
-            const d = (typeRank[a.state_type] ?? 1) - (typeRank[b.state_type] ?? 1);
-            return d !== 0 ? d : (a.label || "").localeCompare(b.label || "");
-        }));
+        this.canvasTarget.innerHTML = p.join("");
+        this._flowHandlers();
+    }
 
-        // Position nodes
+    /* Start/End pill */
+    _pill(type) {
+        const isStart = type === "start";
+        const cls = isStart ? "wf-pill-start" : "wf-pill-end";
+        const icon = isStart ? "bi-play-fill" : "bi-stop-fill";
+        const label = isStart ? "Start" : "End";
+        return `<div class="wf-pill ${cls}"><i class="bi ${icon}"></i> ${label}</div>`;
+    }
+
+    /* Connector line between scopes */
+    _conn(crossTrans) {
+        let label = "";
+        if (crossTrans && crossTrans.length) {
+            const names = [...new Set(crossTrans.map(t => t.label || t.name))];
+            if (names.length <= 2) {
+                label = names.map(n => `<span class="wf-conn-label">${this._esc(n)}</span>`).join("");
+            } else {
+                label = `<span class="wf-conn-label">${this._esc(names[0])}</span>` +
+                    `<span class="wf-conn-label wf-conn-more">+${names.length - 1} more</span>`;
+            }
+        }
+        return `<div class="wf-conn">${label}<div class="wf-conn-line"></div><div class="wf-conn-arrow"></div></div>`;
+    }
+
+    /* Phase scope card */
+    _scope(phase) {
+        const s = phase.style;
+        const p = [];
+        p.push(`<div class="wf-scope" style="--wf-a:${s.accent}; --wf-bg:${s.bg}; --wf-tx:${s.tx};">`);
+
+        // Header
+        p.push(`<div class="wf-scope-hd">`);
+        p.push(`<div class="wf-scope-icon"><i class="bi ${s.icon}"></i></div>`);
+        p.push(`<div class="wf-scope-title">${this._esc(phase.cat)}</div>`);
+        p.push(`<span class="wf-scope-badge">${phase.states.length}</span>`);
+        p.push(`</div>`);
+
+        // Step cards
+        p.push(`<div class="wf-scope-body">`);
+        phase.states.forEach((st, i) => {
+            p.push(this._step(st));
+            if (i < phase.states.length - 1) p.push('<div class="wf-step-conn"></div>');
+        });
+        p.push(`</div></div>`);
+        return p.join("");
+    }
+
+    /* Individual step card */
+    _step(st) {
+        const out = this._out.get(st.id) || [];
+        const inc = this._in.get(st.id) || [];
+        const isInit = st.state_type === "initial";
+        const isFin = st.state_type === "final";
+        const p = [];
+
+        p.push(`<div class="wf-step" data-state-id="${st.id}">`);
+        p.push(`<div class="wf-step-card">`);
+
+        // Icon
+        if (isInit) {
+            p.push(`<div class="wf-step-dot wf-dot-start"><i class="bi bi-play-fill"></i></div>`);
+        } else if (isFin) {
+            p.push(`<div class="wf-step-dot wf-dot-end"><i class="bi bi-stop-fill"></i></div>`);
+        } else {
+            p.push(`<div class="wf-step-dot"><i class="bi bi-circle-fill"></i></div>`);
+        }
+
+        // Info
+        p.push(`<div class="wf-step-info">`);
+        p.push(`<div class="wf-step-name">${this._esc(st.label || st.name)}</div>`);
+        const meta = [];
+        if (inc.length) meta.push(`← ${inc.length} in`);
+        if (out.length) meta.push(`→ ${out.length} out`);
+        if (isInit) meta.push("initial");
+        if (isFin) meta.push("final");
+        p.push(`<div class="wf-step-meta">${meta.join(" · ")}</div>`);
+        p.push(`</div>`);
+
+        // Chevron
+        p.push(`<i class="bi bi-chevron-down wf-step-chev"></i>`);
+        p.push(`</div>`); // .wf-step-card
+
+        // Expandable detail
+        p.push(`<div class="wf-step-detail">`);
+        if (out.length) {
+            p.push(`<div class="wf-detail-section"><div class="wf-detail-label">Outgoing transitions</div><div class="wf-detail-badges">`);
+            out.forEach(t => {
+                const target = this._sm.get(t.to_state_id);
+                const tCat = target?.status_category || "Other";
+                const ts = this._s(tCat);
+                const auto = t.is_automatic ? ' <i class="bi bi-lightning-charge-fill" title="Automatic"></i>' : "";
+                p.push(`<span class="wf-badge" style="--wf-ba:${ts.accent};" title="${this._esc(t.label || t.name)}">→ ${this._esc(target?.label || "?")}${auto}</span>`);
+            });
+            p.push(`</div></div>`);
+        }
+        if (inc.length) {
+            p.push(`<div class="wf-detail-section"><div class="wf-detail-label">Incoming transitions</div><div class="wf-detail-badges">`);
+            inc.forEach(t => {
+                const source = this._sm.get(t.from_state_id);
+                const sCat = source?.status_category || "Other";
+                const ss = this._s(sCat);
+                p.push(`<span class="wf-badge" style="--wf-ba:${ss.accent};">← ${this._esc(source?.label || "?")}</span>`);
+            });
+            p.push(`</div></div>`);
+        }
+        if (!out.length && !inc.length) {
+            p.push('<div class="text-muted small">No transitions connected.</div>');
+        }
+        p.push(`</div>`); // .wf-step-detail
+
+        p.push(`</div>`); // .wf-step
+        return p.join("");
+    }
+
+    /* Cross-phase transitions for connector labels */
+    _crossTrans(fromPhase, toPhase) {
+        const toIds = new Set(toPhase.states.map(s => s.id));
+        const result = [];
+        fromPhase.states.forEach(s => {
+            (this._out.get(s.id) || []).forEach(t => {
+                if (toIds.has(t.to_state_id)) result.push(t);
+            });
+        });
+        return result;
+    }
+
+    /* Click-to-expand handlers */
+    _flowHandlers() {
+        this.canvasTarget.querySelectorAll(".wf-step-card").forEach(card => {
+            card.addEventListener("click", () => {
+                card.closest(".wf-step").classList.toggle("wf-expanded");
+            });
+        });
+    }
+
+    /* ════════════════════════════════════════════════════
+       DIAGRAM MODE  (SVG swim-lane state-machine)
+       ════════════════════════════════════════════════════ */
+
+    NW = 156; NH = 48; NR = 10;
+    CG = 110; RG = 64;
+    PX = 40; PT = 52; PB = 32;
+
+    _svgRender(S, T) {
+        const L = this._lay(S);
+        const p = [];
+        p.push(`<div class="wf-diagram-wrap">`);
+        p.push(this._svgBuild(L, S, T));
+        p.push(`</div>`);
+        this.canvasTarget.innerHTML = p.join("");
+        this._svgInteract();
+    }
+
+    _lay(S) {
+        const phases = this._phases(S);
         const pos = new Map();
         const cols = [];
-        let cx = this.PAD_X;
-
-        cats.forEach((cat, ci) => {
-            const list = groups.get(cat);
-            cols.push({ cat, x: cx, n: list.length, s: this._style(cat) });
-            list.forEach((st, ri) => {
-                pos.set(st.id, {
-                    x: cx,
-                    y: this.PAD_TOP + ri * (this.NODE_H + this.ROW_GAP),
-                    col: ci, row: ri,
-                });
+        let cx = this.PX;
+        phases.forEach((ph, ci) => {
+            cols.push({ cat: ph.cat, x: cx, n: ph.states.length, s: ph.style });
+            ph.states.forEach((st, ri) => {
+                pos.set(st.id, { x: cx, y: this.PT + ri * (this.NH + this.RG), col: ci, row: ri });
             });
-            cx += this.NODE_W + this.COL_GAP;
+            cx += this.NW + this.CG;
         });
-
-        const maxR = Math.max(...[...groups.values()].map(g => g.length), 1);
-        const W = cx - this.COL_GAP + this.PAD_X;
-        const H = this.PAD_TOP + maxR * (this.NODE_H + this.ROW_GAP) - this.ROW_GAP + this.PAD_BOT;
-
-        return { pos, cols, W, H };
+        const mr = Math.max(...phases.map(p => p.states.length), 1);
+        return { pos, cols, W: cx - this.CG + this.PX, H: this.PT + mr * (this.NH + this.RG) - this.RG + this.PB };
     }
 
-    /* ── SVG construction ──────────────────────────────── */
-
-    _svg(layout, states, trans) {
-        const { pos, cols, W, H } = layout;
-        const parts = [];
-
-        parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="wf-svg" preserveAspectRatio="xMidYMid meet">`);
-
-        // Defs
-        parts.push(`<defs>
-            <marker id="wf-arrow" viewBox="0 0 10 7" refX="9" refY="3.5"
-                    markerWidth="9" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0,0.5 L9,3.5 L0,6.5z" fill="#9ca3af"/>
-            </marker>
-            <marker id="wf-arrow-hi" viewBox="0 0 10 7" refX="9" refY="3.5"
-                    markerWidth="9" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0,0.5 L9,3.5 L0,6.5z" fill="#0d6efd"/>
-            </marker>
-            <filter id="wf-sh" x="-8%" y="-8%" width="116%" height="124%">
-                <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" flood-opacity="0.08"/>
-            </filter>
+    _svgBuild(L, S, T) {
+        const { pos, cols, W, H } = L;
+        const p = [];
+        p.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="wf-svg" preserveAspectRatio="xMidYMid meet">`);
+        p.push(`<defs>
+            <marker id="wf-arr" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="9" markerHeight="7" orient="auto-start-reverse"><path d="M0,.5 L9,3.5 L0,6.5z" fill="#9ca3af"/></marker>
+            <marker id="wf-arr-h" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="9" markerHeight="7" orient="auto-start-reverse"><path d="M0,.5 L9,3.5 L0,6.5z" fill="#3b82f6"/></marker>
+            <filter id="wf-sh" x="-8%" y="-8%" width="116%" height="124%"><feDropShadow dx="0" dy="1.5" stdDeviation="2.5" flood-opacity=".08"/></filter>
         </defs>`);
 
-        // Swim-lane backgrounds + headers
         cols.forEach(c => {
-            const lx = c.x - 14, lw = this.NODE_W + 28;
-            parts.push(`<rect x="${lx}" y="8" width="${lw}" height="${H - 16}" rx="10" fill="${c.s.lane}"/>`);
-            parts.push(`<text x="${c.x + this.NODE_W / 2}" y="30" text-anchor="middle" font-size="10.5" font-weight="600" fill="${c.s.tx}" opacity=".55" letter-spacing=".3">${this._esc(c.cat.toUpperCase())}</text>`);
+            const lx = c.x - 14, lw = this.NW + 28;
+            p.push(`<rect x="${lx}" y="8" width="${lw}" height="${H - 16}" rx="10" fill="${c.s.bg}" opacity=".45"/>`);
+            p.push(`<text x="${c.x + this.NW / 2}" y="30" text-anchor="middle" font-size="10" font-weight="600" fill="${c.s.tx}" opacity=".55" letter-spacing=".3">${this._esc(c.cat.toUpperCase())}</text>`);
         });
 
-        // Edges (drawn first, behind nodes)
-        parts.push('<g class="wf-edges">');
-        trans.forEach((t, i) => parts.push(this._edge(t, pos, i)));
-        parts.push('</g>');
-
-        // Nodes (drawn on top)
-        parts.push('<g class="wf-nodes">');
-        states.forEach(s => parts.push(this._node(s, pos)));
-        parts.push('</g>');
-
-        parts.push('</svg>');
-        return parts.join('\n');
+        p.push('<g class="wf-edges">');
+        T.forEach((t, i) => { p.push(this._svgEdge(t, pos, i)); });
+        p.push('</g><g class="wf-nodes">');
+        S.forEach(s => { p.push(this._svgNode(s, pos)); });
+        p.push('</g></svg>');
+        return p.join("\n");
     }
 
-    /* ── Node rendering ────────────────────────────────── */
-
-    _node(st, pos) {
-        const p = pos.get(st.id);
-        if (!p) return '';
-        const { x, y } = p;
-        const s = this._style(st.status_category);
-        const init = st.state_type === 'initial';
-        const fin = st.state_type === 'final';
+    _svgNode(st, pos) {
+        const pp = pos.get(st.id); if (!pp) return "";
+        const { x, y } = pp;
+        const s = this._s(st.status_category);
+        const init = st.state_type === "initial", fin = st.state_type === "final";
         const sw = init || fin ? 2.5 : 1.5;
-        const parts = [];
-
-        parts.push(`<g class="wf-node" data-id="${st.id}">`);
-
-        // Shadow + background
-        parts.push(`<rect x="${x}" y="${y}" width="${this.NODE_W}" height="${this.NODE_H}" rx="${this.NODE_R}" fill="white" filter="url(#wf-sh)"/>`);
-        parts.push(`<rect class="wf-node-bg" x="${x}" y="${y}" width="${this.NODE_W}" height="${this.NODE_H}" rx="${this.NODE_R}" fill="${s.bg}" stroke="${s.bd}" stroke-width="${sw}"/>`);
-
-        // State-type icon
-        const iy = y + this.NODE_H / 2;
+        const r = [];
+        r.push(`<g class="wf-node" data-id="${st.id}">`);
+        r.push(`<rect x="${x}" y="${y}" width="${this.NW}" height="${this.NH}" rx="${this.NR}" fill="white" filter="url(#wf-sh)"/>`);
+        r.push(`<rect class="wf-node-bg" x="${x}" y="${y}" width="${this.NW}" height="${this.NH}" rx="${this.NR}" fill="${s.bg}" stroke="${s.accent}" stroke-width="${sw}"/>`);
+        const iy = y + this.NH / 2;
         if (init) {
-            // Play icon
-            parts.push(`<circle cx="${x + 15}" cy="${iy}" r="7" fill="${s.bd}" opacity=".85"/>`);
-            parts.push(`<polygon points="${x + 13},${iy - 4} ${x + 19},${iy} ${x + 13},${iy + 4}" fill="#fff"/>`);
+            r.push(`<circle cx="${x + 15}" cy="${iy}" r="7" fill="${s.accent}" opacity=".85"/>`);
+            r.push(`<polygon points="${x + 13},${iy - 4} ${x + 19},${iy} ${x + 13},${iy + 4}" fill="#fff"/>`);
         } else if (fin) {
-            // Stop icon (double circle)
-            parts.push(`<circle cx="${x + 15}" cy="${iy}" r="7" fill="none" stroke="${s.bd}" stroke-width="1.5"/>`);
-            parts.push(`<circle cx="${x + 15}" cy="${iy}" r="3.5" fill="${s.bd}"/>`);
+            r.push(`<circle cx="${x + 15}" cy="${iy}" r="7" fill="none" stroke="${s.accent}" stroke-width="1.5"/>`);
+            r.push(`<circle cx="${x + 15}" cy="${iy}" r="3.5" fill="${s.accent}"/>`);
         }
-
-        // Label
-        const label = st.label || st.name;
-        const hasIcon = init || fin;
-        const tx = hasIcon ? x + 28 : x + this.NODE_W / 2;
-        const anchor = hasIcon ? 'start' : 'middle';
-        const maxCh = hasIcon ? 14 : 17;
-        const disp = label.length > maxCh ? label.substring(0, maxCh - 1) + '…' : label;
-
-        parts.push(`<text x="${tx}" y="${iy + 4.5}" text-anchor="${anchor}" font-size="12.5" font-weight="500" fill="${s.tx}">${this._esc(disp)}</text>`);
-
-        // Accessible tooltip
-        parts.push(`<title>${this._esc(label)} [${st.state_type}]${st.status_category ? ' — ' + st.status_category : ''}</title>`);
-
-        parts.push('</g>');
-        return parts.join('');
+        const lbl = st.label || st.name;
+        const hi = init || fin;
+        const tx = hi ? x + 28 : x + this.NW / 2;
+        const anch = hi ? "start" : "middle";
+        const mc = hi ? 14 : 17;
+        const d = lbl.length > mc ? lbl.substring(0, mc - 1) + "…" : lbl;
+        r.push(`<text x="${tx}" y="${iy + 4.5}" text-anchor="${anch}" font-size="12.5" font-weight="500" fill="${s.tx}">${this._esc(d)}</text>`);
+        r.push(`<title>${this._esc(lbl)} [${st.state_type}]${st.status_category ? " — " + st.status_category : ""}</title>`);
+        r.push("</g>");
+        return r.join("");
     }
 
-    /* ── Edge rendering ────────────────────────────────── */
-
-    _edge(t, pos, idx) {
-        const from = pos.get(t.from_state_id);
-        const to = pos.get(t.to_state_id);
-        if (!from || !to) return '';
-
-        if (t.from_state_id === t.to_state_id) return this._selfLoop(from, t);
-
-        const d = this._path(from, to, idx);
-        const dash = t.is_automatic ? ' stroke-dasharray="5,3"' : '';
-
-        return `<g class="wf-edge" data-from="${t.from_state_id}" data-to="${t.to_state_id}">` +
-            `<path d="${d}" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#wf-arrow)"${dash}/>` +
-            `<title>${this._esc(t.label || t.name)}</title></g>`;
+    _svgEdge(t, pos, idx) {
+        const f = pos.get(t.from_state_id), o = pos.get(t.to_state_id);
+        if (!f || !o) return "";
+        if (t.from_state_id === t.to_state_id) return this._svgSelf(f, t);
+        const d = this._svgPath(f, o, idx);
+        const dash = t.is_automatic ? ' stroke-dasharray="5,3"' : "";
+        return `<g class="wf-edge" data-from="${t.from_state_id}" data-to="${t.to_state_id}"><path d="${d}" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#wf-arr)"${dash}/><title>${this._esc(t.label || t.name)}</title></g>`;
     }
 
-    _path(from, to, idx) {
-        const W = this.NODE_W, H = this.NODE_H;
-        const jit = ((idx % 7) - 3) * 3.5; // jitter to spread overlapping edges
-
-        if (from.col < to.col) {
-            // Forward: right-center → left-center
-            const sx = from.x + W, sy = from.y + H / 2 + jit;
-            const ex = to.x,       ey = to.y + H / 2 + jit;
-            const dx = ex - sx;
+    _svgPath(f, o, idx) {
+        const W = this.NW, H = this.NH, j = ((idx % 7) - 3) * 3.5;
+        if (f.col < o.col) {
+            const sx = f.x + W, sy = f.y + H / 2 + j, ex = o.x, ey = o.y + H / 2 + j, dx = ex - sx;
             return `M${sx},${sy} C${sx + dx * .38},${sy} ${ex - dx * .38},${ey} ${ex},${ey}`;
         }
-
-        if (from.col === to.col) {
-            // Same column: arc via the right side
-            const down = from.row < to.row;
-            const sy = from.y + (down ? H - 4 : 4);
-            const ey = to.y + (down ? 4 : H - 4);
-            const sx = from.x + W, ex = to.x + W;
-            const dist = Math.abs(from.row - to.row);
-            const bulge = 32 + dist * 18 + (idx % 4) * 7;
-            return `M${sx},${sy} C${sx + bulge},${sy} ${ex + bulge},${ey} ${ex},${ey}`;
+        if (f.col === o.col) {
+            const dn = f.row < o.row;
+            const sy = f.y + (dn ? H - 4 : 4), ey = o.y + (dn ? 4 : H - 4);
+            const sx = f.x + W, ex = o.x + W;
+            const b = 32 + Math.abs(f.row - o.row) * 18 + (idx % 4) * 7;
+            return `M${sx},${sy} C${sx + b},${sy} ${ex + b},${ey} ${ex},${ey}`;
         }
-
-        // Backward: arc below diagram
-        const sy = from.y + H / 2 + jit;
-        const ey = to.y + H / 2 + jit;
-        const sx = from.x;
-        const ex = to.x + W;
-        const below = Math.max(from.y, to.y) + H + 45 + (idx % 4) * 12;
-        return `M${sx},${sy} C${sx - 30},${below} ${ex + 30},${below} ${ex},${ey}`;
+        const sy = f.y + H / 2 + j, ey = o.y + H / 2 + j;
+        const bw = Math.max(f.y, o.y) + H + 45 + (idx % 4) * 12;
+        return `M${f.x},${sy} C${f.x - 30},${bw} ${o.x + W + 30},${bw} ${o.x + W},${ey}`;
     }
 
-    _selfLoop(p, t) {
-        const cx = p.x + this.NODE_W / 2;
-        const top = p.y - 8;
-        return `<g class="wf-edge" data-from="${t.from_state_id}" data-to="${t.to_state_id}">` +
-            `<path d="M${cx - 14},${top} C${cx - 14},${top - 22} ${cx + 14},${top - 22} ${cx + 14},${top}" ` +
-            `fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#wf-arrow)"/>` +
-            `<title>${this._esc(t.label || t.name)} (loop)</title></g>`;
+    _svgSelf(p, t) {
+        const cx = p.x + this.NW / 2, top = p.y - 8;
+        return `<g class="wf-edge" data-from="${t.from_state_id}" data-to="${t.to_state_id}"><path d="M${cx - 14},${top} C${cx - 14},${top - 22} ${cx + 14},${top - 22} ${cx + 14},${top}" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#wf-arr)"/><title>${this._esc(t.label || t.name)} (loop)</title></g>`;
     }
 
-    /* ── Interactions ──────────────────────────────────── */
-
-    _interactions() {
-        const svg = this.canvasTarget.querySelector('svg');
+    _svgInteract() {
+        const svg = this.canvasTarget.querySelector("svg");
         if (!svg) return;
-
-        svg.querySelectorAll('.wf-node').forEach(node => {
-            node.style.cursor = 'pointer';
-
-            node.addEventListener('mouseenter', () => {
+        svg.querySelectorAll(".wf-node").forEach(node => {
+            node.style.cursor = "pointer";
+            node.addEventListener("mouseenter", () => {
                 const id = node.dataset.id;
-                svg.classList.add('wf-focus');
-                node.classList.add('wf-hi');
-
+                svg.classList.add("wf-focus");
+                node.classList.add("wf-hi");
                 const linked = new Set([id]);
-                svg.querySelectorAll('.wf-edge').forEach(e => {
+                svg.querySelectorAll(".wf-edge").forEach(e => {
                     if (e.dataset.from === id || e.dataset.to === id) {
-                        e.classList.add('wf-hi');
-                        linked.add(e.dataset.from);
-                        linked.add(e.dataset.to);
+                        e.classList.add("wf-hi");
+                        linked.add(e.dataset.from); linked.add(e.dataset.to);
                     }
                 });
-                svg.querySelectorAll('.wf-node').forEach(n => {
-                    if (!linked.has(n.dataset.id)) n.classList.add('wf-lo');
+                svg.querySelectorAll(".wf-node").forEach(n => {
+                    if (!linked.has(n.dataset.id)) n.classList.add("wf-lo");
                 });
             });
-
-            node.addEventListener('mouseleave', () => {
-                svg.classList.remove('wf-focus');
-                svg.querySelectorAll('.wf-hi,.wf-lo').forEach(el =>
-                    el.classList.remove('wf-hi', 'wf-lo'));
+            node.addEventListener("mouseleave", () => {
+                svg.classList.remove("wf-focus");
+                svg.querySelectorAll(".wf-hi,.wf-lo").forEach(el => el.classList.remove("wf-hi", "wf-lo"));
             });
         });
     }
 
-    /* ── Utilities ─────────────────────────────────────── */
+    /* ── utilities ──────────────────────────────────────── */
 
     _esc(s) {
-        return String(s || '')
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 }
 

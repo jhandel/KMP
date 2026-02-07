@@ -608,6 +608,246 @@ tr.row-expanded .toggle-icon.bi-chevron-down {
 
 /* ── Workflow Visualizer ──────────────────────────────── */
 
+/* ═══ Flow mode (Power Automate / Logic Apps style) ═══ */
+
+.wf-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 24px 0;
+}
+
+/* Start / End pills */
+.wf-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 22px;
+    border-radius: 24px;
+    font-weight: 600;
+    font-size: .82rem;
+    letter-spacing: .2px;
+}
+.wf-pill-start {
+    background: #d1e7dd;
+    color: #0a3622;
+    border: 2px solid #198754;
+}
+.wf-pill-end {
+    background: #e2e3e5;
+    color: #41464b;
+    border: 2px solid #6c757d;
+}
+
+/* Connector line between scopes */
+.wf-conn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 0;
+}
+.wf-conn-line {
+    width: 2px;
+    height: 22px;
+    background: #d1d5db;
+}
+.wf-conn-arrow {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #d1d5db;
+}
+.wf-conn-label {
+    display: inline-block;
+    padding: 1px 8px;
+    font-size: .7rem;
+    font-weight: 500;
+    color: #6b7280;
+    background: #f3f4f6;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    white-space: nowrap;
+}
+.wf-conn-more {
+    opacity: .65;
+    font-style: italic;
+}
+
+/* Phase scope card */
+.wf-scope {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    box-shadow: 0 1px 6px rgba(0,0,0,.05);
+    overflow: hidden;
+}
+.wf-scope-hd {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--wf-bg);
+    border-bottom: 2.5px solid var(--wf-a);
+}
+.wf-scope-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--wf-a);
+    color: #fff;
+    font-size: .85rem;
+    flex-shrink: 0;
+}
+.wf-scope-title {
+    font-weight: 700;
+    font-size: .9rem;
+    color: var(--wf-tx);
+    flex: 1;
+}
+.wf-scope-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 12px;
+    font-size: .72rem;
+    font-weight: 700;
+    background: var(--wf-a);
+    color: #fff;
+}
+.wf-scope-body {
+    padding: 14px 16px;
+}
+
+/* Intra-scope connector (thin dotted line between steps) */
+.wf-step-conn {
+    width: 2px;
+    height: 16px;
+    background: #e5e7eb;
+    margin: 0 auto;
+    border-radius: 1px;
+}
+
+/* Step card */
+.wf-step-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-left: 3.5px solid var(--wf-a);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: box-shadow .15s ease, border-color .15s ease;
+    user-select: none;
+}
+.wf-step-card:hover {
+    box-shadow: 0 3px 12px rgba(0,0,0,.07);
+    border-color: var(--wf-a);
+}
+
+/* Step dot icon */
+.wf-step-dot {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .7rem;
+    flex-shrink: 0;
+    background: var(--wf-bg);
+    color: var(--wf-a);
+    border: 2px solid var(--wf-a);
+}
+.wf-dot-start {
+    background: #198754;
+    color: #fff;
+    border-color: #198754;
+}
+.wf-dot-end {
+    background: #6c757d;
+    color: #fff;
+    border-color: #6c757d;
+}
+
+/* Step text */
+.wf-step-info { flex: 1; min-width: 0; }
+.wf-step-name {
+    font-weight: 600;
+    font-size: .88rem;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.wf-step-meta {
+    font-size: .73rem;
+    color: #9ca3af;
+    margin-top: 1px;
+}
+
+/* Step chevron */
+.wf-step-chev {
+    color: #9ca3af;
+    font-size: .85rem;
+    flex-shrink: 0;
+    transition: transform .2s ease;
+}
+.wf-step.wf-expanded .wf-step-chev { transform: rotate(180deg); }
+
+/* Expandable detail panel */
+.wf-step-detail {
+    display: none;
+    padding: 10px 14px 12px 62px;
+    border-top: 1px solid #f3f4f6;
+    background: #fafbfc;
+    border-radius: 0 0 10px 10px;
+    margin-top: -1px;
+}
+.wf-step.wf-expanded .wf-step-detail { display: block; }
+.wf-detail-section { margin-bottom: 8px; }
+.wf-detail-section:last-child { margin-bottom: 0; }
+.wf-detail-label {
+    font-size: .72rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 4px;
+}
+.wf-detail-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.wf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    font-size: .72rem;
+    font-weight: 500;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--wf-ba) 12%, white);
+    color: var(--wf-ba);
+    border: 1px solid color-mix(in srgb, var(--wf-ba) 30%, white);
+    white-space: nowrap;
+}
+
+/* ═══ Diagram mode (SVG swim-lane) ═══ */
+
 .wf-diagram-wrap {
     overflow-x: auto;
     border: 1px solid #e5e7eb;
@@ -621,23 +861,21 @@ tr.row-expanded .toggle-icon.bi-chevron-down {
     min-height: 200px;
     max-height: 620px;
 }
-.wf-svg .wf-node {
-    transition: opacity .18s ease;
-}
+.wf-svg .wf-node { transition: opacity .18s ease; }
 .wf-svg .wf-edge path {
     opacity: .3;
     transition: opacity .18s ease, stroke .18s ease, stroke-width .18s ease;
 }
-/* Hover: dim non-connected, highlight connected */
 .wf-svg.wf-focus .wf-node.wf-lo { opacity: .18; }
 .wf-svg.wf-focus .wf-edge:not(.wf-hi) path { opacity: .05; }
 .wf-svg.wf-focus .wf-edge.wf-hi path {
     opacity: .85;
-    stroke: #0d6efd;
+    stroke: #3b82f6;
     stroke-width: 2.5;
 }
 
-/* Workflow index cards */
+/* ═══ Shared: index cards ═══ */
+
 .wf-card {
     transition: box-shadow .2s ease, transform .15s ease;
     border: 1px solid #e5e7eb;
@@ -662,12 +900,10 @@ tr.row-expanded .toggle-icon.bi-chevron-down {
     font-weight: 600;
     white-space: nowrap;
 }
-.wf-pipeline .wf-arrow {
-    color: #adb5bd;
-    font-size: .65rem;
-}
+.wf-pipeline .wf-arrow { color: #adb5bd; font-size: .65rem; }
 
-/* Legend */
+/* ═══ Legend ═══ */
+
 .wf-legend {
     display: flex;
     align-items: center;
@@ -689,4 +925,11 @@ tr.row-expanded .toggle-icon.bi-chevron-down {
     border-radius: 3px;
     border: 1.5px solid;
     flex-shrink: 0;
+}
+
+/* ═══ Mode toggle ═══ */
+
+.wf-mode-toggle .btn.active {
+    background: #e5e7eb;
+    font-weight: 600;
 }
