@@ -71,7 +71,17 @@ class SyncActiveWindowStatusesCommand extends Command
         $overallExpired = 0;
         $overallErrors = 0;
 
+        // Collect entity types managed by active workflow definitions
+        $workflowManagedTypes = $this->getWorkflowManagedEntityTypes($tableLocator);
+
         foreach ($aliases as $alias) {
+            // Check both full alias (e.g. "Activities.Authorizations") and bare name
+            $bareAlias = str_contains($alias, '.') ? substr($alias, strrpos($alias, '.') + 1) : $alias;
+            if (in_array($alias, $workflowManagedTypes, true) || in_array($bareAlias, $workflowManagedTypes, true)) {
+                $io->out(sprintf(' - Skipping %s: managed by workflow engine', $alias));
+                continue;
+            }
+
             $table = $tableLocator->get($alias);
             $summary = $this->synchronizeTable($table, $now, $dryRun, $io);
 
@@ -198,6 +208,48 @@ class SyncActiveWindowStatusesCommand extends Command
         }
 
         return array_values(array_unique($aliases));
+    }
+
+    /**
+     * Get entity types that have active workflow definitions.
+     *
+     * @param \Cake\ORM\Locator\TableLocator $tableLocator Table locator instance.
+     * @return array<string>
+     */
+    protected function getWorkflowManagedEntityTypes(TableLocator $tableLocator): array
+    {
+        try {
+            $workflowDefs = $tableLocator->get('WorkflowDefinitions');
+            $rows = $workflowDefs->find()
+                ->where(['is_active' => true])
+                ->select(['entity_type', 'plugin_name'])
+                ->all();
+
+            $types = [];
+            foreach ($rows as $row) {
+                // Store the raw entity_type from definitions (e.g. "ActivityAuthorizations")
+                $types[] = $row->entity_type;
+                // Also store the plugin-prefixed alias (e.g. "Activities.ActivityAuthorizations")
+                if (!empty($row->plugin_name)) {
+                    $types[] = $row->plugin_name . '.' . $row->entity_type;
+                }
+            }
+
+            // Also check workflow_instances for the actual entity_type format used at runtime
+            $instancesTable = $tableLocator->get('WorkflowInstances');
+            $instanceTypes = $instancesTable->find()
+                ->select(['entity_type'])
+                ->distinct(['entity_type'])
+                ->where(['status' => 'active'])
+                ->all()
+                ->extract('entity_type')
+                ->toArray();
+            $types = array_merge($types, array_values($instanceTypes));
+
+            return array_values(array_unique($types));
+        } catch (Throwable $exception) {
+            return [];
+        }
     }
 
     /**

@@ -126,11 +126,76 @@ $status = $authManager->getApprovalGateStatus($authorizationId);
 // Returns: {has_gate, approved_count, required_count, has_more_approvals, satisfied}
 ```
 
+## Temporal Sync Command
+
+The `SyncWorkflowTemporalStatusesCommand` triggers time-based workflow transitions via the engine, ensuring on_enter_actions (like role grants/revocations) execute properly.
+
+### What It Does
+
+- **Activate**: Finds instances in `approved` state where entity `start_on <= NOW()` → triggers `activate` transition
+- **Expire**: Finds instances in `active` state where entity `expires_on <= NOW()` → triggers `expire` transition
+
+### Usage
+
+```bash
+# Preview transitions without executing
+bin/cake sync_workflow_temporal_statuses --dry-run
+
+# Execute transitions
+bin/cake sync_workflow_temporal_statuses
+
+# Limit to a specific plugin
+bin/cake sync_workflow_temporal_statuses --plugin Activities
+```
+
+### Cron Setup
+
+Run every 15 minutes alongside the existing `SyncActiveWindowStatuses` command:
+
+```
+*/15 * * * * cd /path/to/app && bin/cake sync_workflow_temporal_statuses >> /var/log/kmp-temporal-sync.log 2>&1
+```
+
+### Relationship with SyncActiveWindowStatuses
+
+The existing `SyncActiveWindowStatusesCommand` handles `Upcoming→Current` and `Current→Expired` transitions for entities that use the `ActiveWindowBaseEntity` pattern (direct status fields). It automatically **skips** entity types that have an active workflow definition, deferring to `SyncWorkflowTemporalStatuses` instead. This prevents conflicts between the two commands.
+
+## Backfill Migration
+
+When enabling the workflow engine for an existing entity type that already has data, a backfill migration creates workflow instances for all legacy records.
+
+### Pattern
+
+```php
+// In plugins/PluginName/config/Migrations/
+class BackfillEntityWorkflowInstances extends BaseMigration
+{
+    public function up(): void
+    {
+        // 1. Find the workflow definition by slug
+        // 2. For each entity WITHOUT a workflow instance:
+        //    - Map entity status → workflow state
+        //    - Reconstruct context from audit trail
+        //    - INSERT workflow_instance
+        //    - INSERT approval gate approvals (if applicable)
+        // 3. Mark migrated: true in context JSON
+    }
+}
+```
+
+### Context Reconstruction
+
+The migration reads the entity's audit trail (e.g., `activities_authorization_approvals`) to build a `context.transitions[]` array, providing the same audit history that new instances accumulate naturally.
+
+### AuthorizationApprovals Table
+
+The `activities_authorization_approvals` table is a **denormalized UI view** — it drives approval queue grids and approval chain displays. It is NOT the source of truth for workflow state (the workflow engine is). Both tables are populated during approval operations for backward compatibility.
+
 ## Testing
 
 All workflow engine tests are in `tests/TestCase/Services/WorkflowEngine/`:
 
 ```bash
 vendor/bin/phpunit tests/TestCase/Services/WorkflowEngine/
-# 230 tests, 503 assertions
+# 195 tests, 328 assertions
 ```
