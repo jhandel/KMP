@@ -99,6 +99,7 @@ class BackfillAuthorizationWorkflowInstances extends BaseMigration
                     break;
                 case 'Revoked':
                 case 'Replaced':
+                case 'replaced':
                     $instanceStatus = 'completed';
                     $ts = $auth['expires_on'] ?? $auth['created'];
                     $completedAt = "'" . addslashes($ts) . "'";
@@ -221,6 +222,7 @@ class BackfillAuthorizationWorkflowInstances extends BaseMigration
             case 'Retracted':
                 return 'retracted';
             case 'Replaced':
+            case 'replaced':
                 return 'revoked';
             case 'Expired':
                 return 'expired';
@@ -339,6 +341,7 @@ class BackfillAuthorizationWorkflowInstances extends BaseMigration
                 ];
                 break;
             case 'Replaced':
+            case 'replaced':
                 $transitions[] = [
                     'from' => 'approved',
                     'to' => 'revoked',
