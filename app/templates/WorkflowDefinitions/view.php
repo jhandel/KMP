@@ -76,7 +76,7 @@ echo $this->KMP->startBlock("pageTitle") ?>
 <?php $this->KMP->endBlock() ?>
 
 <?php
-// Serialize state/transition data for the visualizer
+// Serialize state/transition data for the visualizer (include config for detail panels)
 $statesData = array_values(array_map(function ($s) {
     return [
         'id' => $s->id,
@@ -85,6 +85,9 @@ $statesData = array_values(array_map(function ($s) {
         'label' => $s->label,
         'state_type' => $s->state_type,
         'status_category' => $s->status_category,
+        'metadata' => $s->metadata ? json_decode($s->metadata, true) : null,
+        'on_enter_actions' => $s->on_enter_actions ? json_decode($s->on_enter_actions, true) : null,
+        'on_exit_actions' => $s->on_exit_actions ? json_decode($s->on_exit_actions, true) : null,
     ];
 }, $definition->workflow_states ?? []));
 
@@ -97,6 +100,8 @@ $transitionsData = array_values(array_map(function ($t) {
         'to_state_id' => $t->to_state_id,
         'is_automatic' => (bool)$t->is_automatic,
         'trigger_type' => $t->trigger_type ?? 'manual',
+        'conditions' => $t->conditions ? json_decode($t->conditions, true) : null,
+        'actions' => $t->actions ? json_decode($t->actions, true) : null,
     ];
 }, $definition->workflow_transitions ?? []));
 
@@ -258,69 +263,75 @@ $catStyles = [
         <?php endif; ?>
     </div>
     <?php if (!empty($definition->workflow_states)) : ?>
-        <div class="table-responsive">
-            <table class="table table-striped align-middle">
-                <thead>
-                    <tr>
-                        <th><?= __('Name') ?></th>
-                        <th><?= __('Label') ?></th>
-                        <th><?= __('Type') ?></th>
-                        <th><?= __('Category') ?></th>
-                        <?php if ($user->checkCan("edit", $definition)) : ?>
-                            <th class="actions"><?= __('Actions') ?></th>
+        <?php foreach ($definition->workflow_states as $state) :
+            $meta = $state->metadata ? json_decode($state->metadata, true) : [];
+            $enterActs = $state->on_enter_actions ? json_decode($state->on_enter_actions, true) : [];
+            $exitActs = $state->on_exit_actions ? json_decode($state->on_exit_actions, true) : [];
+            $hasConfig = !empty($meta) || !empty($enterActs) || !empty($exitActs);
+            $typeBadge = match ($state->state_type) {
+                'initial' => 'bg-success',
+                'final' => 'bg-dark',
+                default => 'bg-secondary',
+            };
+            $cs = $catStyles[$state->status_category ?? ''] ?? ['bg' => '#f8f9fa', 'bd' => '#adb5bd'];
+        ?>
+        <div class="card mb-2">
+            <div class="card-body py-2 px-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge <?= $typeBadge ?>"><?= h($state->state_type) ?></span>
+                        <strong><?= h($state->label) ?></strong>
+                        <code class="small text-muted"><?= h($state->slug) ?></code>
+                        <?php if ($state->status_category) : ?>
+                            <span class="badge" style="background:<?= $cs['bg'] ?>; color:<?= $cs['bd'] ?>; border:1px solid <?= $cs['bd'] ?>;">
+                                <?= h($state->status_category) ?>
+                            </span>
                         <?php endif; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($definition->workflow_states as $state) : ?>
-                        <tr>
-                            <td>
-                                <code class="small"><?= h($state->slug) ?></code>
-                            </td>
-                            <td><?= h($state->label) ?></td>
-                            <td>
-                                <?php
-                                $typeBadge = match ($state->state_type) {
-                                    'initial' => 'bg-success',
-                                    'final' => 'bg-dark',
-                                    default => 'bg-secondary',
-                                };
-                                ?>
-                                <span class="badge <?= $typeBadge ?>"><?= h($state->state_type) ?></span>
-                            </td>
-                            <td>
-                                <?php if ($state->status_category) :
-                                    $cs = $catStyles[$state->status_category] ?? ['bg' => '#f8f9fa', 'bd' => '#adb5bd'];
-                                ?>
-                                    <span class="badge" style="background:<?= $cs['bg'] ?>; color:<?= $cs['bd'] ?>; border:1px solid <?= $cs['bd'] ?>;">
-                                        <?= h($state->status_category) ?>
-                                    </span>
-                                <?php endif; ?>
-                            </td>
-                            <?php if ($user->checkCan("edit", $definition)) : ?>
-                                <td class="actions">
-                                    <?= $this->Html->link(
-                                        '<i class="bi bi-pencil"></i>',
-                                        ['controller' => 'WorkflowStates', 'action' => 'edit', $state->id],
-                                        ['class' => 'btn btn-outline-secondary btn-sm', 'escape' => false, 'title' => __('Edit')]
-                                    ) ?>
-                                    <?= $this->Form->postLink(
-                                        '<i class="bi bi-trash"></i>',
-                                        ['controller' => 'WorkflowStates', 'action' => 'delete', $state->id],
-                                        [
-                                            'confirm' => __('Delete state "{0}"?', $state->name),
-                                            'class' => 'btn btn-outline-danger btn-sm',
-                                            'escape' => false,
-                                            'title' => __('Delete'),
-                                        ]
-                                    ) ?>
-                                </td>
-                            <?php endif; ?>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                    </div>
+                    <div class="d-flex gap-1">
+                        <?php if ($user->checkCan("edit", $definition)) : ?>
+                            <?= $this->Html->link('<i class="bi bi-pencil"></i>', ['controller' => 'WorkflowStates', 'action' => 'edit', $state->id], ['class' => 'btn btn-outline-secondary btn-sm', 'escape' => false, 'title' => __('Edit')]) ?>
+                            <?= $this->Form->postLink('<i class="bi bi-trash"></i>', ['controller' => 'WorkflowStates', 'action' => 'delete', $state->id], ['confirm' => __('Delete state "{0}"?', $state->name), 'class' => 'btn btn-outline-danger btn-sm', 'escape' => false, 'title' => __('Delete')]) ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php if ($hasConfig) : ?>
+                <div class="mt-2 pt-2 border-top small">
+                    <?php if (!empty($meta)) : ?>
+                        <div class="mb-1">
+                            <strong class="text-muted"><?= __('Metadata:') ?></strong>
+                            <?php foreach ($meta as $key => $val) : ?>
+                                <span class="badge bg-light text-dark border me-1">
+                                    <?= h($key) ?>: <?= is_array($val) ? h(implode(', ', $val)) : h((string)$val) ?>
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($enterActs)) : ?>
+                        <div class="mb-1">
+                            <strong class="text-muted"><?= __('On Enter:') ?></strong>
+                            <?php foreach ($enterActs as $act) : ?>
+                                <span class="badge bg-info text-dark me-1">
+                                    <i class="bi bi-lightning-charge"></i> <?= h($act['action'] ?? 'unknown') ?>
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($exitActs)) : ?>
+                        <div>
+                            <strong class="text-muted"><?= __('On Exit:') ?></strong>
+                            <?php foreach ($exitActs as $act) : ?>
+                                <span class="badge bg-warning text-dark me-1">
+                                    <i class="bi bi-lightning-charge"></i> <?= h($act['action'] ?? 'unknown') ?>
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
         </div>
+        <?php endforeach; ?>
     <?php else : ?>
         <p class="text-muted"><?= __('No states defined for this workflow.') ?></p>
     <?php endif; ?>
@@ -342,63 +353,58 @@ $catStyles = [
         <?php endif; ?>
     </div>
     <?php if (!empty($definition->workflow_transitions)) : ?>
-        <div class="table-responsive">
-            <table class="table table-striped align-middle">
-                <thead>
-                    <tr>
-                        <th><?= __('Label') ?></th>
-                        <th><?= __('From → To') ?></th>
-                        <th><?= __('Type') ?></th>
-                        <th><?= __('Priority') ?></th>
-                        <?php if ($user->checkCan("edit", $definition)) : ?>
-                            <th class="actions"><?= __('Actions') ?></th>
+        <?php foreach ($definition->workflow_transitions as $transition) :
+            $tConds = $transition->conditions ? json_decode($transition->conditions, true) : [];
+            $tActs = $transition->actions ? json_decode($transition->actions, true) : [];
+            $hasConfig = !empty($tConds) || !empty($tActs);
+        ?>
+        <div class="card mb-2">
+            <div class="card-body py-2 px-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <strong><?= h($transition->label) ?></strong>
+                        <code class="small text-muted"><?= h($transition->slug) ?></code>
+                        <span class="text-muted">—</span>
+                        <span class="badge bg-light text-dark border"><?= $transition->hasValue('from_state') ? h($transition->from_state->label) : '?' ?></span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="badge bg-light text-dark border"><?= $transition->hasValue('to_state') ? h($transition->to_state->label) : '?' ?></span>
+                        <?php if ($transition->is_automatic) : ?>
+                            <span class="badge bg-info text-dark"><?= __('Auto') ?></span>
+                        <?php else : ?>
+                            <span class="badge border text-muted"><?= h($transition->trigger_type ?? 'manual') ?></span>
                         <?php endif; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($definition->workflow_transitions as $transition) : ?>
-                        <tr>
-                            <td>
-                                <strong><?= h($transition->label) ?></strong>
-                                <br><code class="small text-muted"><?= h($transition->slug) ?></code>
-                            </td>
-                            <td>
-                                <span class="badge bg-light text-dark border"><?= $transition->hasValue('from_state') ? h($transition->from_state->label) : '?' ?></span>
-                                <i class="bi bi-arrow-right text-muted mx-1"></i>
-                                <span class="badge bg-light text-dark border"><?= $transition->hasValue('to_state') ? h($transition->to_state->label) : '?' ?></span>
-                            </td>
-                            <td>
-                                <?php if ($transition->is_automatic) : ?>
-                                    <span class="badge bg-info text-dark"><?= __('Auto') ?></span>
-                                <?php else : ?>
-                                    <span class="badge bg-outline-secondary border"><?= h($transition->trigger_type ?? 'manual') ?></span>
-                                <?php endif; ?>
-                            </td>
-                            <td><?= h($transition->priority) ?></td>
-                            <?php if ($user->checkCan("edit", $definition)) : ?>
-                                <td class="actions">
-                                    <?= $this->Html->link(
-                                        '<i class="bi bi-pencil"></i>',
-                                        ['controller' => 'WorkflowTransitions', 'action' => 'edit', $transition->id],
-                                        ['class' => 'btn btn-outline-secondary btn-sm', 'escape' => false, 'title' => __('Edit')]
-                                    ) ?>
-                                    <?= $this->Form->postLink(
-                                        '<i class="bi bi-trash"></i>',
-                                        ['controller' => 'WorkflowTransitions', 'action' => 'delete', $transition->id],
-                                        [
-                                            'confirm' => __('Delete transition "{0}"?', $transition->name),
-                                            'class' => 'btn btn-outline-danger btn-sm',
-                                            'escape' => false,
-                                            'title' => __('Delete'),
-                                        ]
-                                    ) ?>
-                                </td>
-                            <?php endif; ?>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                        <?php if ($transition->priority > 0) : ?>
+                            <span class="badge bg-light text-dark border" title="<?= __('Priority') ?>">P<?= h($transition->priority) ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="d-flex gap-1 flex-shrink-0">
+                        <?php if ($user->checkCan("edit", $definition)) : ?>
+                            <?= $this->Html->link('<i class="bi bi-pencil"></i>', ['controller' => 'WorkflowTransitions', 'action' => 'edit', $transition->id], ['class' => 'btn btn-outline-secondary btn-sm', 'escape' => false, 'title' => __('Edit')]) ?>
+                            <?= $this->Form->postLink('<i class="bi bi-trash"></i>', ['controller' => 'WorkflowTransitions', 'action' => 'delete', $transition->id], ['confirm' => __('Delete transition "{0}"?', $transition->name), 'class' => 'btn btn-outline-danger btn-sm', 'escape' => false, 'title' => __('Delete')]) ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php if ($hasConfig) : ?>
+                <div class="mt-2 pt-2 border-top small">
+                    <?php if (!empty($tConds)) : ?>
+                        <div class="mb-1">
+                            <strong class="text-muted"><i class="bi bi-funnel"></i> <?= __('Conditions:') ?></strong>
+                            <code class="ms-1 small"><?= h(json_encode($tConds, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) ?></code>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($tActs)) : ?>
+                        <div>
+                            <strong class="text-muted"><i class="bi bi-lightning-charge"></i> <?= __('Actions:') ?></strong>
+                            <?php foreach ((array)$tActs as $act) : ?>
+                                <span class="badge bg-info text-dark me-1"><?= h(is_array($act) ? ($act['action'] ?? json_encode($act)) : (string)$act) ?></span>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
         </div>
+        <?php endforeach; ?>
     <?php else : ?>
         <p class="text-muted"><?= __('No transitions defined for this workflow.') ?></p>
     <?php endif; ?>

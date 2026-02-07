@@ -230,6 +230,33 @@ class WorkflowVisualizerController extends Controller {
 
         // Expandable detail
         p.push(`<div class="wf-step-detail">`);
+
+        // Configuration section (metadata, actions)
+        const stMeta = st.metadata;
+        const enterActs = st.on_enter_actions;
+        const exitActs = st.on_exit_actions;
+        if (stMeta || enterActs || exitActs) {
+            p.push(`<div class="wf-detail-section">`);
+            p.push(`<div class="wf-detail-label">Configuration</div>`);
+            if (stMeta) {
+                Object.entries(stMeta).forEach(([k, v]) => {
+                    const val = Array.isArray(v) ? v.join(", ") : (typeof v === "object" ? JSON.stringify(v) : String(v));
+                    p.push(`<span class="wf-badge" style="--wf-ba:#6b7280;"><i class="bi bi-gear"></i> ${this._esc(k)}: ${this._esc(val)}</span> `);
+                });
+            }
+            if (enterActs) {
+                enterActs.forEach(a => {
+                    p.push(`<span class="wf-badge" style="--wf-ba:#0d9488;"><i class="bi bi-box-arrow-in-right"></i> on-enter: ${this._esc(a.action || "?")}</span> `);
+                });
+            }
+            if (exitActs) {
+                exitActs.forEach(a => {
+                    p.push(`<span class="wf-badge" style="--wf-ba:#d97706;"><i class="bi bi-box-arrow-right"></i> on-exit: ${this._esc(a.action || "?")}</span> `);
+                });
+            }
+            p.push(`</div>`);
+        }
+
         if (out.length) {
             p.push(`<div class="wf-detail-section"><div class="wf-detail-label">Outgoing transitions</div><div class="wf-detail-badges">`);
             out.forEach(t => {
@@ -237,7 +264,9 @@ class WorkflowVisualizerController extends Controller {
                 const tCat = target?.status_category || "Other";
                 const ts = this._s(tCat);
                 const auto = t.is_automatic ? ' <i class="bi bi-lightning-charge-fill" title="Automatic"></i>' : "";
-                p.push(`<span class="wf-badge" style="--wf-ba:${ts.accent};" title="${this._esc(t.label || t.name)}">→ ${this._esc(target?.label || "?")}${auto}</span>`);
+                const cond = t.conditions ? ' <i class="bi bi-funnel-fill" title="Has conditions"></i>' : "";
+                const tAct = t.actions ? ' <i class="bi bi-gear-fill" title="Has actions"></i>' : "";
+                p.push(`<span class="wf-badge" style="--wf-ba:${ts.accent};" title="${this._esc(t.label || t.name)}">→ ${this._esc(target?.label || "?")}${auto}${cond}${tAct}</span>`);
             });
             p.push(`</div></div>`);
         }
