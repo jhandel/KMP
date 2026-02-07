@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\KMP\StaticHelpers;
+use Cake\Core\Plugin;
+
 /**
  * Manages workflow definition CRUD and duplication for admin users.
  *
@@ -30,21 +33,31 @@ class WorkflowDefinitionsController extends AppController
 
         $definitions = $this->paginate($query);
 
-        // Scan available templates
+        // Scan available templates from core and all loaded plugins
         $templates = [];
-        $templateDir = CONFIG . 'WorkflowTemplates';
-        if (is_dir($templateDir)) {
+        $templateDirs = [CONFIG . 'WorkflowTemplates'];
+        foreach (Plugin::loaded() as $pluginName) {
+            if (!StaticHelpers::pluginEnabled($pluginName)) {
+                continue;
+            }
+            $templateDirs[] = Plugin::path($pluginName) . 'config' . DS . 'WorkflowTemplates';
+        }
+        foreach ($templateDirs as $templateDir) {
+            if (!is_dir($templateDir)) {
+                continue;
+            }
             foreach (glob($templateDir . DS . '*.json') as $file) {
                 $data = json_decode(file_get_contents($file), true);
                 if ($data) {
                     $templates[] = [
                         'file' => pathinfo($file, PATHINFO_FILENAME),
                         'name' => $data['name'] ?? pathinfo($file, PATHINFO_FILENAME),
+                        'plugin' => $data['plugin_name'] ?? null,
                     ];
                 }
             }
-            usort($templates, fn($a, $b) => strcmp($a['name'], $b['name']));
         }
+        usort($templates, fn($a, $b) => strcmp($a['name'], $b['name']));
 
         $this->set(compact('definitions', 'templates'));
     }
@@ -199,8 +212,24 @@ class WorkflowDefinitionsController extends AppController
     {
         $this->request->allowMethod(['post']);
 
-        $templatePath = CONFIG . 'WorkflowTemplates' . DS . $templateName . '.json';
-        if (!file_exists($templatePath)) {
+        // Search core and plugin template directories
+        $templatePath = null;
+        $searchDirs = [CONFIG . 'WorkflowTemplates'];
+        foreach (Plugin::loaded() as $pluginName) {
+            if (!StaticHelpers::pluginEnabled($pluginName)) {
+                continue;
+            }
+            $searchDirs[] = Plugin::path($pluginName) . 'config' . DS . 'WorkflowTemplates';
+        }
+        foreach ($searchDirs as $dir) {
+            $candidate = $dir . DS . $templateName . '.json';
+            if (file_exists($candidate)) {
+                $templatePath = $candidate;
+                break;
+            }
+        }
+
+        if ($templatePath === null) {
             $this->Flash->error(__('Template not found.'));
             return $this->redirect(['action' => 'index']);
         }

@@ -50,7 +50,7 @@ $defaultCat = ['bg' => '#f8f9fa', 'bd' => '#adb5bd', 'tx' => '#495057'];
                             <?php foreach ($templates as $template) : ?>
                                 <li>
                                     <?= $this->Form->postLink(
-                                        h($template['name']),
+                                        h($template['name']) . ($template['plugin'] ? ' (' . h($template['plugin']) . ')' : ''),
                                         ['action' => 'createFromTemplate', $template['file']],
                                         ['class' => 'dropdown-item']
                                     ) ?>
