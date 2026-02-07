@@ -322,6 +322,14 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
                     return new ServiceResult(false, "Failed to forward to next approver");
                 }
 
+                // Record intermediate gate approval in context
+                $this->appendGateApprovalToContext(
+                    $instanceId,
+                    $approverId,
+                    $gateStatus,
+                    $authorization,
+                );
+
                 $transConnection->commit();
                 return new ServiceResult(true);
             }
@@ -447,6 +455,9 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
             return new ServiceResult(false, "Failed to revoke member role");
         }
 
+        // Reload authorization after status update by activeWindowManager
+        $authorization = $table->get($authorizationId, contain: ['Activities']);
+
         // Transition workflow to revoked state
         $instanceResult = $this->workflowEngine->getInstanceForEntity(
             'Activities.Authorizations',
@@ -461,9 +472,6 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
             );
             $this->updateInstanceContext($instanceId, $authorization);
         }
-
-        // Notify requester
-        $authorization = $table->get($authorizationId);
         if (
             !$this->sendAuthorizationStatusToRequester(
                 $authorization->activity_id,
@@ -540,11 +548,13 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
                 $instanceId, 'retract', $requesterId,
                 $this->buildWorkflowContext($authorization, 'retract', $requesterId),
             );
+            // Reload authorization after status update so context has latest state
+            $authorization = $table->get($authorizationId, contain: ['Activities']);
             $this->updateInstanceContext($instanceId, $authorization);
+        } else {
+            // Reload authorization even without workflow
+            $authorization = $table->get($authorizationId);
         }
-
-        // Reload authorization after status update
-        $authorization = $table->get($authorizationId);
 
         // Notify approver of retraction (non-critical)
         $approvalsTable = TableRegistry::getTableLocator()->get("Activities.AuthorizationApprovals");
@@ -623,6 +633,38 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
         } catch (\Exception $e) {
             // Non-critical — don't fail the business operation
             Log::warning('WorkflowEngine: Failed to update instance context: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Record an intermediate gate approval in the instance context.
+     * Called when a gate approval is recorded but doesn't trigger a state transition.
+     */
+    private function appendGateApprovalToContext(
+        int $instanceId,
+        int $approverId,
+        array $gateStatus,
+        $authorization,
+    ): void {
+        try {
+            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+            $instance = $instancesTable->get($instanceId);
+            $existingContext = json_decode($instance->context ?? '{}', true) ?? [];
+            $existingContext['entity'] = $this->buildWorkflowContext($authorization)['entity'];
+            $existingContext['transitions'] = $existingContext['transitions'] ?? [];
+            $existingContext['transitions'][] = [
+                'type' => 'gate_approval',
+                'state' => 'pending-approval',
+                'by' => $approverId,
+                'action' => 'approve',
+                'approval_count' => $gateStatus['approved_count'] ?? null,
+                'required_count' => $gateStatus['required'] ?? null,
+                'at' => (new \DateTime())->format('Y-m-d H:i:s'),
+            ];
+            $instance->context = json_encode($existingContext);
+            $instancesTable->save($instance);
+        } catch (\Exception $e) {
+            Log::warning('WorkflowEngine: Failed to append gate approval to context: ' . $e->getMessage());
         }
     }
 
