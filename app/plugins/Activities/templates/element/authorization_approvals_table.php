@@ -35,13 +35,15 @@ $allColumns = $gridState['columns']['all'] ?? [];
                 <?php endforeach; ?>
                 <?php if ($isPendingView): ?>
                 <th scope="col" class="actions"></th>
+                <?php else: ?>
+                <th scope="col" class="actions"></th>
                 <?php endif; ?>
             </tr>
         </thead>
         <tbody>
             <?php if (empty($data) || (is_countable($data) && count($data) === 0)): ?>
             <tr>
-                <td colspan="<?= count($visibleColumns) + ($isPendingView ? 1 : 0) ?>"
+                <td colspan="<?= count($visibleColumns) + 1 ?>"
                     class="text-center text-muted py-4">
                     <?php if ($isPendingView): ?>
                     No pending authorization requests.
@@ -153,6 +155,21 @@ $allColumns = $gridState['columns']['all'] ?? [];
                         data-action="click->outlet-btn#fireNotice"
                         data-outlet-btn-btn-data-value='{"id":<?= $request->id ?>}'>
                         Deny</button>
+                    <button type="button" class="btn-sm btn btn-outline-info"
+                        data-bs-toggle="modal" data-bs-target="#workflowAuditModal"
+                        data-auth-id="<?= $request->authorization_id ?>"
+                        title="View workflow audit trail">
+                        <i class="bi bi-clock-history"></i> Audit
+                    </button>
+                </td>
+                <?php else: ?>
+                <td class="actions text-end text-nowrap">
+                    <button type="button" class="btn-sm btn btn-outline-info"
+                        data-bs-toggle="modal" data-bs-target="#workflowAuditModal"
+                        data-auth-id="<?= $request->authorization_id ?>"
+                        title="View workflow audit trail">
+                        <i class="bi bi-clock-history"></i> Audit
+                    </button>
                 </td>
                 <?php endif; ?>
             </tr>

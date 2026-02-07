@@ -763,4 +763,113 @@ class AuthorizationApprovalsController extends AppController
             ->count();
         return $counts;
     }
+
+    /**
+     * Return JSON workflow audit data for a given authorization.
+     *
+     * @param int|null $authorizationId Authorization ID
+     * @return \Cake\Http\Response
+     */
+    public function workflowAudit($authorizationId = null)
+    {
+        $this->Authorization->skipAuthorization();
+        $this->request->allowMethod(['get']);
+
+        $authorizationsTable = $this->fetchTable('Activities.Authorizations');
+        $auth = $authorizationsTable->get($authorizationId, contain: ['Activities', 'Members']);
+
+        $instancesTable = $this->fetchTable('WorkflowInstances');
+        $instance = $instancesTable->find()
+            ->contain(['CurrentState', 'PreviousState', 'WorkflowDefinitions'])
+            ->where([
+                'WorkflowInstances.entity_type' => 'Activities.Authorizations',
+                'WorkflowInstances.entity_id' => $authorizationId,
+            ])
+            ->orderBy(['WorkflowInstances.created' => 'DESC'])
+            ->first();
+
+        $result = [
+            'authorization' => [
+                'id' => $auth->id,
+                'member_name' => $auth->member->sca_name ?? 'Unknown',
+                'activity_name' => $auth->activity->name ?? 'Unknown',
+                'status' => $auth->status,
+                'start_on' => $auth->start_on ? $auth->start_on->toDateString() : null,
+                'expires_on' => $auth->expires_on ? $auth->expires_on->toDateString() : null,
+            ],
+        ];
+
+        if ($instance) {
+            $context = json_decode($instance->context ?? '{}', true);
+            $transitions = $context['transitions'] ?? [];
+
+            $approvalsTable = $this->fetchTable('WorkflowApprovals');
+            $gateApprovals = $approvalsTable->find()
+                ->where(['workflow_instance_id' => $instance->id])
+                ->orderBy(['created' => 'ASC'])
+                ->all()
+                ->toArray();
+
+            $membersTable = $this->fetchTable('Members');
+            $approvalData = [];
+            foreach ($gateApprovals as $ga) {
+                $approverName = 'System';
+                if ($ga->approver_id) {
+                    $approver = $membersTable->find()->select(['sca_name'])->where(['id' => $ga->approver_id])->first();
+                    $approverName = $approver ? $approver->sca_name : "Member #{$ga->approver_id}";
+                }
+                $approvalData[] = [
+                    'approver_name' => $approverName,
+                    'decision' => $ga->decision,
+                    'decided_at' => $ga->responded_at ? $ga->responded_at->toDateTimeString() : null,
+                    'notes' => $ga->notes ?? null,
+                ];
+            }
+
+            // Resolve member IDs in transitions to SCA names
+            $memberIds = [];
+            foreach ($transitions as $t) {
+                if (!empty($t['by'])) {
+                    $memberIds[(int)$t['by']] = true;
+                }
+            }
+            $memberNames = [];
+            if (!empty($memberIds)) {
+                $names = $membersTable->find()
+                    ->select(['id', 'sca_name'])
+                    ->where(['id IN' => array_keys($memberIds)])
+                    ->all();
+                foreach ($names as $m) {
+                    $memberNames[$m->id] = $m->sca_name;
+                }
+            }
+            foreach ($transitions as &$t) {
+                if (!empty($t['by'])) {
+                    $t['by_name'] = $memberNames[(int)$t['by']] ?? "Member #{$t['by']}";
+                }
+            }
+            unset($t);
+
+            $result['workflow'] = [
+                'instance_id' => $instance->id,
+                'definition_name' => $instance->workflow_definition->name ?? 'Unknown',
+                'current_state' => $instance->current_state->name ?? 'Unknown',
+                'current_state_slug' => $instance->current_state->slug ?? 'unknown',
+                'current_state_category' => $instance->current_state->status_category ?? null,
+                'previous_state' => $instance->previous_state->name ?? null,
+                'instance_status' => $instance->status,
+                'started_at' => $instance->started_at ? $instance->started_at->toDateTimeString() : null,
+                'completed_at' => $instance->completed_at ? $instance->completed_at->toDateTimeString() : null,
+                'is_migrated' => $context['migrated'] ?? false,
+                'transitions' => $transitions,
+                'gate_approvals' => $approvalData,
+            ];
+        }
+
+        $this->response = $this->response
+            ->withType("application/json")
+            ->withStringBody(json_encode(['result' => $result]));
+
+        return $this->response;
+    }
 }
