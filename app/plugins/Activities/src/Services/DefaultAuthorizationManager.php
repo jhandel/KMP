@@ -1088,4 +1088,37 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
     }
 
     // endregion
+
+    /**
+     * Legacy gate status using direct entity fields.
+     * Kept for backward compatibility when workflow engine is not active.
+     */
+    public function getApprovalGateStatus(int $authorizationId): array
+    {
+        $authTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
+        try {
+            $authorization = $authTable->get($authorizationId, contain: ['Activities']);
+        } catch (\Exception $e) {
+            return [
+                'has_gate' => false,
+                'approved_count' => 0,
+                'required_count' => 1,
+                'has_more_approvals' => false,
+                'satisfied' => false,
+            ];
+        }
+
+        $required = $authorization->is_renewal
+            ? ($authorization->activity->num_required_renewers ?? 1)
+            : ($authorization->activity->num_required_authorizors ?? 1);
+        $current = $authorization->approval_count ?? 0;
+
+        return [
+            'has_gate' => $required > 1,
+            'approved_count' => $current,
+            'required_count' => $required,
+            'has_more_approvals' => ($required - $current) > 1,
+            'satisfied' => $current >= $required,
+        ];
+    }
 }

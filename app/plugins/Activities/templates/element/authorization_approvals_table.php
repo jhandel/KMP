@@ -13,6 +13,7 @@
  */
 
 $currentViewId = $gridState['view']['currentId'] ?? 'pending';
+$gateStatuses = $gateStatuses ?? [];
 $isPendingView = $currentViewId === 'pending';
 $isApprovedView = $currentViewId === 'approved';
 $isDeniedView = $currentViewId === 'denied';
@@ -56,14 +57,18 @@ $allColumns = $gridState['columns']['all'] ?? [];
             <?php else: ?>
             <?php foreach ($data as $request): ?>
             <?php
-                    // Calculate if more approvals are needed (for pending view)
+                    // Get gate status from workflow engine (passed by controller)
                     $hasMoreApprovalsToGo = false;
                     $authsNeeded = 1;
+                    $currentApprovalCount = 0;
                     if ($isPendingView && isset($request->authorization)) {
-                        $authsNeeded = $request->authorization->is_renewal
-                            ? $request->authorization->activity->num_required_renewers
-                            : $request->authorization->activity->num_required_authorizors;
-                        $hasMoreApprovalsToGo = ($authsNeeded - $request->authorization->approval_count) > 1;
+                        $authId = $request->authorization->id;
+                        $gate = $gateStatuses[$authId] ?? null;
+                        if ($gate && $gate['has_gate']) {
+                            $authsNeeded = $gate['required_count'];
+                            $currentApprovalCount = $gate['approved_count'];
+                            $hasMoreApprovalsToGo = $gate['has_more_approvals'];
+                        }
                     }
                     ?>
             <tr>
@@ -117,7 +122,7 @@ $allColumns = $gridState['columns']['all'] ?? [];
                 <td class="actions text-end text-nowrap">
                     <?php if ($authsNeeded > 1): ?>
                     <span class="badge bg-info me-1" title="Multi-approver chain progress">
-                        <?= h($request->authorization->approval_count + 1) ?>/<?= h($authsNeeded) ?>
+                        <?= h($currentApprovalCount + 1) ?>/<?= h($authsNeeded) ?>
                     </span>
                     <?php endif; ?>
                     <?php if ($hasMoreApprovalsToGo): ?>

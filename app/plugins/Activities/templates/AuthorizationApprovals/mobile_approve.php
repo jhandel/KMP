@@ -30,14 +30,14 @@
                 <dt class="col-4">Requested:</dt>
                 <dd class="col-8"><?= $this->Timezone->format($authorizationApproval->requested_on) ?></dd>
                 <?php
-                $authsNeeded = $authorizationApproval->authorization->is_renewal
-                    ? $authorizationApproval->authorization->activity->num_required_renewers
-                    : $authorizationApproval->authorization->activity->num_required_authorizors;
+                // Use gate status from workflow engine (passed by controller)
+                $authsNeeded = isset($gateStatus) && $gateStatus['has_gate'] ? $gateStatus['required_count'] : 1;
+                $currentApprovalCount = isset($gateStatus) && $gateStatus['has_gate'] ? $gateStatus['approved_count'] : 0;
                 if ($authsNeeded > 1): ?>
                 <dt class="col-4">Progress:</dt>
                 <dd class="col-8">
                     <span class="badge bg-info">
-                        Approval <?= h($authorizationApproval->authorization->approval_count + 1) ?> of <?= h($authsNeeded) ?>
+                        Approval <?= h($currentApprovalCount + 1) ?> of <?= h($authsNeeded) ?>
                     </span>
                 </dd>
                 <?php endif; ?>

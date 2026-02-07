@@ -217,16 +217,8 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
         );
 
         if (!$instanceResult->success || !$instanceResult->data) {
-            // Fall back to non-workflow approval logic if no workflow instance exists
-            return $this->approveWithoutWorkflow(
-                $authorization,
-                $activity,
-                $approverId,
-                $nextApproverId,
-                $approvalTable,
-                $authTable,
-                $transConnection,
-            );
+            $transConnection->rollback();
+            return new ServiceResult(false, "No workflow instance found for this authorization. Cannot process approval.");
         }
 
         $instance = $instanceResult->data;
@@ -339,16 +331,9 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
             return new ServiceResult(false, "Additional approvals required. Please provide the next approver.");
         }
 
-        // No gate found — fall back to non-workflow approval logic
-        return $this->approveWithoutWorkflow(
-            $authorization,
-            $activity,
-            $approverId,
-            $nextApproverId,
-            $approvalTable,
-            $authTable,
-            $transConnection,
-        );
+        // No gate found — workflow is misconfigured
+        $transConnection->rollback();
+        return new ServiceResult(false, "No approval gate configured for current workflow state. Cannot process approval.");
     }
 
     /**
@@ -577,6 +562,66 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
         return new ServiceResult(true, null, ['authorization' => $authorization]);
     }
 
+    /**
+     * Get approval gate status for an authorization from the workflow engine.
+     *
+     * Queries the workflow instance and approval gate to determine approval
+     * progress without hardcoding threshold logic.
+     */
+    public function getApprovalGateStatus(int $authorizationId): array
+    {
+        $default = [
+            'has_gate' => false,
+            'approved_count' => 0,
+            'required_count' => 1,
+            'has_more_approvals' => false,
+            'satisfied' => false,
+        ];
+
+        $instanceResult = $this->workflowEngine->getInstanceForEntity(
+            'Activities.Authorizations',
+            $authorizationId,
+        );
+        if (!$instanceResult->success || !$instanceResult->data) {
+            return $default;
+        }
+
+        $instance = $instanceResult->data;
+        $instanceId = is_object($instance) ? $instance->id : $instance['id'];
+        $currentStateId = is_object($instance) ? $instance->current_state_id : $instance['current_state_id'];
+
+        // Find the approval gate for the current workflow state
+        $gatesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalGates');
+        $gate = $gatesTable->find()
+            ->where(['workflow_state_id' => $currentStateId])
+            ->first();
+
+        if (!$gate) {
+            return $default;
+        }
+
+        // Load authorization for context (needed for conditional threshold resolution)
+        $authTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
+        $authorization = $authTable->get($authorizationId, contain: ['Activities']);
+        $context = $this->buildWorkflowContext($authorization);
+
+        $gateStatus = $this->approvalGateService->getGateStatus(
+            $instanceId,
+            $gate->id,
+            $context,
+        );
+
+        return [
+            'has_gate' => true,
+            'approved_count' => $gateStatus['approved_count'] ?? 0,
+            'required_count' => $gateStatus['required'] ?? 1,
+            // "has_more_approvals" means the NEXT approval still needs forwarding
+            // (i.e., more than 1 approval remains after current count)
+            'has_more_approvals' => (($gateStatus['required'] ?? 1) - ($gateStatus['approved_count'] ?? 0)) > 1,
+            'satisfied' => $gateStatus['satisfied'] ?? false,
+        ];
+    }
+
     // region private helpers
 
     /**
@@ -666,89 +711,6 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
         } catch (\Exception $e) {
             Log::warning('WorkflowEngine: Failed to append gate approval to context: ' . $e->getMessage());
         }
-    }
-
-    /**
-     * Fallback approval processing when no workflow instance or gate exists.
-     * Replicates DefaultAuthorizationManager logic for backward compatibility.
-     */
-    private function approveWithoutWorkflow(
-        $authorization,
-        $activity,
-        int $approverId,
-        ?int $nextApproverId,
-        $approvalTable,
-        $authTable,
-        $transConnection,
-    ): ServiceResult {
-        $requiredApprovalCount = $authorization->is_renewal
-            ? $activity->num_required_renewers
-            : $activity->num_required_authorizors;
-
-        if ($requiredApprovalCount > 1) {
-            $acceptedApprovals = $approvalTable
-                ->find()
-                ->where([
-                    "authorization_id" => $authorization->id,
-                    "approved" => true,
-                ])
-                ->count();
-
-            if ($acceptedApprovals < $requiredApprovalCount) {
-                if (
-                    !$this->processForwardToNextApprover(
-                        $approverId,
-                        $nextApproverId,
-                        $authorization,
-                        $approvalTable,
-                        $authTable,
-                    )
-                ) {
-                    $transConnection->rollback();
-                    return new ServiceResult(false, "Failed to forward to next approver");
-                }
-                $transConnection->commit();
-                return new ServiceResult(true);
-            }
-        }
-
-        // Final approval
-        $authorization->status = Authorization::APPROVED_STATUS;
-        $authorization->approval_count = $authorization->approval_count + 1;
-        if (!$authTable->save($authorization)) {
-            $transConnection->rollback();
-            return new ServiceResult(false, "Failed to process approved authorization");
-        }
-
-        $awResult = $this->activeWindowManager->start(
-            "Activities.Authorizations",
-            $authorization->id,
-            $approverId,
-            DateTime::now(),
-            null,
-            $activity->term_length,
-            $activity->grants_role_id,
-        );
-        if (!$awResult->success) {
-            $transConnection->rollback();
-            return new ServiceResult(false, "Failed to process approved authorization");
-        }
-
-        if (
-            !$this->sendAuthorizationStatusToRequester(
-                $authorization->activity_id,
-                $authorization->member_id,
-                $approverId,
-                $authorization->status,
-                null,
-            )
-        ) {
-            $transConnection->rollback();
-            return new ServiceResult(false, "Failed to process approved authorization");
-        }
-
-        $transConnection->commit();
-        return new ServiceResult(true);
     }
 
     /**

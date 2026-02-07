@@ -104,12 +104,13 @@ $deniedCount = count($denied);
                                     <i class="bi bi-shield-check me-1"></i><?= h($request->authorization->activity->name) ?>
                                 </span>
                                 <?php
-                                $authsNeeded = $request->authorization->is_renewal
-                                    ? $request->authorization->activity->num_required_renewers
-                                    : $request->authorization->activity->num_required_authorizors;
+                                // Use gate status from workflow engine if available
+                                $gate = isset($gateStatuses) ? ($gateStatuses[$request->authorization->id] ?? null) : null;
+                                $authsNeeded = ($gate && $gate['has_gate']) ? $gate['required_count'] : 1;
+                                $currentApprovalCount = ($gate && $gate['has_gate']) ? $gate['approved_count'] : 0;
                                 if ($authsNeeded > 1): ?>
                                 <span class="badge bg-info ms-1" style="font-size: 11px;">
-                                    <?= h($request->authorization->approval_count + 1) ?>/<?= h($authsNeeded) ?>
+                                    <?= h($currentApprovalCount + 1) ?>/<?= h($authsNeeded) ?>
                                 </span>
                                 <?php endif; ?>
                             </div>

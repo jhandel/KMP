@@ -136,7 +136,7 @@ class AuthorizationApprovalsController extends AppController
      * @param \App\Services\CsvExportService $csvExportService Injected CSV export service
      * @return \Cake\Http\Response|null|void
      */
-    public function myQueueGridData(CsvExportService $csvExportService)
+    public function myQueueGridData(CsvExportService $csvExportService, AuthorizationManagerInterface $maService)
     {
         $member_id = $this->Authentication->getIdentity()->getIdentifier();
         $token = $this->request->getQuery('token');
@@ -186,11 +186,23 @@ class AuthorizationApprovalsController extends AppController
             return $this->handleCsvExport($result, $csvExportService, 'my-authorization-queue', 'Activities.AuthorizationApprovals');
         }
 
+        // Build approval gate status lookup from workflow engine (keyed by authorization_id)
+        $gateStatuses = [];
+        if (!empty($result['data'])) {
+            foreach ($result['data'] as $approval) {
+                $authId = $approval->authorization->id ?? null;
+                if ($authId && !isset($gateStatuses[$authId])) {
+                    $gateStatuses[$authId] = $maService->getApprovalGateStatus((int)$authId);
+                }
+            }
+        }
+
         // Set view variables
         $this->set([
             'authorizationApprovals' => $result['data'],
             'gridState' => $result['gridState'],
             'isMyQueue' => true,
+            'gateStatuses' => $gateStatuses,
         ]);
         $this->set('data', $result['data']);
         $this->set('customElement', 'Activities.authorization_approvals_table');
@@ -224,7 +236,7 @@ class AuthorizationApprovalsController extends AppController
      * 
      * @return void
      */
-    public function mobileApproveAuthorizations()
+    public function mobileApproveAuthorizations(AuthorizationManagerInterface $maService)
     {
         // Get current user
         $currentUser = $this->Authentication->getIdentity();
@@ -239,10 +251,19 @@ class AuthorizationApprovalsController extends AppController
         $this->Authorization->applyScope($query);
         $authorizationApprovals = $query->all();
 
+        // Build approval gate status lookup from workflow engine
+        $gateStatuses = [];
+        foreach ($authorizationApprovals as $approval) {
+            $authId = $approval->authorization->id ?? null;
+            if ($authId && !isset($gateStatuses[$authId])) {
+                $gateStatuses[$authId] = $maService->getApprovalGateStatus((int)$authId);
+            }
+        }
+
         // Set view variables
         $queueFor = $currentUser->sca_name;
         $isMyQueue = true;
-        $this->set(compact('queueFor', 'isMyQueue', 'authorizationApprovals'));
+        $this->set(compact('queueFor', 'isMyQueue', 'authorizationApprovals', 'gateStatuses'));
 
         // Use mobile app layout for consistent UX
         $this->viewBuilder()->setLayout('mobile_app');
@@ -316,14 +337,12 @@ class AuthorizationApprovalsController extends AppController
         }
 
         // GET - display form
-        // Check if more approvals are needed
+        // Query workflow engine for gate status instead of hardcoding threshold logic
         $authorization = $authorizationApproval->authorization;
-        $authsNeeded = $authorization->is_renewal
-            ? $authorization->activity->num_required_renewers
-            : $authorization->activity->num_required_authorizors;
-        $hasMoreApprovalsToGo = ($authsNeeded - $authorization->approval_count) > 1;
+        $gateStatus = $maService->getApprovalGateStatus($authorization->id);
+        $hasMoreApprovalsToGo = $gateStatus['has_more_approvals'];
 
-        $this->set(compact('authorizationApproval', 'hasMoreApprovalsToGo'));
+        $this->set(compact('authorizationApproval', 'hasMoreApprovalsToGo', 'gateStatus'));
 
         // Use mobile app layout
         $this->viewBuilder()->setLayout('mobile_app');
@@ -434,7 +453,7 @@ class AuthorizationApprovalsController extends AppController
      * @param string|null $id Approver member ID
      * @return \Cake\Http\Response|null|void
      */
-    public function viewGridData(CsvExportService $csvExportService, $id = null)
+    public function viewGridData(CsvExportService $csvExportService, AuthorizationManagerInterface $maService, $id = null)
     {
         if ($id === null) {
             $id = $this->request->getQuery('approver_id');
@@ -481,12 +500,24 @@ class AuthorizationApprovalsController extends AppController
             return $this->handleCsvExport($result, $csvExportService, 'authorization-queue', 'Activities.AuthorizationApprovals');
         }
 
+        // Build approval gate status lookup from workflow engine
+        $gateStatuses = [];
+        if (!empty($result['data'])) {
+            foreach ($result['data'] as $approval) {
+                $authId = $approval->authorization->id ?? null;
+                if ($authId && !isset($gateStatuses[$authId])) {
+                    $gateStatuses[$authId] = $maService->getApprovalGateStatus((int)$authId);
+                }
+            }
+        }
+
         // Set view variables
         $this->set([
             'authorizationApprovals' => $result['data'],
             'gridState' => $result['gridState'],
             'isMyQueue' => false,
             'approver_id' => $id,
+            'gateStatuses' => $gateStatuses,
         ]);
         $this->set('data', $result['data']);
         $this->set('customElement', 'Activities.authorization_approvals_table');
@@ -525,6 +556,7 @@ class AuthorizationApprovalsController extends AppController
             ->contain([
                 "Authorizations" => function ($q) {
                     return $q->select([
+                        "Authorizations.id",
                         "Authorizations.status",
                         "Authorizations.approval_count",
                         "Authorizations.is_renewal",

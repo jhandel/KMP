@@ -92,6 +92,17 @@ interface AuthorizationManagerInterface
     ): ServiceResult;
 
     /**
+     * Get the approval gate status for an authorization from the workflow engine.
+     *
+     * Returns gate progress information (approved count, required count, whether
+     * more approvals are needed) without hardcoding threshold logic.
+     *
+     * @param int $authorizationId ID of authorization to check
+     * @return array{has_gate: bool, approved_count: int, required_count: int, has_more_approvals: bool, satisfied: bool}
+     */
+    public function getApprovalGateStatus(int $authorizationId): array;
+
+    /**
      * Retract (cancel) a pending authorization request.
      *
      * Allows requester to cancel their own pending request before
