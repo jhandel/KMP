@@ -30,7 +30,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $this->bridge = $bridge;
     }
 
-    public function startWorkflow(string $workflowSlug, string $entityType, int $entityId, ?int $initiatedBy = null): ServiceResult
+    public function startWorkflow(string $workflowSlug, string $entityType, int $entityId, ?int $initiatedBy = null, array $context = []): ServiceResult
     {
         $definitionsTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
         $statesTable = TableRegistry::getTableLocator()->get('WorkflowStates');
@@ -61,7 +61,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             'entity_id' => $entityId,
             'current_state_id' => $initialState->id,
             'previous_state_id' => null,
-            'context' => json_encode([]),
+            'context' => json_encode($context),
             'started_at' => new \DateTime(),
             'completed_at' => null,
             'status' => 'active',
@@ -74,7 +74,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         }
 
         // Log the initial state entry
-        $this->logTransition($instance->id, null, $initialState->id, null, $initiatedBy, 'manual', 'Workflow started');
+        $this->logTransition($instance->id, null, $initialState->id, null, $initiatedBy, 'manual', 'Workflow started', $context);
 
         return new ServiceResult(true, null, $instance);
     }
@@ -166,7 +166,8 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 $transitionRecord?->id,
                 $triggeredBy,
                 'manual',
-                $context['notes'] ?? null
+                $context['notes'] ?? null,
+                $context,
             );
 
             return new ServiceResult(true, null, [
@@ -390,7 +391,8 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         ?int $transitionId,
         ?int $triggeredBy,
         string $triggerType,
-        ?string $notes
+        ?string $notes,
+        array $context = [],
     ): void {
         try {
             $logsTable = TableRegistry::getTableLocator()->get('WorkflowTransitionLogs');
@@ -401,7 +403,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 'transition_id' => $transitionId,
                 'triggered_by' => $triggeredBy,
                 'trigger_type' => $triggerType,
-                'context_snapshot' => null,
+                'context_snapshot' => !empty($context) ? json_encode($context) : null,
                 'notes' => $notes,
             ]);
             $logsTable->save($log);

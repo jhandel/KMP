@@ -19,9 +19,10 @@ interface WorkflowEngineInterface
      * @param string $entityType Entity type (e.g., 'AwardsRecommendations')
      * @param int $entityId Entity primary key ID
      * @param int|null $initiatedBy Member who initiated (null = system)
+     * @param array $context Initial context data to store on the instance
      * @return ServiceResult Contains the new workflow instance on success
      */
-    public function startWorkflow(string $workflowSlug, string $entityType, int $entityId, ?int $initiatedBy = null): ServiceResult;
+    public function startWorkflow(string $workflowSlug, string $entityType, int $entityId, ?int $initiatedBy = null, array $context = []): ServiceResult;
 
     /**
      * Attempt a named transition on a workflow instance.

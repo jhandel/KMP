@@ -115,12 +115,14 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
             return new ServiceResult(false, "Failed to save authorization approval");
         }
 
-        // Start workflow instance
+        // Start workflow instance with entity context
+        $auth = $table->get($auth->id, contain: ['Activities']);
         $wfResult = $this->workflowEngine->startWorkflow(
             'activity-authorization',
             'Activities.Authorizations',
             $auth->id,
             $requesterId,
+            $this->buildWorkflowContext($auth, 'request', $requesterId),
         );
         if (!$wfResult->success) {
             $table->getConnection()->rollback();
@@ -242,7 +244,10 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
 
             if ($satisfied) {
                 // Gate is satisfied — transition the workflow to approved
-                $transResult = $this->workflowEngine->transition($instanceId, 'approve', $approverId);
+                $transResult = $this->workflowEngine->transition(
+                    $instanceId, 'approve', $approverId,
+                    $this->buildWorkflowContext($approval->authorization, 'approve', $approverId),
+                );
                 if (!$transResult->success) {
                     $transConnection->rollback();
                     return new ServiceResult(false, "Failed to transition workflow: " . ($transResult->reason ?? ''));
@@ -369,7 +374,10 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
         if ($instanceResult->success && $instanceResult->data) {
             $instance = $instanceResult->data;
             $instanceId = is_object($instance) ? $instance->id : $instance['id'];
-            $this->workflowEngine->transition($instanceId, 'deny', $approverId);
+            $this->workflowEngine->transition(
+                $instanceId, 'deny', $approverId,
+                $this->buildWorkflowContext($approval->authorization, 'deny', $approverId),
+            );
         }
 
         // Notify requester
@@ -428,7 +436,10 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
         if ($instanceResult->success && $instanceResult->data) {
             $instance = $instanceResult->data;
             $instanceId = is_object($instance) ? $instance->id : $instance['id'];
-            $this->workflowEngine->transition($instanceId, 'revoke', $revokerId);
+            $this->workflowEngine->transition(
+                $instanceId, 'revoke', $revokerId,
+                $this->buildWorkflowContext($authorization, 'revoke', $revokerId),
+            );
         }
 
         // Notify requester
@@ -505,7 +516,10 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
         if ($instanceResult->success && $instanceResult->data) {
             $instance = $instanceResult->data;
             $instanceId = is_object($instance) ? $instance->id : $instance['id'];
-            $this->workflowEngine->transition($instanceId, 'retract', $requesterId);
+            $this->workflowEngine->transition(
+                $instanceId, 'retract', $requesterId,
+                $this->buildWorkflowContext($authorization, 'retract', $requesterId),
+            );
         }
 
         // Reload authorization after status update
@@ -533,6 +547,44 @@ class WorkflowAuthorizationManager implements AuthorizationManagerInterface
     }
 
     // region private helpers
+
+    /**
+     * Build workflow context from an authorization entity.
+     * Provides entity data for condition evaluation, approval gates, and audit trail.
+     */
+    private function buildWorkflowContext($authorization, ?string $action = null, ?int $actorId = null): array
+    {
+        $context = [
+            'entity' => [
+                'id' => $authorization->id,
+                'member_id' => $authorization->member_id,
+                'activity_id' => $authorization->activity_id,
+                'status' => $authorization->status,
+                'is_renewal' => $authorization->is_renewal,
+                'approval_count' => $authorization->approval_count ?? 0,
+            ],
+        ];
+
+        // Include activity data if loaded
+        if (isset($authorization->activity)) {
+            $context['entity']['activity'] = [
+                'name' => $authorization->activity->name,
+                'num_required_authorizors' => $authorization->activity->num_required_authorizors ?? 1,
+                'num_required_renewers' => $authorization->activity->num_required_renewers ?? 1,
+                'term_length' => $authorization->activity->term_length ?? null,
+                'grants_role_id' => $authorization->activity->grants_role_id ?? null,
+            ];
+        }
+
+        if ($action) {
+            $context['action'] = $action;
+        }
+        if ($actorId) {
+            $context['actor_id'] = $actorId;
+        }
+
+        return $context;
+    }
 
     /**
      * Fallback approval processing when no workflow instance or gate exists.
