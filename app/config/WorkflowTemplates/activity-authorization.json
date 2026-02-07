@@ -1,26 +1,43 @@
 {
     "name": "Activity Authorization",
     "slug": "activity-authorization",
-    "description": "Activity authorization multi-level approval workflow",
+    "description": "Activity authorization workflow with dynamic serial unique approvers. Approval count is resolved from the Activity entity: num_required_authorizors for new authorizations, num_required_renewers for renewals.",
     "entity_type": "MemberAuthorizations",
     "plugin_name": "Activities",
     "type": "state_machine",
     "states": [
         {"slug": "requested", "label": "Requested", "state_type": "initial", "status_category": "In Progress"},
-        {"slug": "pending-first-approval", "label": "Pending First Approval", "state_type": "intermediate", "status_category": "Approval"},
-        {"slug": "pending-second-approval", "label": "Pending Second Approval", "state_type": "intermediate", "status_category": "Approval"},
+        {"slug": "pending-approval", "label": "Pending Approval", "state_type": "intermediate", "status_category": "Approval",
+         "metadata": {
+            "approval_gate": {
+                "approval_type": "chain",
+                "required_count": 2,
+                "threshold_config": {
+                    "type": "conditional_entity_field",
+                    "condition_field": "is_renewal",
+                    "when_true":  { "field": "activity.num_required_renewers" },
+                    "when_false": { "field": "activity.num_required_authorizors" },
+                    "default": 2
+                },
+                "approver_rule": { "type": "permission", "permission": "canApproveAuthorizations" },
+                "allow_delegation": true,
+                "timeout_hours": 168
+            }
+         }
+        },
         {"slug": "authorized", "label": "Authorized", "state_type": "intermediate", "status_category": "Active"},
         {"slug": "expired", "label": "Expired", "state_type": "final", "status_category": "Closed"},
         {"slug": "revoked", "label": "Revoked", "state_type": "final", "status_category": "Closed"},
         {"slug": "denied", "label": "Denied", "state_type": "final", "status_category": "Closed"}
     ],
     "transitions": [
-        {"slug": "submit-for-approval", "label": "Submit for Approval", "from": "requested", "to": "pending-first-approval"},
-        {"slug": "first-approve", "label": "First Approval", "from": "pending-first-approval", "to": "pending-second-approval"},
-        {"slug": "second-approve", "label": "Second Approval", "from": "pending-second-approval", "to": "authorized"},
-        {"slug": "deny-first", "label": "Deny at First Level", "from": "pending-first-approval", "to": "denied"},
-        {"slug": "deny-second", "label": "Deny at Second Level", "from": "pending-second-approval", "to": "denied"},
+        {"slug": "submit-for-approval", "label": "Submit for Approval", "from": "requested", "to": "pending-approval"},
+        {"slug": "approve", "label": "Approve", "from": "pending-approval", "to": "authorized",
+         "conditions": { "type": "approval_gate", "gate_state": "pending-approval", "status": "satisfied" }
+        },
+        {"slug": "deny", "label": "Deny", "from": "pending-approval", "to": "denied"},
         {"slug": "expire", "label": "Expire", "from": "authorized", "to": "expired"},
-        {"slug": "revoke", "label": "Revoke", "from": "authorized", "to": "revoked"}
+        {"slug": "revoke", "label": "Revoke", "from": "authorized", "to": "revoked"},
+        {"slug": "retract", "label": "Retract Request", "from": ["requested", "pending-approval"], "to": "denied"}
     ]
 }

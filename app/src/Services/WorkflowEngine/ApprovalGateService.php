@@ -318,6 +318,21 @@ class ApprovalGateService
                 }
                 return (int)$default;
 
+            case 'conditional_entity_field':
+                $condField = $config['condition_field'] ?? null;
+                if ($condField && isset($context['entity'])) {
+                    $condValue = $this->resolveFieldFromEntity($context['entity'], $condField);
+                    $branch = $condValue ? ($config['when_true'] ?? []) : ($config['when_false'] ?? []);
+                    $branchField = $branch['field'] ?? null;
+                    if ($branchField) {
+                        $value = $this->resolveFieldFromEntity($context['entity'], $branchField);
+                        if ($value !== null) {
+                            return (int)$value;
+                        }
+                    }
+                }
+                return (int)$default;
+
             default:
                 return (int)$default;
         }

@@ -467,6 +467,93 @@ class ApprovalGateServiceTest extends TestCase
         $this->assertEquals(6, $result);
     }
 
+    // ---- Conditional entity_field threshold resolution ----
+
+    public function testConditionalEntityFieldUsesWhenTrueForRenewal(): void
+    {
+        $service = new TestableApprovalGateService();
+        $gate = (object)[
+            'required_count' => 2,
+            'threshold_config' => json_encode([
+                'type' => 'conditional_entity_field',
+                'condition_field' => 'is_renewal',
+                'when_true' => ['field' => 'activity.num_required_renewers'],
+                'when_false' => ['field' => 'activity.num_required_authorizors'],
+                'default' => 2,
+            ]),
+        ];
+
+        $context = ['entity' => [
+            'is_renewal' => true,
+            'activity' => ['num_required_renewers' => 1, 'num_required_authorizors' => 3],
+        ]];
+        $result = $service->publicResolveThreshold($gate, $context);
+
+        $this->assertEquals(1, $result);
+    }
+
+    public function testConditionalEntityFieldUsesWhenFalseForNewAuth(): void
+    {
+        $service = new TestableApprovalGateService();
+        $gate = (object)[
+            'required_count' => 2,
+            'threshold_config' => json_encode([
+                'type' => 'conditional_entity_field',
+                'condition_field' => 'is_renewal',
+                'when_true' => ['field' => 'activity.num_required_renewers'],
+                'when_false' => ['field' => 'activity.num_required_authorizors'],
+                'default' => 2,
+            ]),
+        ];
+
+        $context = ['entity' => [
+            'is_renewal' => false,
+            'activity' => ['num_required_renewers' => 1, 'num_required_authorizors' => 4],
+        ]];
+        $result = $service->publicResolveThreshold($gate, $context);
+
+        $this->assertEquals(4, $result);
+    }
+
+    public function testConditionalEntityFieldFallsBackToDefaultWhenNoEntity(): void
+    {
+        $service = new TestableApprovalGateService();
+        $gate = (object)[
+            'required_count' => 2,
+            'threshold_config' => json_encode([
+                'type' => 'conditional_entity_field',
+                'condition_field' => 'is_renewal',
+                'when_true' => ['field' => 'activity.num_required_renewers'],
+                'when_false' => ['field' => 'activity.num_required_authorizors'],
+                'default' => 5,
+            ]),
+        ];
+
+        $result = $service->publicResolveThreshold($gate, []);
+
+        $this->assertEquals(5, $result);
+    }
+
+    public function testConditionalEntityFieldFallsBackWhenFieldMissing(): void
+    {
+        $service = new TestableApprovalGateService();
+        $gate = (object)[
+            'required_count' => 2,
+            'threshold_config' => json_encode([
+                'type' => 'conditional_entity_field',
+                'condition_field' => 'is_renewal',
+                'when_true' => ['field' => 'activity.missing_field'],
+                'when_false' => ['field' => 'activity.also_missing'],
+                'default' => 7,
+            ]),
+        ];
+
+        $context = ['entity' => ['is_renewal' => true, 'activity' => []]];
+        $result = $service->publicResolveThreshold($gate, $context);
+
+        $this->assertEquals(7, $result);
+    }
+
     // ---- Phase 4.6: Auto-transition status reporting ----
 
     public function testCalculateGateStatusSatisfiedIncludesAutoTransition(): void
