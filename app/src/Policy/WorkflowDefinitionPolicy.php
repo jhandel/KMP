@@ -16,17 +16,42 @@ use Cake\ORM\Table;
 class WorkflowDefinitionPolicy extends BasePolicy
 {
     /**
-     * Check if $user can edit a workflow definition.
-     *
      * @param \App\KMP\KmpIdentityInterface $user The user.
-     * @param \App\Model\Entity\BaseEntity $entity The entity.
-     * @param mixed ...$optionalArgs Optional arguments.
+     * @param \App\Model\Entity\BaseEntity|\Cake\ORM\Table $entity The entity.
      * @return bool
      */
-    public function canEditor(KmpIdentityInterface $user, BaseEntity $entity, mixed ...$optionalArgs): bool
+    public function canView(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
     {
-        $method = __FUNCTION__;
+        return $user->isSuperUser();
+    }
 
-        return $this->_hasPolicy($user, $method, $entity, ...$optionalArgs);
+    /**
+     * @param \App\KMP\KmpIdentityInterface $user The user.
+     * @param \App\Model\Entity\BaseEntity|\Cake\ORM\Table $entity The entity.
+     * @return bool
+     */
+    public function canEdit(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $user->isSuperUser();
+    }
+
+    /**
+     * @param \App\KMP\KmpIdentityInterface $user The user.
+     * @param \App\Model\Entity\BaseEntity|\Cake\ORM\Table $entity The entity.
+     * @return bool
+     */
+    public function canEditor(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $user->isSuperUser();
+    }
+
+    /**
+     * @param \App\KMP\KmpIdentityInterface $user The user.
+     * @param \App\Model\Entity\BaseEntity|\Cake\ORM\Table $entity The entity.
+     * @return bool
+     */
+    public function canDelete(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $user->isSuperUser();
     }
 }

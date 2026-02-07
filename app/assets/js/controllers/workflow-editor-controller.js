@@ -750,7 +750,7 @@ class WorkflowEditorController extends Controller {
     // ── Helpers ──────────────────────────────────────────────────────────
 
     getCsrfToken() {
-        return document.querySelector('meta[name="csrfToken"]')?.content || '';
+        return document.querySelector('meta[name="csrf-token"]')?.content || '';
     }
 
     escAttr(val) {

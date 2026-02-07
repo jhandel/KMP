@@ -2,22 +2,41 @@
 
 declare(strict_types=1);
 
-namespace App\Controller\Api;
+namespace App\Controller;
 
 use App\Controller\AppController;
+use Cake\Event\EventInterface;
 
 /**
- * WorkflowEditor API Controller
+ * WorkflowEditorApi Controller
  *
- * JSON API endpoints for the visual workflow editor.
+ * Session-authenticated JSON API endpoints for the visual workflow editor.
  * Handles CRUD for states, transitions, visibility rules, and approval gates.
+ * Only accessible to super users.
  */
-class WorkflowEditorController extends AppController
+class WorkflowEditorApiController extends AppController
 {
     public function initialize(): void
     {
         parent::initialize();
         $this->viewBuilder()->setClassName('Json');
+    }
+
+    /**
+     * Restrict all actions to super users and skip model authorization.
+     */
+    public function beforeFilter(EventInterface $event)
+    {
+        parent::beforeFilter($event);
+        $this->Authorization->skipAuthorization();
+        $identity = $this->request->getAttribute('identity');
+        if (!$identity || !$identity->getOriginalData()->isSuperUser()) {
+            $this->set(['error' => 'Forbidden']);
+            $this->viewBuilder()->setOption('serialize', ['error']);
+            $this->response = $this->response->withStatus(403);
+
+            return $this->response;
+        }
     }
 
     /**

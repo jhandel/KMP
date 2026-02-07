@@ -14,6 +14,7 @@ class WorkflowDefinitionsController extends AppController
     public function initialize(): void
     {
         parent::initialize();
+        $this->Authorization->authorizeModel('index', 'add', 'analytics');
     }
 
     /**
@@ -41,7 +42,11 @@ class WorkflowDefinitionsController extends AppController
         $definition = $table->newEmptyEntity();
 
         if ($this->request->is('post')) {
-            $definition = $table->patchEntity($definition, $this->request->getData());
+            $data = $this->request->getData();
+            $data['version'] = $data['version'] ?? 1;
+            $data['is_active'] = $data['is_active'] ?? false;
+            $data['is_default'] = $data['is_default'] ?? false;
+            $definition = $table->patchEntity($definition, $data);
             if ($table->save($definition)) {
                 $this->Flash->success(__('Workflow definition created.'));
 
@@ -65,6 +70,7 @@ class WorkflowDefinitionsController extends AppController
             'WorkflowStates' => ['WorkflowVisibilityRules', 'WorkflowApprovalGates'],
             'WorkflowTransitions' => ['FromState', 'ToState'],
         ]);
+        $this->Authorization->authorize($definition, 'editor');
         $this->set(compact('definition'));
     }
 
@@ -116,6 +122,7 @@ class WorkflowDefinitionsController extends AppController
         $this->request->allowMethod(['post', 'delete']);
         $table = $this->fetchTable('WorkflowDefinitions');
         $definition = $table->get($id);
+        $this->Authorization->authorize($definition, 'delete');
 
         $instanceCount = $this->fetchTable('WorkflowInstances')->find()
             ->where(['workflow_definition_id' => $id, 'completed_at IS' => null])

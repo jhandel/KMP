@@ -17,7 +17,7 @@ $this->KMP->endBlock();
 <div class="container-fluid"
      data-controller="workflow-editor"
      data-workflow-editor-definition-id-value="<?= $definition->id ?>"
-     data-workflow-editor-api-url-value="/api/workflow-editor">
+     data-workflow-editor-api-url-value="/workflow-engine/api">
 
     <div class="row">
         <div class="col-12">

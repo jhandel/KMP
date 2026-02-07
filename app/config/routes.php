@@ -223,6 +223,7 @@ return function (RouteBuilder $routes): void {
          */
         // Workflow Engine admin routes
         $builder->scope('/workflow-engine', function (RouteBuilder $builder) {
+            $builder->setExtensions(['json']);
             $builder->connect('/', ['controller' => 'WorkflowDefinitions', 'action' => 'index']);
             $builder->connect('/editor/{id}', ['controller' => 'WorkflowDefinitions', 'action' => 'editor'])
                 ->setPass(['id']);
@@ -230,50 +231,42 @@ return function (RouteBuilder $routes): void {
             $builder->connect('/delete/{id}', ['controller' => 'WorkflowDefinitions', 'action' => 'delete'])
                 ->setPass(['id']);
             $builder->connect('/analytics', ['controller' => 'WorkflowDefinitions', 'action' => 'analytics']);
+
+            // Workflow Editor JSON API (session-authenticated, used by the visual editor)
+            $builder->scope('/api', function (RouteBuilder $builder) {
+                $builder->connect('/definition/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'getDefinition'])
+                    ->setPass(['id'])->setMethods(['GET']);
+                $builder->connect('/definition/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'saveDefinition'])
+                    ->setPass(['id'])->setMethods(['PUT']);
+                $builder->connect('/states', ['controller' => 'WorkflowEditorApi', 'action' => 'createState'])
+                    ->setMethods(['POST']);
+                $builder->connect('/states/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'updateState'])
+                    ->setPass(['id'])->setMethods(['PUT']);
+                $builder->connect('/states/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'deleteState'])
+                    ->setPass(['id'])->setMethods(['DELETE']);
+                $builder->connect('/transitions', ['controller' => 'WorkflowEditorApi', 'action' => 'createTransition'])
+                    ->setMethods(['POST']);
+                $builder->connect('/transitions/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'updateTransition'])
+                    ->setPass(['id'])->setMethods(['PUT']);
+                $builder->connect('/transitions/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'deleteTransition'])
+                    ->setPass(['id'])->setMethods(['DELETE']);
+                $builder->connect('/visibility-rules', ['controller' => 'WorkflowEditorApi', 'action' => 'saveVisibilityRules'])
+                    ->setMethods(['POST']);
+                $builder->connect('/approval-gates', ['controller' => 'WorkflowEditorApi', 'action' => 'saveApprovalGate'])
+                    ->setMethods(['POST']);
+                $builder->connect('/approval-gates/{id}', ['controller' => 'WorkflowEditorApi', 'action' => 'deleteApprovalGate'])
+                    ->setPass(['id'])->setMethods(['DELETE']);
+                $builder->connect('/definition/{id}/publish', ['controller' => 'WorkflowEditorApi', 'action' => 'publishDefinition'])
+                    ->setPass(['id'])->setMethods(['POST']);
+                $builder->connect('/definition/{id}/export', ['controller' => 'WorkflowEditorApi', 'action' => 'exportDefinition'])
+                    ->setPass(['id'])->setMethods(['GET']);
+                $builder->connect('/import', ['controller' => 'WorkflowEditorApi', 'action' => 'importDefinition'])
+                    ->setMethods(['POST']);
+                $builder->connect('/definition/{id}/validate', ['controller' => 'WorkflowEditorApi', 'action' => 'validateDefinition'])
+                    ->setPass(['id'])->setMethods(['POST']);
+            });
         });
 
-        // Workflow Editor API routes
-        $builder->scope('/api/workflow-editor', function (RouteBuilder $builder) {
-            $builder->setExtensions(['json']);
-            // Definition
-            $builder->connect('/definition/{id}', ['controller' => 'Api/WorkflowEditor', 'action' => 'getDefinition'])
-                ->setPass(['id'])->setMethods(['GET']);
-            $builder->connect('/definition/{id}', ['controller' => 'Api/WorkflowEditor', 'action' => 'saveDefinition'])
-                ->setPass(['id'])->setMethods(['PUT']);
-            // States
-            $builder->connect('/states', ['controller' => 'Api/WorkflowEditor', 'action' => 'createState'])
-                ->setMethods(['POST']);
-            $builder->connect('/states/{id}', ['controller' => 'Api/WorkflowEditor', 'action' => 'updateState'])
-                ->setPass(['id'])->setMethods(['PUT']);
-            $builder->connect('/states/{id}', ['controller' => 'Api/WorkflowEditor', 'action' => 'deleteState'])
-                ->setPass(['id'])->setMethods(['DELETE']);
-            // Transitions
-            $builder->connect('/transitions', ['controller' => 'Api/WorkflowEditor', 'action' => 'createTransition'])
-                ->setMethods(['POST']);
-            $builder->connect('/transitions/{id}', ['controller' => 'Api/WorkflowEditor', 'action' => 'updateTransition'])
-                ->setPass(['id'])->setMethods(['PUT']);
-            $builder->connect('/transitions/{id}', ['controller' => 'Api/WorkflowEditor', 'action' => 'deleteTransition'])
-                ->setPass(['id'])->setMethods(['DELETE']);
-            // Visibility Rules
-            $builder->connect('/visibility-rules', ['controller' => 'Api/WorkflowEditor', 'action' => 'saveVisibilityRules'])
-                ->setMethods(['POST']);
-            // Approval Gates
-            $builder->connect('/approval-gates', ['controller' => 'Api/WorkflowEditor', 'action' => 'saveApprovalGate'])
-                ->setMethods(['POST']);
-            $builder->connect('/approval-gates/{id}', ['controller' => 'Api/WorkflowEditor', 'action' => 'deleteApprovalGate'])
-                ->setPass(['id'])->setMethods(['DELETE']);
-            // Publish/Version
-            $builder->connect('/definition/{id}/publish', ['controller' => 'Api/WorkflowEditor', 'action' => 'publishDefinition'])
-                ->setPass(['id'])->setMethods(['POST']);
-            // Export/Import
-            $builder->connect('/definition/{id}/export', ['controller' => 'Api/WorkflowEditor', 'action' => 'exportDefinition'])
-                ->setPass(['id'])->setMethods(['GET']);
-            $builder->connect('/import', ['controller' => 'Api/WorkflowEditor', 'action' => 'importDefinition'])
-                ->setMethods(['POST']);
-            // Validation
-            $builder->connect('/definition/{id}/validate', ['controller' => 'Api/WorkflowEditor', 'action' => 'validateDefinition'])
-                ->setPass(['id'])->setMethods(['POST']);
-        });
 
         $builder->fallbacks();
     });
