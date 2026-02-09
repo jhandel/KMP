@@ -129,6 +129,17 @@ class WorkflowDesignerController extends Controller {
         const makeIcon = (faClass, nodeType) =>
             `<span class="palette-node-icon"><i class="fa-solid ${faClass}"></i></span>`
 
+        // Helper: group items by source
+        const groupBySource = (items) => {
+            const groups = {}
+            items.forEach(item => {
+                const src = item.source || 'Other'
+                if (!groups[src]) groups[src] = []
+                groups[src].push(item)
+            })
+            return groups
+        }
+
         // Flow Control
         html += '<div class="palette-category"><h6 class="palette-category-title">Flow Control</h6>'
         const flowNodes = [
@@ -149,22 +160,40 @@ class WorkflowDesignerController extends Controller {
         html += `<div class="palette-node" draggable="true" data-node-type="approval" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-check-double', 'approval')} Approval Gate</div>`
         html += '</div>'
 
-        // Triggers (from registry)
+        // Triggers (grouped by source)
         if (this.registryData.triggers && this.registryData.triggers.length > 0) {
-            html += '<div class="palette-category"><h6 class="palette-category-title">Triggers</h6>'
-            this.registryData.triggers.forEach(trigger => {
-                html += `<div class="palette-node" draggable="true" data-node-type="trigger" data-node-event="${trigger.event}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-bolt', 'trigger')} ${trigger.label}</div>`
-            })
-            html += '</div>'
+            const groups = groupBySource(this.registryData.triggers)
+            for (const [source, triggers] of Object.entries(groups)) {
+                html += `<div class="palette-category"><h6 class="palette-category-title"><i class="fa-solid fa-bolt fa-xs me-1"></i>Triggers — ${source}</h6>`
+                triggers.forEach(trigger => {
+                    html += `<div class="palette-node" draggable="true" data-node-type="trigger" data-node-event="${trigger.event}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-bolt', 'trigger')} ${trigger.label}</div>`
+                })
+                html += '</div>'
+            }
         }
 
-        // Actions (from registry)
+        // Actions (grouped by source)
         if (this.registryData.actions && this.registryData.actions.length > 0) {
-            html += '<div class="palette-category"><h6 class="palette-category-title">Actions</h6>'
-            this.registryData.actions.forEach(action => {
-                html += `<div class="palette-node" draggable="true" data-node-type="action" data-node-action="${action.action}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-gear', 'action')} ${action.label}</div>`
-            })
-            html += '</div>'
+            const groups = groupBySource(this.registryData.actions)
+            for (const [source, actions] of Object.entries(groups)) {
+                html += `<div class="palette-category"><h6 class="palette-category-title"><i class="fa-solid fa-gear fa-xs me-1"></i>Actions — ${source}</h6>`
+                actions.forEach(action => {
+                    html += `<div class="palette-node" draggable="true" data-node-type="action" data-node-action="${action.action}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-gear', 'action')} ${action.label}</div>`
+                })
+                html += '</div>'
+            }
+        }
+
+        // Conditions (grouped by source)
+        if (this.registryData.conditions && this.registryData.conditions.length > 0) {
+            const groups = groupBySource(this.registryData.conditions)
+            for (const [source, conditions] of Object.entries(groups)) {
+                html += `<div class="palette-category"><h6 class="palette-category-title"><i class="fa-solid fa-diamond fa-xs me-1"></i>Conditions — ${source}</h6>`
+                conditions.forEach(cond => {
+                    html += `<div class="palette-node" draggable="true" data-node-type="condition" data-node-condition="${cond.condition}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-diamond', 'condition')} ${cond.label}</div>`
+                })
+                html += '</div>'
+            }
         }
 
         return html
