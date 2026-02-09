@@ -249,13 +249,11 @@ class SeedWorkflowDefinitions extends AbstractMigration
                 ],
                 'action-notify-approved' => [
                     'type' => 'action',
-                    'label' => 'Notify Approved',
+                    'label' => 'Notify Warrant Issued',
                     'config' => [
-                        'action' => 'Core.SendEmail',
+                        'action' => 'Warrants.NotifyWarrantIssued',
                         'params' => [
-                            'template' => 'warrant_approved',
-                            'subject' => 'Warrant Roster Approved',
-                            'toEntityField' => '$.trigger.rosterId',
+                            'rosterId' => '$.trigger.rosterId',
                         ],
                     ],
                     'position' => ['x' => 950, 'y' => 100],

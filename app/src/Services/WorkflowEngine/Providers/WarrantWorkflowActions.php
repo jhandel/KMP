@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services\WorkflowEngine\Providers;
 
 use App\KMP\StaticHelpers;
+use App\KMP\TimezoneHelper;
 use App\Model\Entity\Warrant;
 use App\Model\Entity\WarrantRoster;
 use App\Services\WorkflowEngine\Conditions\CoreConditions;
+use Cake\Core\App;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
@@ -331,6 +333,78 @@ class WarrantWorkflowActions
             Log::error('Workflow DeclineRoster failed: ' . $e->getMessage());
 
             return ['declined' => false];
+        }
+    }
+
+    /**
+     * Send warrant-issued notification emails to each member in the roster.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with rosterId
+     * @return array Output with emailsSent count
+     */
+    public function notifyWarrantIssued(array $context, array $config): array
+    {
+        try {
+            $rosterId = (int)$this->resolveValue($config['rosterId'], $context);
+
+            $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
+            $warrants = $warrantTable->find()
+                ->contain(['Members'])
+                ->where([
+                    'Warrants.warrant_roster_id' => $rosterId,
+                    'Warrants.status' => Warrant::CURRENT_STATUS,
+                ])
+                ->all();
+
+            $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
+            $mailerClass = App::className('KMP', 'Mailer', 'Mailer');
+            $useQueue = (StaticHelpers::getAppSetting('Email.UseQueue', 'no', null, true) === 'yes');
+            $sent = 0;
+
+            foreach ($warrants as $warrant) {
+                if (empty($warrant->member->email_address)) {
+                    continue;
+                }
+
+                $vars = [
+                    'to' => $warrant->member->email_address,
+                    'memberScaName' => $warrant->member->sca_name,
+                    'warrantName' => $warrant->name,
+                    'warrantStart' => TimezoneHelper::formatDate($warrant->start_on),
+                    'warrantExpires' => TimezoneHelper::formatDate($warrant->expires_on),
+                ];
+
+                $data = [
+                    'class' => $mailerClass,
+                    'action' => 'notifyOfWarrant',
+                    'vars' => $vars,
+                ];
+
+                if ($useQueue) {
+                    $queuedJobsTable->createJob('Queue.Mailer', $data);
+                } else {
+                    try {
+                        $mailer = new $mailerClass();
+                        $mailer->send('notifyOfWarrant', [
+                            $vars['to'],
+                            $vars['memberScaName'],
+                            $vars['warrantName'],
+                            $vars['warrantStart'],
+                            $vars['warrantExpires'],
+                        ]);
+                    } catch (\Throwable $mailErr) {
+                        Log::error('Workflow NotifyWarrantIssued mail send failed: ' . $mailErr->getMessage());
+                    }
+                }
+                $sent++;
+            }
+
+            return ['emailsSent' => $sent];
+        } catch (\Throwable $e) {
+            Log::error('Workflow NotifyWarrantIssued failed: ' . $e->getMessage());
+
+            return ['emailsSent' => 0];
         }
     }
 }

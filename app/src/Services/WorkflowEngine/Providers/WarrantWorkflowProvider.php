@@ -142,6 +142,20 @@ class WarrantWorkflowProvider
                 'serviceMethod' => 'declineRoster',
                 'isAsync' => false,
             ],
+            [
+                'action' => 'Warrants.NotifyWarrantIssued',
+                'label' => 'Notify Warrant Issued',
+                'description' => 'Send warrant-issued notification emails to each member in the roster',
+                'inputSchema' => [
+                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'emailsSent' => ['type' => 'integer', 'label' => 'Emails Sent'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'notifyWarrantIssued',
+                'isAsync' => false,
+            ],
         ]);
     }
 }
