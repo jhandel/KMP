@@ -13,6 +13,7 @@ use App\Model\Entity\WarrantPeriod;
 use App\Model\Entity\WarrantRoster;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\ServiceResult;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\I18n\Date;
 use Cake\I18n\DateTime;
 use Cake\Mailer\MailerAwareTrait;
@@ -116,6 +117,16 @@ class DefaultWarrantManager implements WarrantManagerInterface
         //commit transaction
         $warrantRosterTable->getConnection()->commit();
 
+        try {
+            TriggerDispatcher::dispatch('Warrants.RosterCreated', [
+                'rosterId' => $warrantRoster->id,
+                'rosterName' => $warrantRoster->name,
+                'approvalsRequired' => $warrantRoster->approvals_required,
+            ]);
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.RosterCreated: ' . $e->getMessage());
+        }
+
         return new ServiceResult(true, '', $warrantRoster->id);
     }
 
@@ -212,6 +223,16 @@ class DefaultWarrantManager implements WarrantManagerInterface
         //commit transaction
         $warrantRosterTable->getConnection()->commit();
 
+        if ($warrantRoster->status === WarrantRoster::STATUS_APPROVED) {
+            try {
+                TriggerDispatcher::dispatch('Warrants.Approved', [
+                    'rosterId' => $warrantRoster->id,
+                ]);
+            } catch (\Exception $e) {
+                \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Approved: ' . $e->getMessage());
+            }
+        }
+
         return new ServiceResult(true);
     }
 
@@ -274,6 +295,15 @@ class DefaultWarrantManager implements WarrantManagerInterface
         }
         //commit transaction
         $warrantRosterTable->getConnection()->commit();
+
+        try {
+            TriggerDispatcher::dispatch('Warrants.Declined', [
+                'rosterId' => $warrantRoster->id,
+                'reason' => $reason,
+            ]);
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Declined: ' . $e->getMessage());
+        }
 
         return new ServiceResult(true);
     }

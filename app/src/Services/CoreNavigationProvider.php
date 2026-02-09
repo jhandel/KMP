@@ -350,6 +350,53 @@ class CoreNavigationProvider
                     'ServicePrincipals/edit/*',
                 ],
             ],
+            [
+                'type' => 'parent',
+                'label' => 'Workflows',
+                'icon' => 'bi-diagram-3',
+                'id' => 'navheader_workflows',
+                'order' => 28,
+            ],
+            [
+                'type' => 'link',
+                'mergePath' => ['Workflows'],
+                'label' => 'Definitions',
+                'order' => 0,
+                'url' => [
+                    'controller' => 'Workflows',
+                    'action' => 'index',
+                ],
+                'icon' => 'bi-list-task',
+                'activePaths' => [
+                    'Workflows/designer/*',
+                    'Workflows/versions/*',
+                ],
+            ],
+            [
+                'type' => 'link',
+                'mergePath' => ['Workflows'],
+                'label' => 'My Approvals',
+                'order' => 10,
+                'url' => [
+                    'controller' => 'Workflows',
+                    'action' => 'approvals',
+                ],
+                'icon' => 'bi-check2-square',
+            ],
+            [
+                'type' => 'link',
+                'mergePath' => ['Workflows'],
+                'label' => 'Instances',
+                'order' => 20,
+                'url' => [
+                    'controller' => 'Workflows',
+                    'action' => 'instances',
+                ],
+                'icon' => 'bi-play-circle',
+                'activePaths' => [
+                    'Workflows/viewInstance/*',
+                ],
+            ],
         ];
     }
 }

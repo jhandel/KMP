@@ -12,6 +12,7 @@ use App\Services\WarrantManager\WarrantManagerInterface;
 use Cake\ORM\TableRegistry;
 use Officers\Model\Entity\Officer;
 use App\Services\ServiceResult;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\Mailer\MailerAwareTrait;
 use App\Services\WarrantManager\WarrantRequest;
 use App\Mailer\QueuedMailerAwareTrait;
@@ -165,6 +166,23 @@ class DefaultOfficerManager implements OfficerManagerInterface
             "requiresWarrant" => $office->requires_warrant
         ];
         $this->queueMail("Officers.Officers", "notifyOfHire", $member->email_address, $vars);
+
+        // After existing logic succeeds, dispatch workflow trigger
+        try {
+            TriggerDispatcher::dispatch('Officers.HireRequested', [
+                'memberId' => $memberId,
+                'officeId' => $officeId,
+                'branchId' => $branchId,
+                'startOn' => $startOn,
+                'expiresOn' => $endOn,
+                'deputyToId' => $newOfficer->deputy_to_office_id ?? null,
+                'officerId' => $newOfficer->id ?? null,
+            ]);
+        } catch (\Exception $e) {
+            // Workflow trigger dispatch is non-critical — log and continue
+            \Cake\Log\Log::warning('Workflow trigger dispatch failed for Officers.HireRequested: ' . $e->getMessage());
+        }
+
         return new ServiceResult(true);
     }
 
@@ -562,6 +580,18 @@ class DefaultOfficerManager implements OfficerManagerInterface
             "releaseDate" => TimezoneHelper::formatDate($revokedOn),
         ];
         $this->queueMail("Officers.Officers", "notifyOfRelease", $member->email_address, $vars);
+
+        try {
+            TriggerDispatcher::dispatch('Officers.Released', [
+                'officerId' => $officer->id,
+                'memberId' => $officer->member_id,
+                'officeId' => $officer->office_id,
+                'reason' => $revokedReason ?? 'Released',
+            ]);
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Workflow trigger dispatch failed for Officers.Released: ' . $e->getMessage());
+        }
+
         return new ServiceResult(true);
     }
 }

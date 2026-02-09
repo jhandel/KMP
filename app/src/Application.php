@@ -66,6 +66,10 @@ use App\Services\ImpersonationService;
 use App\Services\ICalendarService;
 use App\Services\WarrantManager\DefaultWarrantManager;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
+use App\Services\WorkflowEngine\DefaultWorkflowVersionManager;
+use App\Services\WorkflowEngine\WorkflowVersionManagerInterface;
 use Authentication\AuthenticationService;
 use Authentication\AuthenticationServiceInterface;
 use Authentication\AuthenticationServiceProviderInterface;
@@ -541,6 +545,24 @@ class Application extends BaseApplication implements
         );
         $container->add(
             ImpersonationService::class,
+        );
+
+        // Register WorkflowApprovalManager for approval gate lifecycle management
+        $container->add(
+            \App\Services\WorkflowEngine\WorkflowApprovalManagerInterface::class,
+            \App\Services\WorkflowEngine\DefaultWorkflowApprovalManager::class,
+        );
+
+        // Register WorkflowVersionManager for workflow version lifecycle management
+        $container->add(
+            WorkflowVersionManagerInterface::class,
+            DefaultWorkflowVersionManager::class,
+        );
+
+        // Workflow Engine
+        $container->add(
+            WorkflowEngineInterface::class,
+            DefaultWorkflowEngine::class,
         );
     }
 
