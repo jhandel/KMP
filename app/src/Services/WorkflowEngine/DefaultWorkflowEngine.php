@@ -604,7 +604,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             'deadline' => $deadline,
             'escalation_config' => $config['escalationConfig'] ?? null,
         ]);
-        $approvalsTable->save($approval);
+        if ($approval->getErrors()) {
+            Log::error('Approval entity validation errors: ' . json_encode($approval->getErrors()));
+        }
+        if (!$approvalsTable->save($approval)) {
+            Log::error('Failed to save workflow approval for node ' . $nodeId . ': ' . json_encode($approval->getErrors()));
+        }
 
         $log->status = WorkflowExecutionLog::STATUS_WAITING;
         $logsTable->save($log);

@@ -82,6 +82,7 @@ class WorkflowApprovalsTable extends BaseTable
                 WorkflowApproval::APPROVER_TYPE_ROLE,
                 WorkflowApproval::APPROVER_TYPE_MEMBER,
                 WorkflowApproval::APPROVER_TYPE_DYNAMIC,
+                WorkflowApproval::APPROVER_TYPE_POLICY,
             ]);
 
         $validator
