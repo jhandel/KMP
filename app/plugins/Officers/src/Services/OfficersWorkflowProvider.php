@@ -46,6 +46,8 @@ class OfficersWorkflowProvider
                     'startOn' => ['type' => 'datetime', 'label' => 'Start Date'],
                     'expiresOn' => ['type' => 'datetime', 'label' => 'Expires On'],
                     'deputyToId' => ['type' => 'integer', 'label' => 'Deputy To Officer ID'],
+                    'emailAddress' => ['type' => 'string', 'label' => 'Email Address'],
+                    'deputyDescription' => ['type' => 'string', 'label' => 'Deputy Description'],
                 ],
             ],
             [
@@ -128,6 +130,20 @@ class OfficersWorkflowProvider
                 'serviceMethod' => 'sendHireNotification',
                 'isAsync' => true,
             ],
+            [
+                'action' => 'Officers.RequestWarrantRoster',
+                'label' => 'Request Warrant Roster',
+                'description' => 'Create a warrant roster for the officer and start the warrant approval workflow',
+                'inputSchema' => [
+                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'requestWarrantRoster',
+                'isAsync' => false,
+            ],
         ]);
     }
 
@@ -158,6 +174,16 @@ class OfficersWorkflowProvider
                 ],
                 'evaluatorClass' => $conditionsClass,
                 'evaluatorMethod' => 'isOnlyOnePerBranch',
+            ],
+            [
+                'condition' => 'Officers.IsMemberWarrantable',
+                'label' => 'Member Is Warrantable',
+                'description' => 'Check if a member meets warrant eligibility requirements',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'isMemberWarrantable',
             ],
         ]);
     }

@@ -67,4 +67,32 @@ class OfficerWorkflowConditions
             return false;
         }
     }
+
+    /**
+     * Check if a member is warrantable (meets all warrant eligibility requirements).
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with 'memberId'
+     * @return bool
+     */
+    public function isMemberWarrantable(array $context, array $config): bool
+    {
+        try {
+            $memberId = $config['memberId'] ?? null;
+            if (is_string($memberId) && str_starts_with($memberId, '$.')) {
+                $memberId = CoreConditions::resolveFieldPath($context, $memberId);
+            }
+
+            if (empty($memberId)) {
+                return false;
+            }
+
+            $memberTable = TableRegistry::getTableLocator()->get('Members');
+            $member = $memberTable->get((int)$memberId);
+
+            return (bool)$member->warrantable;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
 }

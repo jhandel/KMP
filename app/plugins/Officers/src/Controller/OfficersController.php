@@ -76,16 +76,32 @@ class OfficersController extends AppController
             }
             $approverId = (int)$user->id;
             $deputyDescription = $this->request->getData('deputy_description');
-            $this->Officers->getConnection()->begin();
+
+            // Check if officer-hire workflow is active (no transaction needed)
+            $wfActive = false;
+            try {
+                $wfTable = $this->fetchTable('WorkflowDefinitions');
+                $wf = $wfTable->find()->where(['slug' => 'officer-hire', 'is_active' => true])->first();
+                $wfActive = ($wf !== null);
+            } catch (\Exception $e) {
+                // Workflow table may not exist yet
+            }
+
+            if (!$wfActive) {
+                $this->Officers->getConnection()->begin();
+            }
             $omResult = $oManager->assign($officeId, $memberId, $branchId, $startOn, $endOn, $deputyDescription, $approverId, $emailAddress);
             if (!$omResult->success) {
-                $this->Officers->getConnection()->rollback();
+                if (!$wfActive) {
+                    $this->Officers->getConnection()->rollback();
+                }
                 $this->Flash->error(__($omResult->reason));
                 $this->redirect($this->referer());
                 return;
             }
-            //commit transaction
-            $this->Officers->getConnection()->commit();
+            if (!$wfActive) {
+                $this->Officers->getConnection()->commit();
+            }
             $this->Flash->success(__('The officer has been saved.'));
             $this->redirect($this->referer());
         }

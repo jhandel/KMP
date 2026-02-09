@@ -69,6 +69,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 'status' => WorkflowInstance::STATUS_RUNNING,
                 'context' => [
                     'trigger' => $triggerData,
+                    'triggeredBy' => $startedBy,
                     'nodes' => [],
                     '_internal' => [],
                 ],

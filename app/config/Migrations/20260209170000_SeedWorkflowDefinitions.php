@@ -15,6 +15,7 @@ class SeedWorkflowDefinitions extends AbstractMigration
     {
         $now = date('Y-m-d H:i:s');
 
+        // Warrant Roster Approval workflow
         $name = 'Warrant Roster Approval';
         $slug = 'warrant-roster';
         $desc = 'Default workflow for warrant roster approval process';
@@ -39,13 +40,41 @@ class SeedWorkflowDefinitions extends AbstractMigration
             "WHERE wd.slug = '{$slug}' AND wv.version_number = 1" .
             ") WHERE slug = '{$slug}'"
         );
+
+        // Officer Hire workflow
+        $name2 = 'Officer Hire';
+        $slug2 = 'officer-hire';
+        $desc2 = 'Default workflow for officer hiring: validates warrantability, creates officer record, sends notification, and requests warrant if required';
+        $triggerConfig2 = addslashes(json_encode(['event' => 'Officers.HireRequested']));
+        $entityType2 = 'Officers';
+        $definition2 = addslashes(json_encode($this->getOfficerHireDefinition()));
+
+        $this->execute(
+            "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
+            "VALUES ('{$name2}', '{$slug2}', '{$desc2}', 'event', '{$triggerConfig2}', '{$entityType2}', 0, NULL, 1, 1, '{$now}', '{$now}')"
+        );
+
+        $this->execute(
+            "INSERT INTO workflow_versions (workflow_definition_id, version_number, definition, canvas_layout, status, published_at, published_by, created_by, created, modified) " .
+            "VALUES ((SELECT id FROM workflow_definitions WHERE slug = '{$slug2}'), 1, '{$definition2}', '{}', 'published', '{$now}', 1, 1, '{$now}', '{$now}')"
+        );
+
+        $this->execute(
+            "UPDATE workflow_definitions SET current_version_id = (" .
+            "SELECT wv.id FROM workflow_versions wv " .
+            "INNER JOIN workflow_definitions wd ON wv.workflow_definition_id = wd.id " .
+            "WHERE wd.slug = '{$slug2}' AND wv.version_number = 1" .
+            ") WHERE slug = '{$slug2}'"
+        );
     }
 
     public function down(): void
     {
-        $this->execute("UPDATE workflow_definitions SET current_version_id = NULL WHERE slug = 'warrant-roster'");
-        $this->execute("DELETE FROM workflow_versions WHERE workflow_definition_id IN (SELECT id FROM workflow_definitions WHERE slug = 'warrant-roster')");
-        $this->execute("DELETE FROM workflow_definitions WHERE slug = 'warrant-roster'");
+        foreach (['warrant-roster', 'officer-hire'] as $slug) {
+            $this->execute("UPDATE workflow_definitions SET current_version_id = NULL WHERE slug = '{$slug}'");
+            $this->execute("DELETE FROM workflow_versions WHERE workflow_definition_id IN (SELECT id FROM workflow_definitions WHERE slug = '{$slug}')");
+            $this->execute("DELETE FROM workflow_definitions WHERE slug = '{$slug}'");
+        }
     }
 
     private function getWarrantRosterDefinition(): array
@@ -136,6 +165,138 @@ class SeedWorkflowDefinitions extends AbstractMigration
                     'label' => 'Complete',
                     'config' => (object)[],
                     'position' => ['x' => 1200, 'y' => 200],
+                    'outputs' => [],
+                ],
+            ],
+        ];
+    }
+
+    private function getOfficerHireDefinition(): array
+    {
+        return [
+            'nodes' => [
+                'trigger-hire' => [
+                    'type' => 'trigger',
+                    'label' => 'Officer Hire Requested',
+                    'config' => [
+                        'event' => 'Officers.HireRequested',
+                        'entityIdField' => 'officerId',
+                        'inputMapping' => [
+                            'memberId' => '$.event.memberId',
+                            'officeId' => '$.event.officeId',
+                            'branchId' => '$.event.branchId',
+                            'startOn' => '$.event.startOn',
+                            'expiresOn' => '$.event.expiresOn',
+                            'deputyToId' => '$.event.deputyToId',
+                            'officerId' => '$.event.officerId',
+                            'emailAddress' => '$.event.emailAddress',
+                            'deputyDescription' => '$.event.deputyDescription',
+                        ],
+                    ],
+                    'position' => ['x' => 50, 'y' => 250],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'condition-requires-warrant'],
+                    ],
+                ],
+                'condition-requires-warrant' => [
+                    'type' => 'condition',
+                    'label' => 'Office Requires Warrant?',
+                    'config' => [
+                        'condition' => 'Officers.OfficeRequiresWarrant',
+                        'officeId' => '$.trigger.officeId',
+                    ],
+                    'position' => ['x' => 350, 'y' => 250],
+                    'outputs' => [
+                        ['port' => 'true', 'target' => 'condition-warrantable', 'label' => 'Yes'],
+                        ['port' => 'false', 'target' => 'action-create-officer', 'label' => 'No'],
+                    ],
+                ],
+                'condition-warrantable' => [
+                    'type' => 'condition',
+                    'label' => 'Member Warrantable?',
+                    'config' => [
+                        'condition' => 'Officers.IsMemberWarrantable',
+                        'memberId' => '$.trigger.memberId',
+                    ],
+                    'position' => ['x' => 650, 'y' => 150],
+                    'outputs' => [
+                        ['port' => 'true', 'target' => 'action-create-officer', 'label' => 'Yes'],
+                        ['port' => 'false', 'target' => 'end-rejected', 'label' => 'No'],
+                    ],
+                ],
+                'action-create-officer' => [
+                    'type' => 'action',
+                    'label' => 'Create Officer Record',
+                    'config' => [
+                        'action' => 'Officers.CreateOfficerRecord',
+                        'params' => [
+                            'memberId' => '$.trigger.memberId',
+                            'officeId' => '$.trigger.officeId',
+                            'branchId' => '$.trigger.branchId',
+                            'startOn' => '$.trigger.startOn',
+                            'expiresOn' => '$.trigger.expiresOn',
+                            'emailAddress' => '$.trigger.emailAddress',
+                            'deputyDescription' => '$.trigger.deputyDescription',
+                        ],
+                    ],
+                    'position' => ['x' => 950, 'y' => 250],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'action-send-email'],
+                    ],
+                ],
+                'action-send-email' => [
+                    'type' => 'action',
+                    'label' => 'Send Hire Notification',
+                    'config' => [
+                        'action' => 'Officers.SendHireNotification',
+                        'params' => [
+                            'officerId' => '$.nodes.action-create-officer.result.officerId',
+                        ],
+                    ],
+                    'position' => ['x' => 1250, 'y' => 250],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'condition-warrant-needed'],
+                    ],
+                ],
+                'condition-warrant-needed' => [
+                    'type' => 'condition',
+                    'label' => 'Warrant Required?',
+                    'config' => [
+                        'condition' => 'Officers.OfficeRequiresWarrant',
+                        'officeId' => '$.trigger.officeId',
+                    ],
+                    'position' => ['x' => 1550, 'y' => 250],
+                    'outputs' => [
+                        ['port' => 'true', 'target' => 'action-request-warrant', 'label' => 'Yes'],
+                        ['port' => 'false', 'target' => 'end-complete', 'label' => 'No'],
+                    ],
+                ],
+                'action-request-warrant' => [
+                    'type' => 'action',
+                    'label' => 'Request Warrant Roster',
+                    'config' => [
+                        'action' => 'Officers.RequestWarrantRoster',
+                        'params' => [
+                            'officerId' => '$.nodes.action-create-officer.result.officerId',
+                        ],
+                    ],
+                    'position' => ['x' => 1850, 'y' => 150],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'end-complete'],
+                    ],
+                ],
+                'end-rejected' => [
+                    'type' => 'end',
+                    'label' => 'Rejected — Not Warrantable',
+                    'config' => (object)[],
+                    'position' => ['x' => 950, 'y' => 50],
+                    'outputs' => [],
+                ],
+                'end-complete' => [
+                    'type' => 'end',
+                    'label' => 'Complete',
+                    'config' => (object)[],
+                    'position' => ['x' => 2100, 'y' => 250],
                     'outputs' => [],
                 ],
             ],

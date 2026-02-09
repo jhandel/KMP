@@ -72,6 +72,43 @@ class DefaultOfficerManager implements OfficerManagerInterface
         int $approverId,
         ?string $emailAddress
     ): ServiceResult {
+        // Check if officer-hire workflow is active — if so, let the workflow handle everything
+        $workflowActive = false;
+        try {
+            $wfTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
+            $wfDef = $wfTable->find()
+                ->where(['slug' => 'officer-hire', 'is_active' => true])
+                ->first();
+            $workflowActive = ($wfDef !== null);
+        } catch (\Exception $e) {
+            // If workflow table doesn't exist yet, fall through to hardcoded path
+        }
+
+        if ($workflowActive) {
+            // Workflow mode: just dispatch the trigger and let the workflow handle creation
+            $member = TableRegistry::getTableLocator()->get('Members')->get($memberId);
+            try {
+                TriggerDispatcher::dispatch('Officers.HireRequested', [
+                    'memberId' => $memberId,
+                    'officeId' => $officeId,
+                    'branchId' => $branchId,
+                    'startOn' => $startOn,
+                    'expiresOn' => $endOn,
+                    'deputyToId' => null,
+                    'officerId' => null,
+                    'emailAddress' => $member->email_address ?? $emailAddress ?? '',
+                    'deputyDescription' => $deputyDescription,
+                ], $approverId);
+            } catch (\Exception $e) {
+                \Cake\Log\Log::error('Workflow trigger dispatch failed for Officers.HireRequested: ' . $e->getMessage());
+
+                return new ServiceResult(false, 'Workflow dispatch failed: ' . $e->getMessage());
+            }
+
+            return new ServiceResult(true);
+        }
+
+        // Hardcoded path (workflow not active)
         //get officer table
         $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
         $newOfficer = $officerTable->newEmptyEntity();
@@ -166,22 +203,6 @@ class DefaultOfficerManager implements OfficerManagerInterface
             "requiresWarrant" => $office->requires_warrant
         ];
         $this->queueMail("Officers.Officers", "notifyOfHire", $member->email_address, $vars);
-
-        // After existing logic succeeds, dispatch workflow trigger
-        try {
-            TriggerDispatcher::dispatch('Officers.HireRequested', [
-                'memberId' => $memberId,
-                'officeId' => $officeId,
-                'branchId' => $branchId,
-                'startOn' => $startOn,
-                'expiresOn' => $endOn,
-                'deputyToId' => $newOfficer->deputy_to_office_id ?? null,
-                'officerId' => $newOfficer->id ?? null,
-            ]);
-        } catch (\Exception $e) {
-            // Workflow trigger dispatch is non-critical — log and continue
-            \Cake\Log\Log::warning('Workflow trigger dispatch failed for Officers.HireRequested: ' . $e->getMessage());
-        }
 
         return new ServiceResult(true);
     }
