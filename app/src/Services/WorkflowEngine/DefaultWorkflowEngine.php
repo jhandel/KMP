@@ -467,7 +467,14 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         $service = new $serviceClass();
         $context = $instance->context ?? [];
-        $result = $service->{$serviceMethod}($context, $node['config']);
+
+        // Merge config.params into top-level config so actions can read params directly
+        $nodeConfig = $node['config'] ?? [];
+        if (!empty($nodeConfig['params']) && is_array($nodeConfig['params'])) {
+            $nodeConfig = array_merge($nodeConfig, $nodeConfig['params']);
+        }
+
+        $result = $service->{$serviceMethod}($context, $nodeConfig);
 
         // Store result in context
         $context['nodes'][$nodeId] = ['result' => $result];
@@ -493,7 +500,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         array $definition,
     ): void {
         $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
-        $conditionName = $node['config']['condition'] ?? null;
+        $conditionName = $node['config']['condition'] ?? $node['config']['evaluator'] ?? null;
         $context = $instance->context ?? [];
         $result = false;
 
@@ -541,18 +548,41 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         $config = $node['config'] ?? [];
 
+        // Build approver_config from top-level config keys
+        $approverConfig = $config['approverConfig'] ?? [];
+        if (empty($approverConfig)) {
+            if (!empty($config['permission'])) {
+                $approverConfig['permission'] = $config['permission'];
+            }
+            if (!empty($config['role'])) {
+                $approverConfig['role'] = $config['role'];
+            }
+            if (!empty($config['member_id'])) {
+                $approverConfig['member_id'] = $config['member_id'];
+            }
+        }
+
+        // Resolve requiredCount (may be int, or {type: "app_setting", key: "..."})
+        $requiredCount = $this->resolveRequiredCount($config['requiredCount'] ?? 1, $instance->context ?? []);
+
+        // Parse deadline duration (e.g., "14d", "24h", "7d") into a future DateTime
+        $deadline = null;
+        if (!empty($config['deadline'])) {
+            $deadline = $this->parseDeadline($config['deadline']);
+        }
+
         $approval = $approvalsTable->newEntity([
             'workflow_instance_id' => $instance->id,
             'node_id' => $nodeId,
             'execution_log_id' => $log->id,
             'approver_type' => $config['approverType'] ?? WorkflowApproval::APPROVER_TYPE_PERMISSION,
-            'approver_config' => $config['approverConfig'] ?? [],
-            'required_count' => $config['requiredCount'] ?? 1,
+            'approver_config' => $approverConfig,
+            'required_count' => $requiredCount,
             'approved_count' => 0,
             'rejected_count' => 0,
             'status' => WorkflowApproval::STATUS_PENDING,
-            'allow_parallel' => $config['allowParallel'] ?? false,
-            'deadline' => !empty($config['deadline']) ? new DateTime($config['deadline']) : null,
+            'allow_parallel' => !empty($config['parallel'] ?? $config['allowParallel'] ?? false),
+            'deadline' => $deadline,
             'escalation_config' => $config['escalationConfig'] ?? null,
         ]);
         $approvalsTable->save($approval);
@@ -769,6 +799,80 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     }
 
     /**
+     * Resolve a required count value that may be an integer or a config object.
+     *
+     * Supported types: int, {"type": "fixed", "value": N},
+     * {"type": "app_setting", "key": "Setting.Name"}
+     */
+    protected function resolveRequiredCount(mixed $value, array $context): int
+    {
+        if (is_int($value) || is_numeric($value)) {
+            return (int)$value;
+        }
+
+        if (is_array($value)) {
+            $type = $value['type'] ?? 'fixed';
+            switch ($type) {
+                case 'app_setting':
+                    $key = $value['key'] ?? '';
+                    if ($key) {
+                        $settingsTable = TableRegistry::getTableLocator()->get('AppSettings');
+                        $setting = $settingsTable->find()->where(['name' => $key])->first();
+                        if ($setting) {
+                            return (int)$setting->value;
+                        }
+                    }
+                    return (int)($value['default'] ?? 1);
+
+                case 'fixed':
+                    return (int)($value['value'] ?? 1);
+
+                case 'context':
+                    $path = $value['path'] ?? '';
+                    if ($path) {
+                        $resolved = $this->resolveContextValue($context, $path);
+                        return (int)($resolved ?? 1);
+                    }
+                    return 1;
+
+                default:
+                    return 1;
+            }
+        }
+
+        return 1;
+    }
+
+    /**
+     * Parse a deadline duration string (e.g., "14d", "24h", "7d") into a future DateTime.
+     */
+    protected function parseDeadline(string $deadline): ?DateTime
+    {
+        if (preg_match('/^(\d+)([dhm])$/i', $deadline, $matches)) {
+            $amount = (int)$matches[1];
+            $unit = strtolower($matches[2]);
+            $now = DateTime::now();
+
+            switch ($unit) {
+                case 'd':
+                    return $now->modify("+{$amount} days");
+                case 'h':
+                    return $now->modify("+{$amount} hours");
+                case 'm':
+                    return $now->modify("+{$amount} minutes");
+            }
+        }
+
+        // Try parsing as a standard datetime string
+        try {
+            return new DateTime($deadline);
+        } catch (\Exception $e) {
+            Log::warning("Could not parse deadline: {$deadline}");
+            return null;
+        }
+    }
+
+    /**
      * Set a value in the context at the given dot-path.
      *
      * @param array &$context The workflow context (by reference)
@@ -808,19 +912,46 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     protected function getNodeOutputTargets(array $definition, string $nodeId, string $port): array
     {
         $targets = [];
-        $edges = $definition['edges'] ?? [];
 
+        // Check top-level edges array (if present)
+        $edges = $definition['edges'] ?? [];
         foreach ($edges as $edge) {
             $edgeSource = $edge['source'] ?? $edge['from'] ?? null;
             $edgePort = $edge['sourcePort'] ?? $edge['port'] ?? 'default';
             $edgeTarget = $edge['target'] ?? $edge['to'] ?? null;
 
-            if ($edgeSource === $nodeId && $edgePort === $port && $edgeTarget !== null) {
+            if ($edgeSource === $nodeId && $this->portsMatch($edgePort, $port) && $edgeTarget !== null) {
                 $targets[] = $edgeTarget;
             }
         }
 
-        return $targets;
+        // Check per-node outputs (primary format used by designer/seed data)
+        $node = $definition['nodes'][$nodeId] ?? null;
+        if ($node && !empty($node['outputs'])) {
+            foreach ($node['outputs'] as $output) {
+                $outputPort = $output['port'] ?? 'default';
+                $outputTarget = $output['target'] ?? null;
+
+                if ($this->portsMatch($outputPort, $port) && $outputTarget !== null) {
+                    $targets[] = $outputTarget;
+                }
+            }
+        }
+
+        return array_unique($targets);
+    }
+
+    /**
+     * Check if two port names are equivalent.
+     * Treats "next" and "default" as equivalent for regular action/trigger outputs.
+     */
+    protected function portsMatch(string $a, string $b): bool
+    {
+        if ($a === $b) {
+            return true;
+        }
+        $defaultAliases = ['default', 'next'];
+        return in_array($a, $defaultAliases) && in_array($b, $defaultAliases);
     }
 
     /**
@@ -833,14 +964,26 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     protected function getAllOutputTargets(array $definition, string $nodeId): array
     {
         $targets = [];
-        $edges = $definition['edges'] ?? [];
 
+        // Check top-level edges
+        $edges = $definition['edges'] ?? [];
         foreach ($edges as $edge) {
             $edgeSource = $edge['source'] ?? $edge['from'] ?? null;
             $edgeTarget = $edge['target'] ?? $edge['to'] ?? null;
 
             if ($edgeSource === $nodeId && $edgeTarget !== null) {
                 $targets[] = $edgeTarget;
+            }
+        }
+
+        // Check per-node outputs
+        $node = $definition['nodes'][$nodeId] ?? null;
+        if ($node && !empty($node['outputs'])) {
+            foreach ($node['outputs'] as $output) {
+                $outputTarget = $output['target'] ?? null;
+                if ($outputTarget !== null) {
+                    $targets[] = $outputTarget;
+                }
             }
         }
 

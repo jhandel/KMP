@@ -22,9 +22,10 @@ $statusBadge = function (string $status): string {
         'approved' => 'success',
         'rejected' => 'danger',
         'cancelled' => 'secondary',
+        'expired' => 'dark',
     ];
     $color = $map[$status] ?? 'light';
-    return '<span class="badge bg-' . $color . '">' . h($status) . '</span>';
+    return '<span class="badge bg-' . $color . '">' . h(ucfirst($status)) . '</span>';
 };
 ?>
 
@@ -41,17 +42,39 @@ $statusBadge = function (string $status): string {
     <?php if (!empty($pendingApprovals)) : ?>
     <div class="row">
         <?php foreach ($pendingApprovals as $approval) : ?>
+        <?php
+            $workflowName = $approval->workflow_instance->workflow_definition->name ?? __('Workflow');
+            $entityCtx = $approval->_entityContext ?? [];
+            $triggerData = $approval->_triggerData ?? [];
+            $entityName = $entityCtx['entityName'] ?? null;
+            $startedBy = $entityCtx['startedBy'] ?? null;
+            $entityType = $entityCtx['entityType'] ?? null;
+        ?>
         <div class="col-md-6 col-lg-4 mb-3">
-            <div class="card border-warning">
-                <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between">
-                    <strong><?= h($approval->workflow_instance->workflow_definition->name ?? __('Workflow')) ?></strong>
+            <div class="card border-warning shadow-sm">
+                <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-diagram-3 me-1"></i><?= h($workflowName) ?></strong>
                     <?= $statusBadge('pending') ?>
                 </div>
                 <div class="card-body">
-                    <p class="small text-muted mb-2">
-                        <?= __('Node:') ?> <?= h($approval->node_id) ?><br>
-                        <?= __('Created:') ?> <?= h($approval->created) ?>
-                    </p>
+                    <dl class="row mb-2 small">
+                        <?php if ($entityName) : ?>
+                        <dt class="col-sm-4 text-muted"><?= __('Entity') ?></dt>
+                        <dd class="col-sm-8"><?= h($entityName) ?></dd>
+                        <?php endif; ?>
+                        <?php if ($startedBy) : ?>
+                        <dt class="col-sm-4 text-muted"><?= __('Requested by') ?></dt>
+                        <dd class="col-sm-8"><?= h($startedBy) ?></dd>
+                        <?php endif; ?>
+                        <dt class="col-sm-4 text-muted"><?= __('Created') ?></dt>
+                        <dd class="col-sm-8"><?= h($approval->created->nice()) ?></dd>
+                        <?php if ($approval->deadline) : ?>
+                        <dt class="col-sm-4 text-muted"><?= __('Deadline') ?></dt>
+                        <dd class="col-sm-8"><?= h($approval->deadline->nice()) ?></dd>
+                        <?php endif; ?>
+                        <dt class="col-sm-4 text-muted"><?= __('Progress') ?></dt>
+                        <dd class="col-sm-8"><?= h($approval->approved_count) ?> / <?= h($approval->required_count) ?> <?= __('approvals') ?></dd>
+                    </dl>
                     <?= $this->Form->create(null, [
                         'url' => ['action' => 'recordApproval'],
                     ]) ?>
@@ -62,13 +85,14 @@ $statusBadge = function (string $status): string {
                             'rows' => 2,
                             'label' => __('Comment (optional)'),
                             'required' => false,
+                            'class' => 'form-control form-control-sm',
                         ]) ?>
                     </div>
                     <div class="d-flex gap-2">
-                        <button type="submit" name="decision" value="approved" class="btn btn-success btn-sm">
+                        <button type="submit" name="decision" value="approve" class="btn btn-success btn-sm flex-fill">
                             <i class="bi bi-check-lg me-1"></i><?= __('Approve') ?>
                         </button>
-                        <button type="submit" name="decision" value="rejected" class="btn btn-danger btn-sm">
+                        <button type="submit" name="decision" value="reject" class="btn btn-danger btn-sm flex-fill">
                             <i class="bi bi-x-lg me-1"></i><?= __('Reject') ?>
                         </button>
                     </div>
@@ -80,7 +104,7 @@ $statusBadge = function (string $status): string {
     </div>
     <?php else : ?>
     <div class="alert alert-info">
-        <i class="bi bi-info-circle me-1"></i><?= __('No pending approvals.') ?>
+        <i class="bi bi-info-circle me-1"></i><?= __('No pending approvals. You\'re all caught up!') ?>
     </div>
     <?php endif; ?>
 
@@ -91,8 +115,8 @@ $statusBadge = function (string $status): string {
             <thead>
                 <tr>
                     <th><?= __('Workflow') ?></th>
-                    <th><?= __('Node') ?></th>
                     <th><?= __('Status') ?></th>
+                    <th><?= __('Approvals') ?></th>
                     <th><?= __('Resolved') ?></th>
                 </tr>
             </thead>
@@ -100,8 +124,8 @@ $statusBadge = function (string $status): string {
                 <?php foreach ($recentApprovals as $approval) : ?>
                 <tr>
                     <td><?= h($approval->workflow_instance->workflow_definition->name ?? '—') ?></td>
-                    <td><?= h($approval->node_id) ?></td>
                     <td><?= $statusBadge($approval->status) ?></td>
+                    <td><?= h($approval->approved_count) ?>/<?= h($approval->required_count) ?></td>
                     <td><?= h($approval->modified) ?></td>
                 </tr>
                 <?php endforeach; ?>

@@ -228,6 +228,9 @@ class Application extends BaseApplication implements
             [CoreViewCellProvider::class, 'getViewCells']
         );
 
+        // Load workflow providers from plugins and core
+        \App\Services\WorkflowRegistry\WorkflowPluginLoader::loadFromPlugins($this->getPlugins());
+
         // Version-based application configuration management
         // This system allows automatic updates to application settings when KMP is upgraded
         // Each time the version changes, new default settings are applied

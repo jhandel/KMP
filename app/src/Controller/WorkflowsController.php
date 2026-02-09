@@ -15,6 +15,7 @@ use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Services\WorkflowRegistry\WorkflowEntityRegistry;
 use App\Services\WorkflowRegistry\WorkflowTriggerRegistry;
+use App\Model\Entity\WorkflowInstance;
 
 /**
  * Workflows Controller
@@ -293,6 +294,16 @@ class WorkflowsController extends AppController
         $approvalManager = $this->getApprovalManager();
         $pendingApprovals = $approvalManager->getPendingApprovalsForMember($currentUser->id);
 
+        // Enrich pending approvals with entity context from the workflow instance
+        foreach ($pendingApprovals as $approval) {
+            $instance = $approval->workflow_instance ?? null;
+            if ($instance) {
+                $context = $instance->context ?? [];
+                $approval->_entityContext = $this->resolveEntityContext($instance);
+                $approval->_triggerData = $context['trigger'] ?? [];
+            }
+        }
+
         $recentApprovals = $this->fetchTable('WorkflowApprovals')->find()
             ->contain(['WorkflowInstances' => ['WorkflowDefinitions'], 'WorkflowApprovalResponses'])
             ->where(['WorkflowApprovals.status !=' => 'pending'])
@@ -301,6 +312,44 @@ class WorkflowsController extends AppController
             ->all();
 
         $this->set(compact('pendingApprovals', 'recentApprovals'));
+    }
+
+    /**
+     * Resolve entity details from workflow instance for display.
+     */
+    private function resolveEntityContext(WorkflowInstance $instance): array
+    {
+        $details = [
+            'entityType' => $instance->entity_type,
+            'entityId' => $instance->entity_id,
+            'startedBy' => null,
+            'entityName' => null,
+        ];
+
+        // Resolve who started the workflow
+        if ($instance->started_by) {
+            $member = $this->fetchTable('Members')->find()
+                ->where(['id' => $instance->started_by])
+                ->first();
+            if ($member) {
+                $details['startedBy'] = $member->sca_name ?? $member->email_address;
+            }
+        }
+
+        // Resolve entity name based on type
+        if ($instance->entity_type && $instance->entity_id) {
+            try {
+                $table = \Cake\ORM\TableRegistry::getTableLocator()->get($instance->entity_type);
+                $entity = $table->find()->where(['id' => $instance->entity_id])->first();
+                if ($entity) {
+                    $details['entityName'] = $entity->name ?? $entity->sca_name ?? "#{$instance->entity_id}";
+                }
+            } catch (\Exception $e) {
+                // Table doesn't exist or other error — skip
+            }
+        }
+
+        return $details;
     }
 
     /**
@@ -328,7 +377,12 @@ class WorkflowsController extends AppController
                     $data['instanceId'],
                     $data['nodeId'],
                     $outputPort,
-                    ['approval' => $data]
+                    [
+                        'approval' => $data,
+                        'approverId' => $currentUser->id,
+                        'decision' => $decision,
+                        'comment' => $comment,
+                    ]
                 );
             }
         }

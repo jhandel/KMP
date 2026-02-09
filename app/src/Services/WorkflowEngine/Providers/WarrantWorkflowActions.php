@@ -122,7 +122,12 @@ class WarrantWorkflowActions
     {
         try {
             $rosterId = (int)$this->resolveValue($config['rosterId'], $context);
-            $approverId = (int)$this->resolveValue($config['approverId'], $context);
+            // Get approverId from config, or from resume data, or from triggeredBy
+            $approverId = $this->resolveValue($config['approverId'] ?? null, $context);
+            if (!$approverId) {
+                $approverId = $context['resumeData']['approverId'] ?? $context['triggeredBy'] ?? null;
+            }
+            $approverId = (int)$approverId;
 
             $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
             $rosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
@@ -257,8 +262,16 @@ class WarrantWorkflowActions
     {
         try {
             $rosterId = (int)$this->resolveValue($config['rosterId'], $context);
-            $reason = $this->resolveValue($config['reason'], $context);
-            $rejecterId = (int)$this->resolveValue($config['rejecterId'], $context);
+            $reason = $this->resolveValue($config['reason'] ?? '', $context);
+            if (empty($reason)) {
+                $reason = $context['resumeData']['comment'] ?? 'Declined via workflow';
+            }
+            // Get rejecterId from config, or from resume data, or from triggeredBy
+            $rejecterId = $this->resolveValue($config['rejecterId'] ?? null, $context);
+            if (!$rejecterId) {
+                $rejecterId = $context['resumeData']['approverId'] ?? $context['triggeredBy'] ?? null;
+            }
+            $rejecterId = (int)$rejecterId;
 
             $rosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
             $warrantTable = TableRegistry::getTableLocator()->get('Warrants');

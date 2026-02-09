@@ -365,7 +365,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
         $memberRolesTable = TableRegistry::getTableLocator()->get('MemberRoles');
 
         $count = $memberRolesTable->find()
-            ->innerJoinWith('Roles.RolesPermissions.Permissions')
+            ->innerJoinWith('Roles.Permissions')
             ->where([
                 'MemberRoles.member_id' => $memberId,
                 'Permissions.name' => $permissionName,
@@ -403,7 +403,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
         $membersTable = TableRegistry::getTableLocator()->get('Members');
 
         return $membersTable->find()
-            ->innerJoinWith('MemberRoles.Roles.RolesPermissions.Permissions')
+            ->innerJoinWith('MemberRoles.Roles.Permissions')
             ->where(['Permissions.name' => $permissionName])
             ->group(['Members.id'])
             ->all()

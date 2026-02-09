@@ -50,9 +50,11 @@ class SeedWorkflowDefinitions extends AbstractMigration
             $entityType = addslashes($wf['entity_type']);
             $definition = addslashes($wf['definition']);
 
+            $isActive = ($slug === 'warrant-roster') ? 1 : 0;
+
             $this->execute(
                 "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
-                "VALUES ('{$name}', '{$slug}', '{$desc}', 'event', '{$triggerConfig}', '{$entityType}', 1, NULL, 1, 1, '{$now}', '{$now}')"
+                "VALUES ('{$name}', '{$slug}', '{$desc}', 'event', '{$triggerConfig}', '{$entityType}', {$isActive}, NULL, 1, 1, '{$now}', '{$now}')"
             );
 
             $this->execute(
@@ -216,7 +218,7 @@ class SeedWorkflowDefinitions extends AbstractMigration
                     'label' => 'Warrant Roster Approval',
                     'config' => [
                         'approverType' => 'permission',
-                        'permission' => 'canApproveWarrantRosters',
+                        'permission' => 'Can Approve Warrant Rosters',
                         'requiredCount' => ['type' => 'app_setting', 'key' => 'Warrant.RosterApprovalsRequired'],
                         'parallel' => true,
                         'deadline' => '14d',
