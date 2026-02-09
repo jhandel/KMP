@@ -41,11 +41,11 @@ class WorkflowDesignerController extends Controller {
     // Current zoom level
     _zoom = 1
 
-    connect() {
+    async connect() {
         this.initEditor()
-        this.loadRegistry()
+        await this.loadRegistry()
         if (this.hasWorkflowIdValue && this.workflowIdValue) {
-            this.loadWorkflow()
+            await this.loadWorkflow()
         }
         this._bindKeyboardShortcuts()
     }
@@ -126,40 +126,43 @@ class WorkflowDesignerController extends Controller {
     buildPaletteHTML() {
         let html = ''
 
-        // Flow Control nodes (always available)
+        const makeIcon = (faClass, nodeType) =>
+            `<span class="palette-node-icon"><i class="fa-solid ${faClass}"></i></span>`
+
+        // Flow Control
         html += '<div class="palette-category"><h6 class="palette-category-title">Flow Control</h6>'
         const flowNodes = [
-            { type: 'fork', label: 'Fork (Parallel)', icon: 'fa-code-branch' },
-            { type: 'join', label: 'Join (Merge)', icon: 'fa-code-merge' },
             { type: 'condition', label: 'Condition', icon: 'fa-diamond' },
+            { type: 'fork', label: 'Parallel Fork', icon: 'fa-code-branch' },
+            { type: 'join', label: 'Parallel Join', icon: 'fa-code-merge' },
             { type: 'loop', label: 'Loop', icon: 'fa-rotate' },
-            { type: 'delay', label: 'Delay/Wait', icon: 'fa-clock' },
+            { type: 'delay', label: 'Delay / Wait', icon: 'fa-clock' },
             { type: 'end', label: 'End', icon: 'fa-stop' },
         ]
         flowNodes.forEach(node => {
-            html += `<div class="palette-node" draggable="true" data-node-type="${node.type}" data-action="dragstart->workflow-designer#onPaletteDragStart"><i class="fa-solid ${node.icon}"></i> ${node.label}</div>`
+            html += `<div class="palette-node" draggable="true" data-node-type="${node.type}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon(node.icon, node.type)} ${node.label}</div>`
         })
         html += '</div>'
 
-        // Approval nodes
+        // Approvals
         html += '<div class="palette-category"><h6 class="palette-category-title">Approvals</h6>'
-        html += '<div class="palette-node" draggable="true" data-node-type="approval" data-action="dragstart->workflow-designer#onPaletteDragStart"><i class="fa-solid fa-check-double"></i> Approval Gate</div>'
+        html += `<div class="palette-node" draggable="true" data-node-type="approval" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-check-double', 'approval')} Approval Gate</div>`
         html += '</div>'
 
-        // Trigger nodes (from registry)
+        // Triggers (from registry)
         if (this.registryData.triggers && this.registryData.triggers.length > 0) {
             html += '<div class="palette-category"><h6 class="palette-category-title">Triggers</h6>'
             this.registryData.triggers.forEach(trigger => {
-                html += `<div class="palette-node" draggable="true" data-node-type="trigger" data-node-event="${trigger.event}" data-action="dragstart->workflow-designer#onPaletteDragStart"><i class="fa-solid fa-bolt"></i> ${trigger.label}</div>`
+                html += `<div class="palette-node" draggable="true" data-node-type="trigger" data-node-event="${trigger.event}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-bolt', 'trigger')} ${trigger.label}</div>`
             })
             html += '</div>'
         }
 
-        // Action nodes (from registry)
+        // Actions (from registry)
         if (this.registryData.actions && this.registryData.actions.length > 0) {
             html += '<div class="palette-category"><h6 class="palette-category-title">Actions</h6>'
             this.registryData.actions.forEach(action => {
-                html += `<div class="palette-node" draggable="true" data-node-type="action" data-node-action="${action.action}" data-action="dragstart->workflow-designer#onPaletteDragStart"><i class="fa-solid fa-gear"></i> ${action.label}</div>`
+                html += `<div class="palette-node" draggable="true" data-node-type="action" data-node-action="${action.action}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-gear', 'action')} ${action.label}</div>`
             })
             html += '</div>'
         }
@@ -251,17 +254,21 @@ class WorkflowDesignerController extends Controller {
             approval: 'fa-check-double', fork: 'fa-code-branch', join: 'fa-code-merge',
             loop: 'fa-rotate', delay: 'fa-clock', subworkflow: 'fa-sitemap', end: 'fa-stop'
         }
-        const colors = {
-            trigger: 'primary', action: 'success', condition: 'warning',
-            approval: 'info', fork: 'secondary', join: 'secondary',
-            loop: 'warning', delay: 'secondary', subworkflow: 'dark', end: 'danger'
+        const typeLabels = {
+            trigger: 'Trigger', action: 'Action', condition: 'Condition',
+            approval: 'Approval', fork: 'Parallel Fork', join: 'Parallel Join',
+            loop: 'Loop', delay: 'Delay', subworkflow: 'Sub-workflow', end: 'End'
         }
 
         const icon = icons[type] || 'fa-circle'
-        const color = colors[type] || 'secondary'
-        let label = config.event || config.action || type.charAt(0).toUpperCase() + type.slice(1)
+        let label = typeLabels[type] || type
 
-        if (config.event) {
+        // Use explicit node label if provided (from saved definition)
+        if (config._nodeLabel) {
+            label = config._nodeLabel
+        }
+        // Otherwise resolve friendly label from registry
+        else if (config.event) {
             const trigger = this.registryData.triggers?.find(t => t.event === config.event)
             if (trigger) label = trigger.label
         }
@@ -270,27 +277,40 @@ class WorkflowDesignerController extends Controller {
             if (action) label = action.label
         }
 
+        let description = ''
+        if (config.event) description = config.event.split('.').pop()
+        else if (config.action) description = config.action.split('.').pop()
+        else if (config.condition) description = config.condition
+
+        // Port labels for branching nodes
         let portLabelsHtml = ''
         if (['condition', 'approval', 'loop'].includes(type)) {
             const labels = {
-                condition: ['true', 'false'],
-                approval: ['approved', 'rejected'],
-                loop: ['continue', 'exit'],
+                condition: ['True', 'False'],
+                approval: ['Approved', 'Rejected'],
+                loop: ['Continue', 'Exit'],
             }
             const pair = labels[type]
             portLabelsHtml = `<div class="wf-port-labels">
-                <span class="wf-port-label wf-port-label-left">${pair[0]}</span>
-                <span class="wf-port-label wf-port-label-right">${pair[1]}</span>
+                <span class="wf-port-label wf-port-label-yes">${pair[0]}</span>
+                <span class="wf-port-label wf-port-label-no">${pair[1]}</span>
+            </div>`
+        }
+        if (type === 'fork') {
+            portLabelsHtml = `<div class="wf-port-labels">
+                <span class="wf-port-label wf-port-label-yes">Path A</span>
+                <span class="wf-port-label wf-port-label-yes">Path B</span>
             </div>`
         }
 
-        return `<div class="wf-node wf-node-${type} border-${color}">
-            <div class="wf-node-header bg-${color} text-white">
-                <i class="fa-solid ${icon}"></i>
-                <span class="wf-node-title">${label}</span>
+        return `<div class="wf-node wf-node-${type}">
+            <div class="wf-node-header">
+                <span class="wf-node-icon"><i class="fa-solid ${icon}"></i></span>
+                <span class="wf-node-title" title="${label}">${label}</span>
             </div>
             <div class="wf-node-body">
-                <small class="text-muted">${type}</small>
+                <span class="wf-node-type-label">${typeLabels[type] || type}</span>
+                ${description ? `<div class="wf-node-description">${description}</div>` : ''}
             </div>
             ${portLabelsHtml}
         </div>`
@@ -306,12 +326,18 @@ class WorkflowDesignerController extends Controller {
     }
 
     onNodeUnselected() {
-        // When Drawflow fires unselected, clear multi-select unless shift is held
         if (!this._shiftHeld) {
             this._clearMultiSelect()
         }
         if (this.hasNodeConfigTarget) {
-            this.nodeConfigTarget.innerHTML = '<p class="text-muted p-3">Select a node to configure it</p>'
+            this.nodeConfigTarget.innerHTML = `
+                <div class="config-panel-header">
+                    <h6><i class="bi bi-sliders me-1"></i>Configuration</h6>
+                </div>
+                <div class="config-panel-empty">
+                    <i class="bi bi-hand-index"></i>
+                    <p>Select a node on the canvas to configure it</p>
+                </div>`
         }
     }
 
@@ -348,14 +374,22 @@ class WorkflowDesignerController extends Controller {
 
     showNodeConfig(nodeId, nodeData) {
         const type = nodeData.data?.type || 'unknown'
-        let html = `<div class="p-3">
-            <h6>Configure: ${type}</h6>
-            <form data-node-id="${nodeId}">
-                <div class="mb-3">
-                    <label class="form-label">Label</label>
-                    <input type="text" class="form-control form-control-sm" name="label" value="${nodeData.name || ''}"
-                        data-action="change->workflow-designer#updateNodeConfig">
-                </div>`
+        const typeLabels = {
+            trigger: 'Trigger', action: 'Action', condition: 'Condition',
+            approval: 'Approval Gate', fork: 'Parallel Fork', join: 'Parallel Join',
+            loop: 'Loop', delay: 'Delay', subworkflow: 'Sub-workflow', end: 'End'
+        }
+        let html = `
+            <div class="config-panel-header">
+                <h6><i class="bi bi-sliders me-1"></i>${typeLabels[type] || type} Configuration</h6>
+            </div>
+            <div class="config-panel-body">
+                <form data-node-id="${nodeId}">
+                    <div class="mb-3">
+                        <label class="form-label">Label</label>
+                        <input type="text" class="form-control form-control-sm" name="label" value="${nodeData.name || ''}"
+                            data-action="change->workflow-designer#updateNodeConfig">
+                    </div>`
 
         html += this.getTypeSpecificConfigHTML(type, nodeData.data?.config || {})
 
@@ -540,7 +574,7 @@ class WorkflowDesignerController extends Controller {
                 }
             }
 
-            nodes[nodeKey] = { type, label: node.name, config, outputs }
+            nodes[nodeKey] = { type, label: node.data?.label || node.name, config, outputs }
             canvasLayout[nodeKey] = { x: node.pos_x, y: node.pos_y, drawflowId: parseInt(drawflowId) }
         }
 
@@ -561,24 +595,38 @@ class WorkflowDesignerController extends Controller {
         this.editor.clear()
 
         const nodeIdMap = {}
+        const nodeEntries = Object.entries(definition.nodes || {})
+
+        // Detect if we have saved positions
+        const hasLayout = canvasLayout && typeof canvasLayout === 'object' &&
+            !Array.isArray(canvasLayout) && Object.keys(canvasLayout).length > 0
+
+        // Auto-layout: arrange nodes in a top-down flow when no positions saved
+        let autoPositions = {}
+        if (!hasLayout) {
+            autoPositions = this._computeAutoLayout(definition)
+        }
 
         // First pass: create all nodes
-        for (const [nodeKey, nodeDef] of Object.entries(definition.nodes || {})) {
-            const pos = canvasLayout?.[nodeKey] || { x: 100, y: 100 }
+        for (const [nodeKey, nodeDef] of nodeEntries) {
+            const pos = hasLayout
+                ? (canvasLayout[nodeKey] || { x: 100, y: 100 })
+                : (autoPositions[nodeKey] || { x: 100, y: 100 })
             const { inputs, outputs } = this.getNodePorts(nodeDef.type)
-            const html = this.buildNodeHTML(nodeDef.type, nodeKey, nodeDef.config || {})
+            const config = { ...(nodeDef.config || {}), _nodeLabel: nodeDef.label || '' }
+            const html = this.buildNodeHTML(nodeDef.type, nodeKey, config)
 
             const drawflowId = this.editor.addNode(
                 nodeKey, inputs, outputs,
                 pos.x, pos.y, nodeKey,
-                { type: nodeDef.type, config: nodeDef.config || {}, nodeKey },
+                { type: nodeDef.type, config: nodeDef.config || {}, nodeKey, label: nodeDef.label || '' },
                 html
             )
             nodeIdMap[nodeKey] = drawflowId
         }
 
         // Second pass: create connections
-        for (const [nodeKey, nodeDef] of Object.entries(definition.nodes || {})) {
+        for (const [nodeKey, nodeDef] of nodeEntries) {
             const sourceId = nodeIdMap[nodeKey]
             for (const [idx, output] of (nodeDef.outputs || []).entries()) {
                 const targetId = nodeIdMap[output.target]
@@ -587,6 +635,72 @@ class WorkflowDesignerController extends Controller {
                 }
             }
         }
+    }
+
+    /**
+     * Compute auto-layout positions using topological sort.
+     * Places nodes in rows top-to-bottom; branches side-by-side.
+     */
+    _computeAutoLayout(definition) {
+        const nodes = definition.nodes || {}
+        const nodeKeys = Object.keys(nodes)
+        const positions = {}
+
+        // Build adjacency for topological sort
+        const inDegree = {}
+        const children = {}
+        nodeKeys.forEach(k => { inDegree[k] = 0; children[k] = [] })
+        for (const [key, node] of Object.entries(nodes)) {
+            for (const out of (node.outputs || [])) {
+                if (out.target && children[key]) {
+                    children[key].push(out.target)
+                    inDegree[out.target] = (inDegree[out.target] || 0) + 1
+                }
+            }
+        }
+
+        // BFS layers (topological order)
+        const layers = []
+        let queue = nodeKeys.filter(k => inDegree[k] === 0)
+        const visited = new Set()
+
+        while (queue.length > 0) {
+            layers.push([...queue])
+            queue.forEach(k => visited.add(k))
+            const nextQueue = []
+            for (const k of queue) {
+                for (const child of (children[k] || [])) {
+                    inDegree[child]--
+                    if (inDegree[child] <= 0 && !visited.has(child)) {
+                        nextQueue.push(child)
+                        visited.add(child)
+                    }
+                }
+            }
+            queue = nextQueue
+        }
+
+        // Add orphan nodes not reached
+        nodeKeys.filter(k => !visited.has(k)).forEach(k => layers.push([k]))
+
+        const nodeW = 260
+        const nodeH = 120
+        const gapX = 60
+        const startX = 80
+        const startY = 60
+
+        layers.forEach((layer, rowIdx) => {
+            const totalWidth = layer.length * nodeW + (layer.length - 1) * gapX
+            const offsetX = startX + Math.max(0, (600 - totalWidth) / 2)
+            layer.forEach((key, colIdx) => {
+                positions[key] = {
+                    x: offsetX + colIdx * (nodeW + gapX),
+                    y: startY + rowIdx * nodeH
+                }
+            })
+        })
+
+        return positions
     }
 
     async save(event) {
@@ -647,11 +761,10 @@ class WorkflowDesignerController extends Controller {
 
     showFlash(message, type) {
         const toast = document.createElement('div')
-        toast.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`
-        toast.style.zIndex = '9999'
+        toast.className = `alert alert-${type} alert-dismissible fade show wf-toast`
         toast.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`
         document.body.appendChild(toast)
-        setTimeout(() => toast.remove(), 5000)
+        setTimeout(() => toast.remove(), 4000)
     }
 
     // -------------------------------------------------------
@@ -892,15 +1005,23 @@ class WorkflowDesignerController extends Controller {
         if (this.hasValidationResultsTarget) {
             let html = ''
             if (isValid && warnings.length === 0) {
-                html = '<div class="alert alert-success mb-0"><i class="fa-solid fa-check-circle"></i> Workflow is valid.</div>'
+                html = '<div class="alert alert-success mb-0"><i class="bi bi-check-circle me-1"></i> Workflow is valid.</div>'
             }
             errors.forEach(e => {
-                html += `<div class="alert alert-danger mb-1 py-1 px-2"><i class="fa-solid fa-circle-xmark"></i> ${e}</div>`
+                html += `<div class="alert alert-danger mb-1"><i class="bi bi-x-circle me-1"></i> ${e}</div>`
             })
             warnings.forEach(w => {
-                html += `<div class="alert alert-warning mb-1 py-1 px-2"><i class="fa-solid fa-triangle-exclamation"></i> ${w}</div>`
+                html += `<div class="alert alert-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i> ${w}</div>`
             })
             this.validationResultsTarget.innerHTML = html
+            this.validationResultsTarget.style.display = 'block'
+
+            // Auto-hide success after 4s
+            if (isValid) {
+                setTimeout(() => {
+                    if (this.hasValidationResultsTarget) this.validationResultsTarget.style.display = 'none'
+                }, 4000)
+            }
         }
 
         if (!isValid) {

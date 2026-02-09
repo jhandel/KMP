@@ -16,6 +16,11 @@ $this->extend("/layout/TwitterBootstrap/dashboard");
 echo $this->KMP->startBlock("title");
 echo $this->KMP->getAppSetting("KMP.ShortSiteTitle") . ': Workflow Designer';
 $this->KMP->endBlock();
+
+echo $this->KMP->startBlock("css");
+echo $this->Html->css('/css/drawflow.css');
+echo $this->Html->css('/css/workflow-designer.css');
+$this->KMP->endBlock();
 ?>
 
 <div class="workflows designer content"
@@ -31,8 +36,8 @@ $this->KMP->endBlock();
     data-workflow-designer-csrf-token-value="<?= $this->request->getAttribute('csrfToken') ?>">
 
     <!-- Toolbar -->
-    <div class="workflow-toolbar d-flex align-items-center border-bottom p-2 bg-light">
-        <h5 class="mb-0 me-3">
+    <div class="workflow-toolbar">
+        <h5 class="mb-0 me-2">
             <?php if ($workflow) : ?>
                 <i class="bi bi-diagram-3 me-1"></i><?= h($workflow->name) ?>
                 <?php if ($draftVersion) : ?>
@@ -42,6 +47,35 @@ $this->KMP->endBlock();
                 <i class="bi bi-diagram-3 me-1"></i><?= __('New Workflow') ?>
             <?php endif; ?>
         </h5>
+
+        <div class="wf-zoom-controls ms-3">
+            <button class="btn btn-sm" data-action="workflow-designer#zoomOut" title="Zoom Out">
+                <i class="bi bi-dash"></i>
+            </button>
+            <span class="wf-zoom-level" data-workflow-designer-target="zoomLevel">100%</span>
+            <button class="btn btn-sm" data-action="workflow-designer#zoomIn" title="Zoom In">
+                <i class="bi bi-plus"></i>
+            </button>
+            <button class="btn btn-sm" data-action="workflow-designer#zoomReset" title="Reset Zoom">
+                <i class="bi bi-arrows-angle-expand"></i>
+            </button>
+        </div>
+
+        <div class="toolbar-separator"></div>
+
+        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#undo" title="Undo (Ctrl+Z)">
+            <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#redo" title="Redo (Ctrl+Y)">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+
+        <div class="toolbar-separator"></div>
+
+        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#validateWorkflow" title="Validate">
+            <i class="bi bi-check-circle me-1"></i><?= __('Validate') ?>
+        </button>
+
         <div class="ms-auto d-flex gap-2">
             <?php if ($workflow) : ?>
                 <?= $this->Html->link(
@@ -50,36 +84,47 @@ $this->KMP->endBlock();
                     ['class' => 'btn btn-sm btn-outline-secondary', 'escape' => false]
                 ) ?>
             <?php endif; ?>
-            <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#save">
+            <button class="btn btn-sm btn-outline-primary" data-action="workflow-designer#save">
                 <i class="bi bi-save me-1"></i><?= __('Save Draft') ?>
             </button>
             <button class="btn btn-sm btn-primary" data-action="workflow-designer#publish">
-                <i class="bi bi-rocket me-1"></i><?= __('Publish') ?>
+                <i class="bi bi-rocket-takeoff me-1"></i><?= __('Publish') ?>
             </button>
         </div>
     </div>
 
     <!-- Main Designer Area -->
-    <div class="workflow-designer-container d-flex" style="height: calc(100vh - 180px);">
+    <div class="workflow-designer-container">
         <!-- Left: Node Palette -->
-        <div class="workflow-palette border-end bg-white p-2" style="width: 220px; overflow-y: auto;"
+        <div class="workflow-palette"
             data-workflow-designer-target="nodePalette">
-            <h6 class="text-uppercase text-muted small mb-2"><?= __('Node Palette') ?></h6>
-            <p class="text-muted small"><?= __('Loading node types...') ?></p>
+            <div style="padding: 0.25rem 0 0.5rem;">
+                <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #667085;">
+                    <i class="bi bi-grid-3x3-gap me-1"></i><?= __('Nodes') ?>
+                </span>
+            </div>
+            <p class="text-muted small"><?= __('Loading...') ?></p>
         </div>
 
         <!-- Center: Canvas -->
-        <div class="workflow-canvas flex-grow-1 position-relative bg-light"
+        <div class="workflow-canvas"
             data-workflow-designer-target="canvas"
             data-action="drop->workflow-designer#onCanvasDrop dragover->workflow-designer#onCanvasDragOver">
-            <p class="text-muted text-center pt-5"><?= __('Drag nodes from the palette to start designing') ?></p>
         </div>
 
         <!-- Right: Config Panel -->
-        <div class="workflow-config-panel border-start bg-white p-3" style="width: 300px; overflow-y: auto;"
+        <div class="workflow-config-panel"
             data-workflow-designer-target="nodeConfig">
-            <h6 class="text-uppercase text-muted small mb-2"><?= __('Node Configuration') ?></h6>
-            <p class="text-muted small"><?= __('Select a node to configure it') ?></p>
+            <div class="config-panel-header">
+                <h6><i class="bi bi-sliders me-1"></i><?= __('Configuration') ?></h6>
+            </div>
+            <div class="config-panel-empty">
+                <i class="bi bi-hand-index"></i>
+                <p><?= __('Select a node on the canvas to configure it') ?></p>
+            </div>
         </div>
     </div>
+
+    <!-- Validation Results (initially hidden) -->
+    <div data-workflow-designer-target="validationResults" class="wf-validation-results" style="display:none;"></div>
 </div>
