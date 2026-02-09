@@ -206,6 +206,9 @@ return function (RouteBuilder $routes): void {
             $builder->connect('/save', ['controller' => 'Workflows', 'action' => 'save']);
             $builder->connect('/publish', ['controller' => 'Workflows', 'action' => 'publish']);
             $builder->connect('/registry', ['controller' => 'Workflows', 'action' => 'registry']);
+            $builder->connect('/load-version/{versionId}', ['controller' => 'Workflows', 'action' => 'loadVersion'])
+                ->setPatterns(['versionId' => '\d+'])
+                ->setPass(['versionId']);
             $builder->connect('/instances', ['controller' => 'Workflows', 'action' => 'instances']);
             $builder->connect('/instances/{definitionId}', ['controller' => 'Workflows', 'action' => 'instances'])
                 ->setPatterns(['definitionId' => '\d+'])

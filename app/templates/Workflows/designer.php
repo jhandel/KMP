@@ -23,6 +23,9 @@ $this->KMP->endBlock();
     data-workflow-designer-save-url-value="<?= $this->Url->build(['action' => 'save']) ?>"
     data-workflow-designer-publish-url-value="<?= $this->Url->build(['action' => 'publish']) ?>"
     data-workflow-designer-registry-url-value="<?= $this->Url->build(['action' => 'registry']) ?>"
+    <?php if ($draftVersion) : ?>
+    data-workflow-designer-load-url-value="<?= $this->Url->build(['action' => 'loadVersion', $draftVersion->id]) ?>"
+    <?php endif; ?>
     data-workflow-designer-workflow-id-value="<?= $workflow ? h($workflow->id) : '' ?>"
     data-workflow-designer-version-id-value="<?= $draftVersion ? h($draftVersion->id) : '' ?>"
     data-workflow-designer-csrf-token-value="<?= $this->request->getAttribute('csrfToken') ?>">

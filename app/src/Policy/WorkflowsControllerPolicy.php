@@ -30,6 +30,13 @@ class WorkflowsControllerPolicy extends BasePolicy
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $urlProps);
     }
 
+    public function canLoadVersion(
+        KmpIdentityInterface $user,
+        array $urlProps,
+    ): ResultInterface|bool {
+        return $this->_hasPolicyForUrl($user, __FUNCTION__, $urlProps);
+    }
+
     public function canDesigner(
         KmpIdentityInterface $user,
         array $urlProps,

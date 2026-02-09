@@ -34,6 +34,7 @@ class WorkflowsController extends AppController
         $this->Authorization->authorizeModel(
             'index',
             'designer',
+            'loadVersion',
             'registry',
             'save',
             'publish',
@@ -100,6 +101,28 @@ class WorkflowsController extends AppController
         }
 
         $this->set(compact('workflow', 'draftVersion'));
+    }
+
+    /**
+     * API: Return a workflow version's definition as JSON.
+     *
+     * @param int $versionId Version ID
+     * @return \Cake\Http\Response|null|void
+     */
+    public function loadVersion(int $versionId)
+    {
+        $this->request->allowMethod(['get']);
+        $versionsTable = $this->fetchTable('WorkflowVersions');
+        $version = $versionsTable->get($versionId);
+
+        $data = [
+            'definition' => $version->definition ?? ['nodes' => []],
+            'canvasLayout' => $version->canvas_layout,
+        ];
+        $this->set('data', $data);
+        $this->viewBuilder()->setOption('serialize', 'data');
+        $this->response = $this->response->withType('application/json');
+        $this->viewBuilder()->setClassName('Json');
     }
 
     /**
