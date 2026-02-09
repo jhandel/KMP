@@ -41,6 +41,11 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 return new ServiceResult(false, 'Approval is no longer pending.');
             }
 
+            // Check eligibility before accepting the response
+            if (!$this->isMemberEligible($approval, $memberId)) {
+                return new ServiceResult(false, 'You are not eligible to respond to this approval.');
+            }
+
             // Check for duplicate response
             $existing = $responsesTable->find()
                 ->where([
@@ -309,6 +314,9 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 // Dynamic resolution not yet implemented
                 return false;
 
+            case WorkflowApproval::APPROVER_TYPE_POLICY:
+                return $this->memberPassesPolicy($approval, $memberId);
+
             default:
                 return false;
         }
@@ -350,6 +358,14 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 return $member ? [$member] : [];
 
             case WorkflowApproval::APPROVER_TYPE_DYNAMIC:
+                return [];
+
+            case WorkflowApproval::APPROVER_TYPE_POLICY:
+                // Fall back to permission-based list, then filter by policy
+                $permissionName = $config['permission'] ?? null;
+                if ($permissionName) {
+                    return $this->findMembersByPermission($permissionName);
+                }
                 return [];
 
             default:
@@ -448,5 +464,86 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
 
         // Fallback: try parsing as a date string
         return new DateTime($deadline);
+    }
+
+    /**
+     * Check if a member passes a CakePHP policy check for the approval's entity.
+     *
+     * Resolves the entity from the workflow instance context, loads the member
+     * as an identity, instantiates the policy class, and calls the action method.
+     */
+    private function memberPassesPolicy(WorkflowApproval $approval, int $memberId): bool
+    {
+        $config = $approval->approver_config ?? [];
+        $policyClass = $config['policyClass'] ?? null;
+        $policyAction = $config['policyAction'] ?? null;
+        $entityTable = $config['entityTable'] ?? null;
+        $entityIdKey = $config['entityIdKey'] ?? null;
+
+        if (!$policyClass || !$policyAction || !$entityTable || !$entityIdKey) {
+            Log::warning("Policy approver type missing config: policyClass={$policyClass}, policyAction={$policyAction}, entityTable={$entityTable}, entityIdKey={$entityIdKey}");
+            return false;
+        }
+
+        // Load the workflow instance to get context
+        $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+        $instance = $instancesTable->get($approval->workflow_instance_id);
+        $context = $instance->context ?? [];
+
+        // Resolve entity ID from context using dot-path key
+        $entityId = $this->resolveContextValue($context, $entityIdKey);
+        if (!$entityId) {
+            Log::warning("Policy check: could not resolve entity ID from context key '{$entityIdKey}'");
+            return false;
+        }
+
+        // Load the target entity
+        $table = TableRegistry::getTableLocator()->get($entityTable);
+        $entity = $table->find()->where([$table->getAlias() . '.id' => $entityId])->first();
+        if (!$entity) {
+            Log::warning("Policy check: entity {$entityTable}#{$entityId} not found");
+            return false;
+        }
+
+        // Load the member as an identity (has getPolicies() via KmpIdentityInterface)
+        $membersTable = TableRegistry::getTableLocator()->get('Members');
+        $member = $membersTable->get($memberId);
+
+        // Instantiate the policy and call the action method
+        if (!class_exists($policyClass)) {
+            Log::warning("Policy check: class {$policyClass} not found");
+            return false;
+        }
+
+        $policy = new $policyClass();
+        $methodName = $policyAction;
+        if (!method_exists($policy, $methodName)) {
+            Log::warning("Policy check: method {$methodName} not found on {$policyClass}");
+            return false;
+        }
+
+        try {
+            return $policy->$methodName($member, $entity);
+        } catch (\Exception $e) {
+            Log::error("Policy check failed: {$e->getMessage()}");
+            return false;
+        }
+    }
+
+    /**
+     * Resolve a dot-path value from a nested context array.
+     * E.g., "trigger.rosterId" resolves $context['trigger']['rosterId'].
+     */
+    private function resolveContextValue(array $context, string $key): mixed
+    {
+        $parts = explode('.', $key);
+        $current = $context;
+        foreach ($parts as $part) {
+            if (!is_array($current) || !array_key_exists($part, $current)) {
+                return null;
+            }
+            $current = $current[$part];
+        }
+        return $current;
     }
 }

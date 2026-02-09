@@ -38,12 +38,23 @@ class AddApproveWarrantRostersPermission extends AbstractMigration
                 );
             }
         }
+
+        // Map the permission to CakePHP authorization policies
+        $this->execute(
+            "INSERT IGNORE INTO permission_policies (permission_id, policy_class, policy_method)
+             VALUES ({$newPermId}, 'App\\\\Policy\\\\WarrantRosterPolicy', 'canApprove')"
+        );
+        $this->execute(
+            "INSERT IGNORE INTO permission_policies (permission_id, policy_class, policy_method)
+             VALUES ({$newPermId}, 'App\\\\Policy\\\\WarrantRostersTablePolicy', 'canApprove')"
+        );
     }
 
     public function down(): void
     {
         $row = $this->fetchRow("SELECT id FROM permissions WHERE name = 'Can Approve Warrant Rosters'");
         if ($row) {
+            $this->execute("DELETE FROM permission_policies WHERE permission_id = " . (int)$row['id']);
             $this->execute("DELETE FROM roles_permissions WHERE permission_id = " . (int)$row['id']);
             $this->execute("DELETE FROM permissions WHERE id = " . (int)$row['id']);
         }

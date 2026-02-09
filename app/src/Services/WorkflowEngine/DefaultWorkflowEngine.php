@@ -319,10 +319,16 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 foreach ($triggerNodes as $triggerNode) {
                     $triggerEvent = $triggerNode['config']['event'] ?? $triggerNode['config']['eventName'] ?? null;
                     if ($triggerEvent === $eventName) {
+                        // Resolve entity ID from trigger config's entityIdField
+                        $entityIdField = $triggerNode['config']['entityIdField'] ?? null;
+                        $entityId = $entityIdField ? ($eventData[$entityIdField] ?? null) : null;
+
                         $results[] = $this->startWorkflow(
                             $def->slug,
                             $eventData,
                             $triggeredBy,
+                            null, // entityType from definition
+                            $entityId ? (int)$entityId : null,
                         );
                         break; // Only start once per definition
                     }
@@ -559,6 +565,19 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             }
             if (!empty($config['member_id'])) {
                 $approverConfig['member_id'] = $config['member_id'];
+            }
+            // Policy approver type fields
+            if (!empty($config['policyClass'])) {
+                $approverConfig['policyClass'] = $config['policyClass'];
+            }
+            if (!empty($config['policyAction'])) {
+                $approverConfig['policyAction'] = $config['policyAction'];
+            }
+            if (!empty($config['entityTable'])) {
+                $approverConfig['entityTable'] = $config['entityTable'];
+            }
+            if (!empty($config['entityIdKey'])) {
+                $approverConfig['entityIdKey'] = $config['entityIdKey'];
             }
         }
 

@@ -42,6 +42,7 @@ class WorkflowApproval extends BaseEntity
     public const APPROVER_TYPE_ROLE = 'role';
     public const APPROVER_TYPE_MEMBER = 'member';
     public const APPROVER_TYPE_DYNAMIC = 'dynamic';
+    public const APPROVER_TYPE_POLICY = 'policy';
 
     /**
      * Fields that can be mass assigned.

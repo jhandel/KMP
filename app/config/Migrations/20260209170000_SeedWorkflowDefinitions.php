@@ -202,6 +202,7 @@ class SeedWorkflowDefinitions extends AbstractMigration
                     'label' => 'Warrant Roster Created',
                     'config' => [
                         'event' => 'Warrants.RosterCreated',
+                        'entityIdField' => 'rosterId',
                         'inputMapping' => [
                             'rosterId' => '$.event.rosterId',
                             'rosterName' => '$.event.rosterName',
@@ -217,8 +218,12 @@ class SeedWorkflowDefinitions extends AbstractMigration
                     'type' => 'approval',
                     'label' => 'Warrant Roster Approval',
                     'config' => [
-                        'approverType' => 'permission',
+                        'approverType' => 'policy',
                         'permission' => 'Can Approve Warrant Rosters',
+                        'policyClass' => 'App\\Policy\\WarrantRosterPolicy',
+                        'policyAction' => 'canApprove',
+                        'entityTable' => 'WarrantRosters',
+                        'entityIdKey' => 'trigger.rosterId',
                         'requiredCount' => ['type' => 'app_setting', 'key' => 'Warrant.RosterApprovalsRequired'],
                         'parallel' => true,
                         'deadline' => '14d',

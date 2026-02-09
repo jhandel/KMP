@@ -365,6 +365,7 @@ class WorkflowsController extends AppController
         $comment = $this->request->getData('comment');
         $currentUser = $this->request->getAttribute('identity');
 
+        // Eligibility (including policy checks) is enforced inside recordResponse()
         $approvalManager = $this->getApprovalManager();
         $result = $approvalManager->recordResponse($approvalId, $currentUser->id, $decision, $comment);
 
