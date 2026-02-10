@@ -42,80 +42,17 @@
 📌 Team update (2026-02-10): Auth triage complete — 15 TEST_BUGs, 2 CODE_BUGs classified. Kaylee fixed both CODE_BUGs (PermissionsLoader revoker_id, ControllerResolver string handling). All 370 project-owned tests now pass. — decided by Jayne, Kaylee
 📌 Team update (2026-02-10): Auth strategy decided — standardize on TestAuthenticationHelper, deprecate old traits. ⚠️ Gap: authenticateAsSuperUser() does not set permissions — must be fixed before migrating tests. — decided by Mal
 
-### 2026-02-10: Queue Plugin Test Triage — Complete
+### 2026-02-10: Queue Plugin Test Fixes (summarized)
 
-**119 tests total: 38 pass, 81 fail (68 errors + 13 failures). 0 CODE_BUGs. 0 COMPAT issues.**
+**Triage:** 119 tests, 81 failed — all from 5 infrastructure root causes (not code bugs): redundant loadPlugins (16 errors), wrong Admin prefix routes (29 errors), missing TestApp autoload (15 errors), removed fixture declarations (16 errors), email transport config (3 errors).
 
-All 81 failures stem from 5 infrastructure/config root causes — the Queue plugin was ripped from its standalone test harness and dropped into KMP without adapting either side.
-
-**Root causes (ordered by impact):**
-1. **"Plugin already loaded"** (16 errors) — Queue tests call `$this->loadPlugins(['Queue'])` but KMP bootstrap already loads it. Fix: remove the calls.
-2. **Missing Admin prefix routes** (29 errors) — Controller tests use `'prefix' => 'Admin'` but controllers were moved out of Admin namespace. Fix: remove `prefix` from URL arrays.
-3. **TestApp/Foo autoload missing** (15 errors) — Queue's `composer.json` has `autoload-dev` for test stubs (`TestApp\`, `Foo\`) but KMP's doesn't include them. Fix: add to KMP's `autoload-dev`.
-4. **No data isolation** (16 errors/failures) — Commit `6e25eea4` bulk-deleted `$fixtures` declarations. Queue tests need fixtures for table truncation. Fix: restore fixture declarations.
-5. **Email transport config** (3 errors/failures) — Tests expect `Debug` transport, KMP configures `Smtp`. Fix: configure Debug transport in test setUp.
-
-**Silver bullet:** Fixes #1 + #2 resolve 45 of 68 errors. All 5 fixes together resolve all 81 failures.
-
-**Key insight:** Queue tests use CakePHP fixture-based isolation, NOT BaseTestCase transaction wrapping. The fixture removal was the biggest self-inflicted wound — it broke data isolation for every test that writes to `queued_jobs` or `queue_processes`. Do NOT migrate Queue to BaseTestCase yet — restore fixtures first, evaluate migration after all 119 pass.
-
-**Controller auth warning:** Once routes are fixed, controller tests will likely hit KMP's auth middleware. That's a Phase 5 problem — tests don't authenticate as any user.
-
-Full triage report: `.ai-team/decisions/inbox/jayne-queue-test-triage.md`
-
-📌 Team update (2026-02-10): Queue plugin ownership review — decided to own the plugin, security issues found, test triage complete
-
-### 2026-02-10: Queue Plugin Test Fixes — All 5+ Root Causes Fixed
-
-**Result: 0 errors, 0 failures, 6 skips (from 81 failures)**
-
-Fixed all root causes from the triage:
-1. **loadPlugins**: Removed redundant `$this->loadPlugins(['Queue'])` from 9 files
-2. **Admin prefix**: Removed `'prefix' => 'Admin'` from 3 controller test files (18 occurrences)
-3. **Autoload**: Added TestApp/Foo PSR-4 entries to `composer.json` autoload-dev
-4. **Fixtures**: Added `$fixtures` declarations to 14 test files
-5. **Email transport**: Force Debug transport in setUp for EmailTaskTest, MailerTaskTest, SimpleQueueTransportTest
-
-**Additional fixes discovered during execution:**
-- `app_queue.php` had EmailTask in `ignoredTasks` — cleared the list (all other entries were deleted example tasks)
-- Deleted 9 test files for Kaylee's deleted example/execute tasks
-- Updated 22 test files to reference Queue.Email/Queue.Mailer instead of deleted tasks
-- Added TestAuthenticationHelper + CSRF/security tokens to controller tests
-- Created test fixture file and email template for missing test infrastructure
-- Fixed TestMailer to produce correct debug output format
-- 3 tests skipped: bake reference files not migrated, TestApp Foo task not scannable
-
-**Auth update:** Controller auth works via `TestAuthenticationHelper::authenticateAsSuperUser()` — no issues with Queue controllers + authorization once authenticated.
-
-Full report: `.ai-team/decisions/inbox/jayne-queue-test-fixes.md`
+**Fixes:** All 81 failures resolved → 0 errors, 0 failures, 6 skips. Removed loadPlugins from 9 files, removed Admin prefix from 3 files, added autoload-dev entries, restored fixtures to 14 files, configured Debug transport. Also deleted 9 test files for removed example tasks, added auth to controller tests, created missing test infrastructure. Key insight: Queue uses CakePHP fixture isolation, NOT BaseTestCase — don't migrate yet.
 
 📌 Team update (2026-02-10): Documentation accuracy review completed — all 4 agents reviewed 96 docs against codebase
 
-### 2026-02-10: Documentation Modernization — 13 Tasks Completed
+### 2026-02-10: Documentation Modernization — 13 Tasks (summarized)
 
-Fixed 13 documentation issues across 12 files by verifying each claim against actual source code.
-
-**Key corrections:**
-- Deleted duplicate `8-development-workflow.md`
-- Rewrote `7-development-workflow.md` from scratch with correct test suites (`core-unit`/`core-feature`/`plugins`), correct base classes (`BaseTestCase`/`HttpIntegrationTestCase`/`PluginIntegrationTestCase`), correct data strategy (seed SQL + transactions, NOT fixtures)
-- Fixed `KINGDOM_BRANCH_ID` from 1 → 2, `TEST_BRANCH_LOCAL_ID` from 1073 → 14 in testing docs
-- Fixed session timeout from "4 hours" → "30 minutes" in security docs
-- Corrected session config location from `app_local.php` → `app.php`
-- Removed non-existent `bin/cake security generate_salt` command references (replaced with `php -r`)
-- Removed non-existent `npm run lint` / `npm run lint:fix` references
-- Removed non-existent `StaticHelpers::logVar()` reference
-- Removed non-existent `update_seed_data.sh` reference
-- Removed non-existent `DOCUMENTS_STORAGE_ADAPTER` env var reference
-- Fixed PHP version from 8.0/8.1 → 8.3 across 4 docs (1-introduction, 8-deployment, index)
-- Fixed PHP-FPM socket path from `php8.0-fpm.sock` → `php8.3-fpm.sock`
-- Fixed Bootstrap docs link from 5.0 → 5.3
-- Fixed session type from "database-backed" → "PHP file-based" in ER diagrams
-- Fixed config loading hierarchy in environment setup docs
-- Replaced deprecated `SuperUserAuthenticatedTrait` guidance with `HttpIntegrationTestCase`
-- Removed false "fact-checked" claims from index.md
-
-**Files modified:** `docs/index.md`, `docs/1-introduction.md`, `docs/2-configuration.md`, `docs/2-getting-started.md`, `docs/3.5-er-diagrams.md`, `docs/7-development-workflow.md`, `docs/7.1-security-best-practices.md`, `docs/7.3-testing-infrastructure.md`, `docs/8-deployment.md`, `docs/8.1-environment-setup.md`, `docs/appendices.md`
-**Files deleted:** `docs/8-development-workflow.md`
+Fixed 13 docs across 12 files. Key: deleted duplicate `8-development-workflow.md`, rewrote `7-development-workflow.md` (correct test suites, base classes, data strategy), fixed test constants (`KINGDOM_BRANCH_ID`=2, `TEST_BRANCH_LOCAL_ID`=14), session timeout 30min not 4hr, removed non-existent commands/scripts, PHP version 8.3 across 4 docs, replaced deprecated trait guidance.
 
 ### 2026-02-10: Workflow Engine Testability Audit — Complete
 
