@@ -7,6 +7,7 @@ namespace App\Services\WorkflowEngine;
 use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WorkflowApprovalResponse;
 use App\Services\ServiceResult;
+use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
@@ -25,77 +26,94 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     public function recordResponse(int $approvalId, int $memberId, string $decision, ?string $comment = null): ServiceResult
     {
         try {
-            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
-            $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
+            $connection = ConnectionManager::get('default');
 
-            /** @var \App\Model\Entity\WorkflowApproval|null $approval */
-            $approval = $approvalsTable->find()
-                ->where(['WorkflowApprovals.id' => $approvalId])
-                ->first();
+            return $connection->transactional(function () use ($approvalId, $memberId, $decision, $comment) {
+                $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+                $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
 
-            if (!$approval) {
-                return new ServiceResult(false, 'Approval not found.');
-            }
+                // Lock the approval row to prevent concurrent modifications
+                /** @var \App\Model\Entity\WorkflowApproval|null $approval */
+                $approval = $approvalsTable->find()
+                    ->where(['WorkflowApprovals.id' => $approvalId])
+                    ->epilog('FOR UPDATE')
+                    ->first();
 
-            if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
-                return new ServiceResult(false, 'Approval is no longer pending.');
-            }
+                if (!$approval) {
+                    return new ServiceResult(false, 'Approval not found.');
+                }
 
-            // Check eligibility before accepting the response
-            if (!$this->isMemberEligible($approval, $memberId)) {
-                return new ServiceResult(false, 'You are not eligible to respond to this approval.');
-            }
+                if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
+                    return new ServiceResult(false, 'Approval is no longer pending.');
+                }
 
-            // Check for duplicate response
-            $existing = $responsesTable->find()
-                ->where([
+                // Check eligibility before accepting the response
+                if (!$this->isMemberEligible($approval, $memberId)) {
+                    return new ServiceResult(false, 'You are not eligible to respond to this approval.');
+                }
+
+                // Check for duplicate response
+                $existing = $responsesTable->find()
+                    ->where([
+                        'workflow_approval_id' => $approvalId,
+                        'member_id' => $memberId,
+                    ])
+                    ->first();
+
+                if ($existing) {
+                    return new ServiceResult(false, 'Member has already responded to this approval.');
+                }
+
+                // Create response
+                $response = $responsesTable->newEntity([
                     'workflow_approval_id' => $approvalId,
                     'member_id' => $memberId,
-                ])
-                ->first();
+                    'decision' => $decision,
+                    'comment' => $comment,
+                    'responded_at' => DateTime::now(),
+                ]);
 
-            if ($existing) {
-                return new ServiceResult(false, 'Member has already responded to this approval.');
-            }
+                if (!$responsesTable->save($response)) {
+                    Log::error("Failed to save approval response for approval {$approvalId}");
+                    return new ServiceResult(false, 'Failed to save response.');
+                }
 
-            // Create response
-            $response = $responsesTable->newEntity([
-                'workflow_approval_id' => $approvalId,
-                'member_id' => $memberId,
-                'decision' => $decision,
-                'comment' => $comment,
-                'responded_at' => DateTime::now(),
-            ]);
+                // Atomic increment of counts to prevent lost updates
+                if ($decision === WorkflowApprovalResponse::DECISION_APPROVE) {
+                    $approvalsTable->updateAll(
+                        ['approved_count = approved_count + 1'],
+                        ['id' => $approval->id]
+                    );
+                } elseif ($decision === WorkflowApprovalResponse::DECISION_REJECT) {
+                    $approvalsTable->updateAll(
+                        ['rejected_count = rejected_count + 1'],
+                        ['id' => $approval->id]
+                    );
+                }
 
-            if (!$responsesTable->save($response)) {
-                Log::error("Failed to save approval response for approval {$approvalId}");
-                return new ServiceResult(false, 'Failed to save response.');
-            }
+                // Reload approval to get accurate counts after atomic increment
+                $approval = $approvalsTable->get($approval->id);
 
-            // Update counts
-            if ($decision === WorkflowApprovalResponse::DECISION_APPROVE) {
-                $approval->approved_count++;
-            } elseif ($decision === WorkflowApprovalResponse::DECISION_REJECT) {
-                $approval->rejected_count++;
-            }
+                // Check resolution: threshold met or any rejection
+                if ($approval->approved_count >= $approval->required_count) {
+                    $approval->status = WorkflowApproval::STATUS_APPROVED;
+                } elseif ($approval->rejected_count > 0) {
+                    $approval->status = WorkflowApproval::STATUS_REJECTED;
+                }
 
-            // Check resolution: threshold met or any rejection
-            if ($approval->approved_count >= $approval->required_count) {
-                $approval->status = WorkflowApproval::STATUS_APPROVED;
-            } elseif ($approval->rejected_count > 0) {
-                $approval->status = WorkflowApproval::STATUS_REJECTED;
-            }
+                if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
+                    if (!$approvalsTable->save($approval)) {
+                        Log::error("Failed to update approval {$approvalId} after response");
+                        return new ServiceResult(false, 'Failed to update approval status.');
+                    }
+                }
 
-            if (!$approvalsTable->save($approval)) {
-                Log::error("Failed to update approval {$approvalId} after response");
-                return new ServiceResult(false, 'Failed to update approval status.');
-            }
-
-            return new ServiceResult(true, null, [
-                'approvalStatus' => $approval->status,
-                'instanceId' => $approval->workflow_instance_id,
-                'nodeId' => $approval->node_id,
-            ]);
+                return new ServiceResult(true, null, [
+                    'approvalStatus' => $approval->status,
+                    'instanceId' => $approval->workflow_instance_id,
+                    'nodeId' => $approval->node_id,
+                ]);
+            });
         } catch (\Exception $e) {
             Log::error("Error recording approval response: {$e->getMessage()}");
             return new ServiceResult(false, 'An unexpected error occurred.');
