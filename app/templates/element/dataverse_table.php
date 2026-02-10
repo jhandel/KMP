@@ -202,8 +202,9 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
                                             break;
                                         case 'date':
                                             if ($value instanceof \Cake\I18n\DateTime) {
-                                                // Use Timezone helper to apply user's timezone preference
-                                                echo h($this->Timezone->date($value));
+                                                // Format as date-only without timezone conversion;
+                                                // these represent calendar dates, not specific moments in time
+                                                echo h($value->format('F j, Y'));
                                             } elseif ($value) {
                                                 echo h($value);
                                             } else {
