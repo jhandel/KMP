@@ -447,7 +447,13 @@ trait DataverseGridTrait
                     }
                     if ($endDate !== null && $endDate !== '') {
                         if (!in_array($columnKey, $skipFilterColumns, true)) {
-                            $baseQuery->where([$qualifiedField . ' <=' => $endDate]);
+                            // For date-only strings (Y-m-d), use end-of-day so that
+                            // datetime values on the same calendar day are included
+                            $endDateSql = $endDate;
+                            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+                                $endDateSql = $endDate . ' 23:59:59';
+                            }
+                            $baseQuery->where([$qualifiedField . ' <=' => $endDateSql]);
                         }
                         // Add to current filters for display as pill
                         $currentFilters[$endParam] = $endDate;
