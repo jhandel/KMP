@@ -744,11 +744,19 @@ class WorkflowDesignerController extends Controller {
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': this.csrfTokenValue,
                 },
-                body: JSON.stringify({ definition, canvasLayout }),
+                body: JSON.stringify({
+                    workflowId: this.workflowIdValue || null,
+                    versionId: this.versionIdValue || null,
+                    definition,
+                    canvasLayout,
+                }),
             })
 
             if (response.ok) {
                 const result = await response.json()
+                if (result.workflowId) {
+                    this.workflowIdValue = result.workflowId
+                }
                 if (result.versionId) {
                     this.versionIdValue = result.versionId
                 }
