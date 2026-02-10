@@ -68,28 +68,8 @@ class WarrantRosterApprovalsTable extends BaseTable
             ->notEmptyString('approver_id');
 
         $validator
-            ->scalar('authorization_token')
-            ->maxLength('authorization_token', 255)
-            ->requirePresence('authorization_token', 'create')
-            ->notEmptyString('authorization_token');
-
-        $validator
-            ->dateTime('requested_on')
-            ->requirePresence('requested_on', 'create')
-            ->notEmptyDateTime('requested_on');
-
-        $validator
-            ->dateTime('responded_on')
-            ->allowEmptyDateTime('responded_on');
-
-        $validator
-            ->boolean('approved')
-            ->notEmptyString('approved');
-
-        $validator
-            ->scalar('approver_notes')
-            ->maxLength('approver_notes', 255)
-            ->allowEmptyString('approver_notes');
+            ->dateTime('approved_on')
+            ->allowEmptyDateTime('approved_on');
 
         return $validator;
     }

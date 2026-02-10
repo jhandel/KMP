@@ -83,6 +83,34 @@ interface WarrantManagerInterface
     public function declineSingleWarrant($warrant_id, $reason, $rejecter_id): ServiceResult;
 
     /**
+     * Activate warrants in an already-approved roster.
+     *
+     * Expects roster status=APPROVED and correct approval_count.
+     * Activates pending warrants, expires overlapping ones, sends notifications.
+     * Idempotent: returns success if no pending warrants remain.
+     *
+     * @param int $rosterId ID of the approved WarrantRoster
+     * @param int $approverId ID of the member who approved
+     * @return ServiceResult Success if warrants activated or already active
+     */
+    public function activateApprovedRoster(int $rosterId, int $approverId): ServiceResult;
+
+    /**
+     * Sync a workflow approval response to the roster approval table.
+     *
+     * Creates a warrant_roster_approval record with dedup guard.
+     * Increments approval_count atomically. Returns success if duplicate found (idempotent).
+     * Does NOT change roster status or activate warrants.
+     *
+     * @param int $rosterId ID of the WarrantRoster
+     * @param int $approverId ID of the approving member
+     * @param string|null $notes Optional approval notes
+     * @param \DateTimeInterface|null $approvedOn When approval occurred (defaults to now)
+     * @return ServiceResult Success if recorded or duplicate found
+     */
+    public function syncWorkflowApprovalToRoster(int $rosterId, int $approverId, ?string $notes = null, ?\DateTimeInterface $approvedOn = null): ServiceResult;
+
+    /**
      * Find or create a warrant period covering the specified date range.
      *
      * @param DateTime $startOn Desired warrant start date

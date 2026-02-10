@@ -86,8 +86,8 @@ class WarrantWorkflowActions
     /**
      * Activate all pending warrants in an approved roster.
      *
-     * Delegates to WarrantManagerInterface::approve(). If the roster was
-     * already approved (e.g. via direct WarrantManager path), treats as success.
+     * Syncs workflow approval data to roster tables, then delegates
+     * activation to WarrantManagerInterface::activateApprovedRoster().
      *
      * @param array $context Current workflow context
      * @param array $config Config with rosterId, approverId
@@ -120,10 +120,53 @@ class WarrantWorkflowActions
                 return ['activated' => true, 'count' => $currentCount];
             }
 
-            $result = $this->warrantManager->approve($rosterId, $approverId);
+            // Sync workflow approval data to roster tables
+            $instanceId = $context['instanceId'] ?? null;
+            if ($instanceId) {
+                $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+                $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
+
+                $approval = $approvalsTable->find()
+                    ->where([
+                        'workflow_instance_id' => $instanceId,
+                        'status' => 'approved',
+                    ])
+                    ->first();
+
+                if ($approval) {
+                    // Sync approvals_required from workflow config
+                    if ($roster->approvals_required !== $approval->required_count) {
+                        $roster->approvals_required = $approval->required_count;
+                    }
+
+                    // Sync each approval response to roster tables
+                    $responses = $responsesTable->find()
+                        ->where([
+                            'workflow_approval_id' => $approval->id,
+                            'decision' => 'approve',
+                        ])
+                        ->all();
+
+                    foreach ($responses as $response) {
+                        $this->warrantManager->syncWorkflowApprovalToRoster(
+                            $rosterId,
+                            $response->member_id,
+                            $response->comment,
+                            $response->responded_at,
+                        );
+                    }
+
+                    // Set roster status to APPROVED and save
+                    $roster->status = WarrantRoster::STATUS_APPROVED;
+                    $rosterTable->save($roster);
+                }
+            }
+
+            // Activate warrants via extracted method (no approval bookkeeping)
+            $result = $this->warrantManager->activateApprovedRoster($rosterId, $approverId);
 
             if (!$result->success) {
-                Log::warning('Workflow ActivateWarrants: manager approve returned: ' . $result->reason);
+                Log::warning('Workflow ActivateWarrants: activation returned: ' . $result->reason);
 
                 return ['activated' => false, 'count' => 0];
             }
@@ -195,7 +238,8 @@ class WarrantWorkflowActions
     /**
      * Decline a warrant roster and cancel all its pending warrants.
      *
-     * Delegates to WarrantManagerInterface::decline().
+     * Syncs any approve responses that occurred before the decline,
+     * then delegates to WarrantManagerInterface::decline().
      *
      * @param array $context Current workflow context
      * @param array $config Config with rosterId, reason, rejecterId
@@ -214,6 +258,37 @@ class WarrantWorkflowActions
                 $rejecterId = $context['resumeData']['approverId'] ?? $context['triggeredBy'] ?? null;
             }
             $rejecterId = (int)$rejecterId;
+
+            // Sync any approve responses that happened before the decline
+            $instanceId = $context['instanceId'] ?? null;
+            if ($instanceId) {
+                $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+                $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
+
+                $approval = $approvalsTable->find()
+                    ->where([
+                        'workflow_instance_id' => $instanceId,
+                        'status IN' => ['rejected', 'approved'],
+                    ])
+                    ->first();
+
+                if ($approval) {
+                    $responses = $responsesTable->find()
+                        ->where(['workflow_approval_id' => $approval->id])
+                        ->all();
+
+                    foreach ($responses as $response) {
+                        if ($response->decision === 'approve') {
+                            $this->warrantManager->syncWorkflowApprovalToRoster(
+                                $rosterId,
+                                $response->member_id,
+                                $response->comment,
+                                $response->responded_at,
+                            );
+                        }
+                    }
+                }
+            }
 
             $result = $this->warrantManager->decline($rosterId, $rejecterId, $reason);
 

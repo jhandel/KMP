@@ -176,56 +176,6 @@ class DefaultWarrantManager implements WarrantManagerInterface
         $warrantRoster->approval_count++;
         if ($warrantRoster->hasRequiredApprovals()) {
             $warrantRoster->status = WarrantRoster::STATUS_APPROVED;
-            //get all warrants in the set that are pending and make them active
-            $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
-            $warrants = $warrantTable->find()
-                ->contain(['Members' => function ($q) {
-                    return $q->select(['id', 'email_address', 'sca_name']);
-                }])
-                ->where([
-                    'warrant_roster_id' => $warrant_roster_id,
-                    'Warrants.status' => Warrant::PENDING_STATUS,
-                ])
-                ->all();
-            foreach ($warrants as $warrant) {
-                $warrant->status = Warrant::CURRENT_STATUS;
-                $warrant->approved_date = new DateTime();
-                $now = new DateTime();
-                $warrantStart = $warrant->start_on;
-                if ($warrant->start_on == null || $warrantStart < $now) {
-                    $warrant->start_on = $now;
-                }
-                if (!$warrantTable->save($warrant)) {
-                    //rollback transaction
-                    $warrantRosterTable->getConnection()->rollback();
-
-                    return new ServiceResult(false, 'Failed to acivate warrants in Roster');
-                }
-                //expire current warrants for the same entity_type entity_id member_id
-                $warrantTable->updateAll(
-                    [
-                        'expires_on' => $warrant->start_on,
-                        'revoked_reason' => 'New Warrant Approved',
-                        'revoker_id' => $approver_id,
-                    ],
-                    [
-                        'entity_type' => $warrant->entity_type,
-                        'entity_id' => $warrant->entity_id,
-                        'member_id' => $warrant->member_id,
-                        'status' => Warrant::CURRENT_STATUS,
-                        'expires_on >=' => $warrant->start_on,
-                        'start_on <=' => $warrant->start_on,
-                        'id !=' => $warrant->id,
-                    ],
-                );
-                $vars = [
-                    'memberScaName' => $warrant->member->sca_name,
-                    'warrantName' => $warrant->name,
-                    'warrantStart' => TimezoneHelper::formatDate($warrant->start_on),
-                    'warrantExpires' => TimezoneHelper::formatDate($warrant->expires_on),
-                ];
-                $this->queueMail('KMP', 'notifyOfWarrant', $warrant->member->email_address, $vars);
-            }
         }
         if (!$warrantRosterTable->save($warrantRoster)) {
             //rollback transaction
@@ -237,6 +187,12 @@ class DefaultWarrantManager implements WarrantManagerInterface
         $warrantRosterTable->getConnection()->commit();
 
         if ($warrantRoster->status === WarrantRoster::STATUS_APPROVED) {
+            // Activate warrants via extracted method
+            $activationResult = $this->activateApprovedRoster($warrant_roster_id, $approver_id);
+            if (!$activationResult->success) {
+                return $activationResult;
+            }
+
             try {
                 $this->triggerDispatcher->dispatch('Warrants.Approved', [
                     'rosterId' => $warrantRoster->id,
@@ -248,6 +204,118 @@ class DefaultWarrantManager implements WarrantManagerInterface
             // Advance the corresponding workflow instance if one exists
             $this->advanceWorkflowForRoster($warrantRoster->id, $approver_id);
         }
+
+        return new ServiceResult(true);
+    }
+
+    public function activateApprovedRoster(int $rosterId, int $approverId): ServiceResult
+    {
+        $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
+        $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
+
+        $warrants = $warrantTable->find()
+            ->contain(['Members' => function ($q) {
+                return $q->select(['id', 'email_address', 'sca_name']);
+            }])
+            ->where([
+                'warrant_roster_id' => $rosterId,
+                'Warrants.status' => Warrant::PENDING_STATUS,
+            ])
+            ->all();
+
+        // Idempotent: no pending warrants to activate
+        if ($warrants->isEmpty()) {
+            return new ServiceResult(true);
+        }
+
+        $warrantRosterTable->getConnection()->begin();
+        foreach ($warrants as $warrant) {
+            $warrant->status = Warrant::CURRENT_STATUS;
+            $warrant->approved_date = new DateTime();
+            $now = new DateTime();
+            $warrantStart = $warrant->start_on;
+            if ($warrant->start_on == null || $warrantStart < $now) {
+                $warrant->start_on = $now;
+            }
+            if (!$warrantTable->save($warrant)) {
+                $warrantRosterTable->getConnection()->rollback();
+
+                return new ServiceResult(false, 'Failed to activate warrants in Roster');
+            }
+            //expire current warrants for the same entity_type entity_id member_id
+            $warrantTable->updateAll(
+                [
+                    'expires_on' => $warrant->start_on,
+                    'revoked_reason' => 'New Warrant Approved',
+                    'revoker_id' => $approverId,
+                ],
+                [
+                    'entity_type' => $warrant->entity_type,
+                    'entity_id' => $warrant->entity_id,
+                    'member_id' => $warrant->member_id,
+                    'status' => Warrant::CURRENT_STATUS,
+                    'expires_on >=' => $warrant->start_on,
+                    'start_on <=' => $warrant->start_on,
+                    'id !=' => $warrant->id,
+                ],
+            );
+            $vars = [
+                'memberScaName' => $warrant->member->sca_name,
+                'warrantName' => $warrant->name,
+                'warrantStart' => TimezoneHelper::formatDate($warrant->start_on),
+                'warrantExpires' => TimezoneHelper::formatDate($warrant->expires_on),
+            ];
+            $this->queueMail('KMP', 'notifyOfWarrant', $warrant->member->email_address, $vars);
+        }
+        $warrantRosterTable->getConnection()->commit();
+
+        return new ServiceResult(true);
+    }
+
+    public function syncWorkflowApprovalToRoster(
+        int $rosterId,
+        int $approverId,
+        ?string $notes = null,
+        ?\DateTimeInterface $approvedOn = null,
+    ): ServiceResult {
+        $warrantRosterApprovalTable = TableRegistry::getTableLocator()->get('WarrantRosterApprovals');
+        $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
+
+        // Dedup guard: check for existing (roster_id, approver_id) pair
+        $existing = $warrantRosterApprovalTable->find()
+            ->where([
+                'warrant_roster_id' => $rosterId,
+                'approver_id' => $approverId,
+            ])
+            ->first();
+
+        if ($existing) {
+            return new ServiceResult(true, 'Approval already recorded');
+        }
+
+        $approval = $warrantRosterApprovalTable->newEmptyEntity();
+        $approval->warrant_roster_id = $rosterId;
+        $approval->approver_id = $approverId;
+        $approval->approved_on = $approvedOn !== null
+            ? new DateTime($approvedOn->format('Y-m-d H:i:s'))
+            : new DateTime();
+
+        $warrantRosterTable->getConnection()->begin();
+
+        if (!$warrantRosterApprovalTable->save($approval)) {
+            $warrantRosterTable->getConnection()->rollback();
+
+            return new ServiceResult(false, 'Failed to sync approval record');
+        }
+
+        // Increment approval_count atomically
+        $warrantRosterTable->getConnection()->execute(
+            'UPDATE warrant_rosters SET approval_count = COALESCE(approval_count, 0) + 1 WHERE id = ?',
+            [$rosterId],
+            ['integer'],
+        );
+
+        $warrantRosterTable->getConnection()->commit();
 
         return new ServiceResult(true);
     }
