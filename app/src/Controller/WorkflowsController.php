@@ -508,7 +508,8 @@ class WorkflowsController extends AppController
     }
 
     /**
-     * API: Migrate running instances to a specified version.
+     * API: Migrate running instances to a specified version via VersionManager
+     * for proper node remapping and audit trail.
      *
      * @return \Cake\Http\Response|null|void
      */
@@ -518,18 +519,36 @@ class WorkflowsController extends AppController
         $versionId = (int)$this->request->getData('versionId');
         $instancesTable = $this->fetchTable('WorkflowInstances');
         $version = $this->fetchTable('WorkflowVersions')->get($versionId);
+        $currentUser = $this->request->getAttribute('identity');
 
-        $updated = $instancesTable->updateAll(
-            ['workflow_version_id' => $versionId],
-            [
+        $instances = $instancesTable->find()
+            ->where([
                 'workflow_definition_id' => $version->workflow_definition_id,
                 'status IN' => ['active', 'waiting'],
-            ]
-        );
+            ])
+            ->all();
+
+        $versionManager = $this->getVersionManager();
+        $migrated = 0;
+        $errors = [];
+
+        foreach ($instances as $instance) {
+            $migrationResult = $versionManager->migrateInstance(
+                $instance->id,
+                $versionId,
+                $currentUser->id,
+            );
+            if ($migrationResult->isSuccess()) {
+                $migrated++;
+            } else {
+                $errors[] = "Instance {$instance->id}: " . $migrationResult->getError();
+            }
+        }
 
         $result = [
-            'success' => true,
-            'message' => __('Migrated {0} running instance(s) to version {1}.', $updated, $version->version_number),
+            'success' => empty($errors),
+            'message' => __('Migrated {0} running instance(s) to version {1}.', $migrated, $version->version_number),
+            'errors' => $errors,
         ];
         $this->set('result', $result);
         $this->viewBuilder()->setOption('serialize', 'result');

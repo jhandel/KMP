@@ -166,6 +166,9 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
 
     /**
      * @inheritDoc
+     *
+     * Optimized to pre-fetch member permissions/roles in two queries,
+     * then filter approvals in-memory instead of N+1 per-approval DB lookups.
      */
     public function getPendingApprovalsForMember(int $memberId): array
     {
@@ -189,12 +192,16 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 $query->where(['WorkflowApprovals.id NOT IN' => $respondedIds]);
             }
 
+            // Pre-fetch member's active permissions and roles (2 queries total)
+            $memberPermissions = $this->getMemberActivePermissions($memberId);
+            $memberRoles = $this->getMemberActiveRoles($memberId);
+
             $pendingApprovals = $query->all()->toArray();
 
-            // Filter by eligibility
+            // Filter using cached permission/role sets — no per-approval DB queries
             $eligible = [];
             foreach ($pendingApprovals as $approval) {
-                if ($this->isMemberEligible($approval, $memberId)) {
+                if ($this->isMemberEligibleCached($approval, $memberId, $memberPermissions, $memberRoles)) {
                     $eligible[] = $approval;
                 }
             }
@@ -329,8 +336,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 return $memberId === $targetMemberId;
 
             case WorkflowApproval::APPROVER_TYPE_DYNAMIC:
-                // Dynamic resolution not yet implemented
-                return false;
+                return $this->resolveDynamicEligibility($approval, $memberId);
 
             case WorkflowApproval::APPROVER_TYPE_POLICY:
                 return $this->memberPassesPolicy($approval, $memberId);
@@ -376,7 +382,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 return $member ? [$member] : [];
 
             case WorkflowApproval::APPROVER_TYPE_DYNAMIC:
-                return [];
+                return $this->findDynamicApprovers($approval);
 
             case WorkflowApproval::APPROVER_TYPE_POLICY:
                 // Fall back to permission-based list, then filter by policy
@@ -507,6 +513,183 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
             ->group(['Members.id'])
             ->all()
             ->toArray();
+    }
+
+    /**
+     * Get all active permission names for a member in a single query.
+     *
+     * @return string[]
+     */
+    private function getMemberActivePermissions(int $memberId): array
+    {
+        $memberRolesTable = TableRegistry::getTableLocator()->get('MemberRoles');
+        $now = DateTime::now();
+
+        return $memberRolesTable->find()
+            ->innerJoinWith('Roles.Permissions')
+            ->select(['permission_name' => 'Permissions.name'])
+            ->where([
+                'MemberRoles.member_id' => $memberId,
+                'OR' => [
+                    'MemberRoles.start_on IS' => null,
+                    'MemberRoles.start_on <=' => $now,
+                ],
+            ])
+            ->where([
+                'OR' => [
+                    'MemberRoles.expires_on IS' => null,
+                    'MemberRoles.expires_on >=' => $now,
+                ],
+            ])
+            ->distinct()
+            ->all()
+            ->extract('permission_name')
+            ->toArray();
+    }
+
+    /**
+     * Get all active role names for a member in a single query.
+     *
+     * @return string[]
+     */
+    private function getMemberActiveRoles(int $memberId): array
+    {
+        $memberRolesTable = TableRegistry::getTableLocator()->get('MemberRoles');
+        $now = DateTime::now();
+
+        return $memberRolesTable->find()
+            ->innerJoinWith('Roles')
+            ->select(['role_name' => 'Roles.name'])
+            ->where([
+                'MemberRoles.member_id' => $memberId,
+                'OR' => [
+                    'MemberRoles.start_on IS' => null,
+                    'MemberRoles.start_on <=' => $now,
+                ],
+            ])
+            ->where([
+                'OR' => [
+                    'MemberRoles.expires_on IS' => null,
+                    'MemberRoles.expires_on >=' => $now,
+                ],
+            ])
+            ->distinct()
+            ->all()
+            ->extract('role_name')
+            ->toArray();
+    }
+
+    /**
+     * Check eligibility using pre-fetched permission/role sets to avoid N+1 queries.
+     */
+    private function isMemberEligibleCached(
+        WorkflowApproval $approval,
+        int $memberId,
+        array $memberPermissions,
+        array $memberRoles,
+    ): bool {
+        $config = $approval->approver_config ?? [];
+
+        switch ($approval->approver_type) {
+            case WorkflowApproval::APPROVER_TYPE_PERMISSION:
+                $permissionName = $config['permission'] ?? null;
+                return $permissionName && in_array($permissionName, $memberPermissions, true);
+
+            case WorkflowApproval::APPROVER_TYPE_ROLE:
+                $roleName = $config['role'] ?? null;
+                return $roleName && in_array($roleName, $memberRoles, true);
+
+            case WorkflowApproval::APPROVER_TYPE_MEMBER:
+                $targetMemberId = (int)($config['member_id'] ?? 0);
+                return $memberId === $targetMemberId;
+
+            case WorkflowApproval::APPROVER_TYPE_DYNAMIC:
+                return $this->resolveDynamicEligibility($approval, $memberId);
+
+            case WorkflowApproval::APPROVER_TYPE_POLICY:
+                return $this->memberPassesPolicy($approval, $memberId);
+
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Check if a member is eligible via the dynamic callback approver.
+     */
+    private function resolveDynamicEligibility(WorkflowApproval $approval, int $memberId): bool
+    {
+        try {
+            $eligibleIds = $this->resolveDynamicApproverIds($approval);
+            return in_array($memberId, $eligibleIds, true);
+        } catch (\RuntimeException $e) {
+            Log::error("Dynamic approver resolution failed: {$e->getMessage()}");
+            return false;
+        }
+    }
+
+    /**
+     * Resolve eligible member IDs via configured callback service.
+     *
+     * Expects approver_config: {"service": "App\\Services\\MyService", "method": "getEligibleApprovers"}
+     * The callback receives the WorkflowApproval and must return int[] of member IDs.
+     *
+     * @return int[]
+     * @throws \RuntimeException If config is missing or callback is invalid
+     */
+    private function resolveDynamicApproverIds(WorkflowApproval $approval): array
+    {
+        $config = $approval->approver_config ?? [];
+        $serviceClass = $config['service'] ?? null;
+        $method = $config['method'] ?? null;
+
+        if (!$serviceClass || !$method) {
+            throw new \RuntimeException(
+                "Dynamic approver type requires 'service' and 'method' in approver_config. "
+                . "Approval ID: {$approval->id}"
+            );
+        }
+
+        if (!class_exists($serviceClass)) {
+            throw new \RuntimeException("Dynamic approver service class '{$serviceClass}' not found.");
+        }
+
+        $service = new $serviceClass();
+        if (!method_exists($service, $method)) {
+            throw new \RuntimeException("Method '{$method}' not found on '{$serviceClass}'.");
+        }
+
+        $result = $service->$method($approval);
+        if (!is_array($result)) {
+            Log::warning("Dynamic approver {$serviceClass}::{$method} did not return an array");
+            return [];
+        }
+
+        return array_map('intval', $result);
+    }
+
+    /**
+     * Find Member entities eligible via the dynamic callback approver.
+     *
+     * @return \App\Model\Entity\Member[]
+     */
+    private function findDynamicApprovers(WorkflowApproval $approval): array
+    {
+        try {
+            $memberIds = $this->resolveDynamicApproverIds($approval);
+            if (empty($memberIds)) {
+                return [];
+            }
+
+            $membersTable = TableRegistry::getTableLocator()->get('Members');
+            return $membersTable->find()
+                ->where(['Members.id IN' => $memberIds])
+                ->all()
+                ->toArray();
+        } catch (\RuntimeException $e) {
+            Log::error("Dynamic approver resolution failed: {$e->getMessage()}");
+            return [];
+        }
     }
 
     /**

@@ -34,7 +34,7 @@ class WorkflowApprovalDeadlineTask extends Task {
 	public bool $unique = true;
 
 	/**
-	 * Scan for expired approvals and resume their workflows.
+	 * Scan for expired approvals, process escalation config, and resume workflows.
 	 *
 	 * @param array<string, mixed> $data Unused for scheduled runs
 	 * @param int $jobId The id of the QueuedJob entity
@@ -67,7 +67,20 @@ class WorkflowApprovalDeadlineTask extends Task {
 
 		foreach ($expiredApprovals as $approval) {
 			try {
-				// Mark approval as expired
+				$escalationConfig = $approval->escalation_config;
+
+				// Process escalation if configured
+				if (!empty($escalationConfig)) {
+					$escalationResult = $this->processEscalation($approval, $escalationConfig, $approvalsTable, $engine);
+					if ($escalationResult) {
+						$processed++;
+
+						continue;
+					}
+					// Escalation returned false — fall through to default expiry
+				}
+
+				// Default: mark as expired and resume on 'expired' port
 				$approval->status = WorkflowApproval::STATUS_EXPIRED;
 				if (!$approvalsTable->save($approval)) {
 					Log::error("WorkflowApprovalDeadlineTask: Failed to save expired status for approval {$approval->id}");
@@ -76,7 +89,6 @@ class WorkflowApprovalDeadlineTask extends Task {
 					continue;
 				}
 
-				// Resume the workflow on the expired output port
 				$result = $engine->resumeWorkflow(
 					$approval->workflow_instance_id,
 					$approval->node_id,
@@ -98,6 +110,114 @@ class WorkflowApprovalDeadlineTask extends Task {
 		}
 
 		Log::info("WorkflowApprovalDeadlineTask: Processed {$processed}, errors {$errors}");
+	}
+
+	/**
+	 * Process escalation actions defined in the approval's escalation_config JSON.
+	 *
+	 * Supported actions:
+	 *   - "auto_approve": Marks approval as approved and resumes on 'approved' port
+	 *   - "auto_reject": Marks approval as rejected and resumes on 'rejected' port
+	 *   - "reassign": Updates approver_config, extends deadline, keeps pending
+	 *   - "notify": Logs notification targets (integration point for mailer)
+	 *
+	 * @return bool True if escalation was fully handled, false to fall through to default expiry
+	 */
+	private function processEscalation(
+		WorkflowApproval $approval,
+		array $escalationConfig,
+		\Cake\ORM\Table $approvalsTable,
+		WorkflowEngineInterface $engine,
+	): bool {
+		$action = $escalationConfig['action'] ?? null;
+		$approvalId = $approval->id;
+
+		switch ($action) {
+			case 'auto_approve':
+				$approval->status = WorkflowApproval::STATUS_APPROVED;
+				if (!$approvalsTable->save($approval)) {
+					Log::error("WorkflowApprovalDeadlineTask: Failed to auto-approve approval {$approvalId}");
+
+					return false;
+				}
+				$result = $engine->resumeWorkflow(
+					$approval->workflow_instance_id,
+					$approval->node_id,
+					'approved',
+					['escalatedApprovalId' => $approvalId, 'escalationAction' => 'auto_approve'],
+				);
+				Log::info("WorkflowApprovalDeadlineTask: Auto-approved approval {$approvalId} (escalation)");
+
+				return $result->isSuccess();
+
+			case 'auto_reject':
+				$approval->status = WorkflowApproval::STATUS_REJECTED;
+				if (!$approvalsTable->save($approval)) {
+					Log::error("WorkflowApprovalDeadlineTask: Failed to auto-reject approval {$approvalId}");
+
+					return false;
+				}
+				$result = $engine->resumeWorkflow(
+					$approval->workflow_instance_id,
+					$approval->node_id,
+					'rejected',
+					['escalatedApprovalId' => $approvalId, 'escalationAction' => 'auto_reject'],
+				);
+				Log::info("WorkflowApprovalDeadlineTask: Auto-rejected approval {$approvalId} (escalation)");
+
+				return $result->isSuccess();
+
+			case 'reassign':
+				$newConfig = $escalationConfig['reassign_to'] ?? null;
+				$extendDeadline = $escalationConfig['extend_deadline'] ?? '7d';
+				if (!$newConfig) {
+					Log::warning("WorkflowApprovalDeadlineTask: Reassign escalation missing 'reassign_to' config for approval {$approvalId}");
+
+					return false;
+				}
+				$approval->approver_type = $newConfig['type'] ?? $approval->approver_type;
+				$approval->approver_config = $newConfig;
+				$approval->deadline = $this->parseExtendedDeadline($extendDeadline);
+				// Clear escalation to prevent re-triggering
+				$approval->escalation_config = null;
+				if ($approvalsTable->save($approval)) {
+					Log::info("WorkflowApprovalDeadlineTask: Reassigned approval {$approvalId} with extended deadline");
+
+					return true;
+				}
+				Log::error("WorkflowApprovalDeadlineTask: Failed to reassign approval {$approvalId}");
+
+				return false;
+
+			case 'notify':
+				$notifyTargets = $escalationConfig['notify_members'] ?? [];
+				$notifyPermission = $escalationConfig['notify_permission'] ?? null;
+				Log::info("WorkflowApprovalDeadlineTask: Escalation notification for approval {$approvalId} — "
+					. "members: " . json_encode($notifyTargets) . ", permission: {$notifyPermission}");
+				// Notification dispatched via log; fall through to default expiry
+				return false;
+
+			default:
+				Log::warning("WorkflowApprovalDeadlineTask: Unknown escalation action '{$action}' for approval {$approvalId}");
+
+				return false;
+		}
+	}
+
+	/**
+	 * Parse a deadline extension string into a future DateTime.
+	 */
+	private function parseExtendedDeadline(string $deadline): DateTime {
+		$now = DateTime::now();
+
+		if (preg_match('/^(\d+)d$/', $deadline, $matches)) {
+			return $now->modify("+{$matches[1]} days");
+		}
+		if (preg_match('/^(\d+)h$/', $deadline, $matches)) {
+			return $now->modify("+{$matches[1]} hours");
+		}
+
+		return $now->modify('+7 days');
 	}
 
 }
