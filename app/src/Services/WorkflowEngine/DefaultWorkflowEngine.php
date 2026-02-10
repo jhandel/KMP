@@ -42,7 +42,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         ?string $entityType = null,
         ?int $entityId = null,
     ): ServiceResult {
+        $connection = ConnectionManager::get('default');
         try {
+            return $connection->transactional(function () use ($workflowSlug, $triggerData, $startedBy, $entityType, $entityId) {
             $definitionsTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
             $versionsTable = TableRegistry::getTableLocator()->get('WorkflowVersions');
             $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
@@ -123,6 +125,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $this->updateInstance($instance, []);
 
             return new ServiceResult(true, null, ['instanceId' => $instance->id]);
+            });
         } catch (Throwable $e) {
             Log::error("WorkflowEngine::startWorkflow failed: {$e->getMessage()}");
 
@@ -139,7 +142,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         string $outputPort,
         array $additionalData = [],
     ): ServiceResult {
+        $connection = ConnectionManager::get('default');
         try {
+            return $connection->transactional(function () use ($instanceId, $nodeId, $outputPort, $additionalData) {
             $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
             $instance = $instancesTable->get($instanceId, contain: ['WorkflowVersions']);
 
@@ -191,6 +196,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $this->updateInstance($instance, []);
 
             return new ServiceResult(true, null, ['instanceId' => $instanceId]);
+            });
         } catch (Throwable $e) {
             Log::error("WorkflowEngine::resumeWorkflow failed: {$e->getMessage()}");
 
@@ -203,7 +209,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
      */
     public function cancelWorkflow(int $instanceId, ?string $reason = null): ServiceResult
     {
+        $connection = ConnectionManager::get('default');
         try {
+            return $connection->transactional(function () use ($instanceId, $reason) {
             $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
             $instance = $instancesTable->get($instanceId);
 
@@ -238,6 +246,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             }
 
             return new ServiceResult(true, null, ['instanceId' => $instanceId]);
+            });
         } catch (Throwable $e) {
             Log::error("WorkflowEngine::cancelWorkflow failed: {$e->getMessage()}");
 
@@ -451,6 +460,8 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 'error' => $e->getMessage(),
             ];
             $this->updateInstance($instance, []);
+
+            throw $e; // Propagate to trigger transaction rollback
         }
     }
 
