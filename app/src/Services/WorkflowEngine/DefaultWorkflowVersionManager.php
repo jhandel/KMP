@@ -223,6 +223,14 @@ class DefaultWorkflowVersionManager implements WorkflowVersionManagerInterface
             }
         }
 
+        // Cycle detection: find back-edges via DFS (loops are allowed via 'continue' port)
+        if ($triggerKey !== null) {
+            $cycles = $this->detectCycles($triggerKey, $nodes);
+            foreach ($cycles as $cycle) {
+                $errors[] = "Cycle detected in graph: " . implode(' -> ', $cycle) . ".";
+            }
+        }
+
         return $errors;
     }
 
@@ -255,6 +263,72 @@ class DefaultWorkflowVersionManager implements WorkflowVersionManagerInterface
         }
 
         return $visited;
+    }
+
+    /**
+     * Detect cycles in the workflow graph using DFS.
+     * Loop nodes with 'continue' port back-edges are excluded
+     * since they are bounded by maxIterations.
+     *
+     * @param string $startKey Starting node key
+     * @param array $nodes All nodes in the definition
+     * @return array<array<string>> Each element is an array of node keys forming a cycle
+     */
+    private function detectCycles(string $startKey, array $nodes): array
+    {
+        $cycles = [];
+        $visited = [];
+        $stack = [];
+
+        $this->dfsDetectCycles($startKey, $nodes, $visited, $stack, $cycles);
+
+        return $cycles;
+    }
+
+    /**
+     * Recursive DFS helper for cycle detection.
+     */
+    private function dfsDetectCycles(string $nodeKey, array $nodes, array &$visited, array &$stack, array &$cycles): void
+    {
+        $visited[$nodeKey] = true;
+        $stack[$nodeKey] = true;
+
+        $outputs = $nodes[$nodeKey]['outputs'] ?? [];
+        $nodeType = $nodes[$nodeKey]['type'] ?? '';
+
+        foreach ($outputs as $output) {
+            $target = $output['target'] ?? $output;
+            $port = $output['port'] ?? 'default';
+
+            if (!is_string($target) || !isset($nodes[$target])) {
+                continue;
+            }
+
+            // Loop 'continue' port deliberately cycles back — skip it
+            if ($nodeType === 'loop' && $port === 'continue') {
+                continue;
+            }
+
+            if (isset($stack[$target])) {
+                // Found a cycle — extract the path
+                $cyclePath = [];
+                $inCycle = false;
+                foreach (array_keys($stack) as $key) {
+                    if ($key === $target) {
+                        $inCycle = true;
+                    }
+                    if ($inCycle) {
+                        $cyclePath[] = $key;
+                    }
+                }
+                $cyclePath[] = $target;
+                $cycles[] = $cyclePath;
+            } elseif (!isset($visited[$target])) {
+                $this->dfsDetectCycles($target, $nodes, $visited, $stack, $cycles);
+            }
+        }
+
+        unset($stack[$nodeKey]);
     }
 
     /**

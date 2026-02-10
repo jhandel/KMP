@@ -26,7 +26,25 @@ use Throwable;
  */
 class DefaultWorkflowEngine implements WorkflowEngineInterface
 {
+    /**
+     * Maximum node execution depth to prevent infinite recursion.
+     */
+    private const MAX_EXECUTION_DEPTH = 200;
+
     private ContainerInterface $container;
+
+    /**
+     * Tracks visited nodes during a single execution pass to detect cycles.
+     * Reset at the start of each startWorkflow/resumeWorkflow call.
+     *
+     * @var array<string, bool>
+     */
+    private array $visitedNodes = [];
+
+    /**
+     * Current execution depth counter.
+     */
+    private int $executionDepth = 0;
 
     public function __construct(ContainerInterface $container)
     {
@@ -42,6 +60,10 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         ?string $entityType = null,
         ?int $entityId = null,
     ): ServiceResult {
+        // Reset cycle-detection state for this execution pass
+        $this->visitedNodes = [];
+        $this->executionDepth = 0;
+
         $connection = ConnectionManager::get('default');
         try {
             return $connection->transactional(function () use ($workflowSlug, $triggerData, $startedBy, $entityType, $entityId) {
@@ -67,6 +89,36 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
             if (empty($definition['nodes'])) {
                 return new ServiceResult(false, 'Workflow definition has no nodes.');
+            }
+
+            // Duplicate instance prevention: skip if a running/waiting instance already exists
+            $resolvedEntityType = $entityType ?? $workflowDef->entity_type;
+            $duplicateConditions = [
+                'workflow_definition_id' => $workflowDef->id,
+                'status IN' => [WorkflowInstance::STATUS_RUNNING, WorkflowInstance::STATUS_WAITING],
+            ];
+            if ($resolvedEntityType !== null) {
+                $duplicateConditions['entity_type'] = $resolvedEntityType;
+            }
+            if ($entityId !== null) {
+                $duplicateConditions['entity_id'] = $entityId;
+            }
+            $existingInstance = $instancesTable->find()
+                ->where($duplicateConditions)
+                ->first();
+
+            if ($existingInstance) {
+                Log::warning(
+                    "WorkflowEngine: Duplicate instance prevented for definition '{$workflowSlug}'"
+                    . " entity_type={$resolvedEntityType} entity_id={$entityId}"
+                    . " — existing instance #{$existingInstance->id} is '{$existingInstance->status}'."
+                );
+
+                return new ServiceResult(
+                    false,
+                    "A workflow instance is already active (#{$existingInstance->id}) for this entity.",
+                    ['existingInstanceId' => $existingInstance->id],
+                );
             }
 
             // Create instance
@@ -142,6 +194,10 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         string $outputPort,
         array $additionalData = [],
     ): ServiceResult {
+        // Reset cycle-detection state for this execution pass
+        $this->visitedNodes = [];
+        $this->executionDepth = 0;
+
         $connection = ConnectionManager::get('default');
         try {
             return $connection->transactional(function () use ($instanceId, $nodeId, $outputPort, $additionalData) {
@@ -369,16 +425,45 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
      */
     protected function executeNode(WorkflowInstance $instance, string $nodeId, array $definition): void
     {
+        // Cycle detection: check depth limit
+        $this->executionDepth++;
+        if ($this->executionDepth > self::MAX_EXECUTION_DEPTH) {
+            $msg = "Workflow execution exceeded max depth (" . self::MAX_EXECUTION_DEPTH
+                . ") at node '{$nodeId}'. Possible cycle in workflow graph.";
+            Log::error("WorkflowEngine: {$msg}");
+            $instance->status = WorkflowInstance::STATUS_FAILED;
+            $instance->completed_at = DateTime::now();
+            $instance->error_info = ['failed_node' => $nodeId, 'error' => $msg];
+            $this->updateInstance($instance, []);
+
+            throw new \RuntimeException($msg);
+        }
+
+        // Cycle detection: visited-node set (skip for join/loop which are legitimately revisited)
+        $node = $definition['nodes'][$nodeId] ?? null;
+        $nodeType = $node['type'] ?? 'unknown';
+
+        $allowRevisit = in_array($nodeType, ['join', 'loop'], true);
+        if (!$allowRevisit && isset($this->visitedNodes[$nodeId])) {
+            $msg = "Cycle detected: node '{$nodeId}' was already visited in this execution path.";
+            Log::error("WorkflowEngine: {$msg}");
+            $instance->status = WorkflowInstance::STATUS_FAILED;
+            $instance->completed_at = DateTime::now();
+            $instance->error_info = ['failed_node' => $nodeId, 'error' => $msg];
+            $this->updateInstance($instance, []);
+
+            throw new \RuntimeException($msg);
+        }
+        $this->visitedNodes[$nodeId] = true;
+
         $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
 
-        $node = $definition['nodes'][$nodeId] ?? null;
         if (!$node) {
             Log::error("WorkflowEngine: Node '{$nodeId}' not found in definition.");
 
             return;
         }
 
-        $nodeType = $node['type'] ?? 'unknown';
         $nodeConfig = $node['config'] ?? [];
 
         // Add to active nodes
@@ -388,81 +473,104 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $instance->active_nodes = $activeNodes;
         }
 
-        // Create execution log
-        $log = $logsTable->newEntity([
-            'workflow_instance_id' => $instance->id,
-            'node_id' => $nodeId,
-            'node_type' => $nodeType,
-            'attempt_number' => 1,
-            'status' => WorkflowExecutionLog::STATUS_RUNNING,
-            'input_data' => $this->resolveInputData($instance->context ?? [], $nodeConfig),
-            'started_at' => DateTime::now(),
-        ]);
-        $logsTable->save($log);
+        // Retry logic: determine max attempts from node config
+        $maxRetries = (int)($nodeConfig['maxRetries'] ?? $nodeConfig['retryCount'] ?? 0);
+        $maxAttempts = $maxRetries + 1;
+        $lastException = null;
 
-        try {
-            switch ($nodeType) {
-                case 'action':
-                    $this->executeActionNode($instance, $nodeId, $node, $log, $definition);
-                    break;
-
-                case 'condition':
-                    $this->executeConditionNode($instance, $nodeId, $node, $log, $definition);
-                    break;
-
-                case 'approval':
-                    $this->executeApprovalNode($instance, $nodeId, $node, $log);
-                    break;
-
-                case 'fork':
-                    $this->executeForkNode($instance, $nodeId, $log, $definition);
-                    break;
-
-                case 'join':
-                    $this->executeJoinNode($instance, $nodeId, $node, $log, $definition);
-                    break;
-
-                case 'loop':
-                    $this->executeLoopNode($instance, $nodeId, $node, $log, $definition);
-                    break;
-
-                case 'delay':
-                    $this->executeDelayNode($instance, $nodeId, $node, $log);
-                    break;
-
-                case 'end':
-                    $this->executeEndNode($instance, $nodeId, $log);
-                    break;
-
-                case 'subworkflow':
-                    $this->executeSubworkflowNode($instance, $nodeId, $node, $log);
-                    break;
-
-                default:
-                    $log->status = WorkflowExecutionLog::STATUS_FAILED;
-                    $log->error_message = "Unknown node type: {$nodeType}";
-                    $log->completed_at = DateTime::now();
-                    $logsTable->save($log);
-                    break;
-            }
-        } catch (Throwable $e) {
-            Log::error("WorkflowEngine: Node '{$nodeId}' execution failed: {$e->getMessage()}");
-
-            $log->status = WorkflowExecutionLog::STATUS_FAILED;
-            $log->error_message = $e->getMessage();
-            $log->completed_at = DateTime::now();
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            // Create execution log for this attempt
+            $log = $logsTable->newEntity([
+                'workflow_instance_id' => $instance->id,
+                'node_id' => $nodeId,
+                'node_type' => $nodeType,
+                'attempt_number' => $attempt,
+                'status' => WorkflowExecutionLog::STATUS_RUNNING,
+                'input_data' => $this->resolveInputData($instance->context ?? [], $nodeConfig),
+                'started_at' => DateTime::now(),
+            ]);
             $logsTable->save($log);
 
-            $instance->status = WorkflowInstance::STATUS_FAILED;
-            $instance->completed_at = DateTime::now();
-            $instance->error_info = [
-                'failed_node' => $nodeId,
-                'error' => $e->getMessage(),
-            ];
-            $this->updateInstance($instance, []);
+            try {
+                switch ($nodeType) {
+                    case 'action':
+                        $this->executeActionNode($instance, $nodeId, $node, $log, $definition);
+                        break;
 
-            throw $e; // Propagate to trigger transaction rollback
+                    case 'condition':
+                        $this->executeConditionNode($instance, $nodeId, $node, $log, $definition);
+                        break;
+
+                    case 'approval':
+                        $this->executeApprovalNode($instance, $nodeId, $node, $log);
+                        break;
+
+                    case 'fork':
+                        $this->executeForkNode($instance, $nodeId, $log, $definition);
+                        break;
+
+                    case 'join':
+                        $this->executeJoinNode($instance, $nodeId, $node, $log, $definition);
+                        break;
+
+                    case 'loop':
+                        $this->executeLoopNode($instance, $nodeId, $node, $log, $definition);
+                        break;
+
+                    case 'delay':
+                        $this->executeDelayNode($instance, $nodeId, $node, $log);
+                        break;
+
+                    case 'end':
+                        $this->executeEndNode($instance, $nodeId, $log);
+                        break;
+
+                    case 'subworkflow':
+                        $this->executeSubworkflowNode($instance, $nodeId, $node, $log);
+                        break;
+
+                    default:
+                        $log->status = WorkflowExecutionLog::STATUS_FAILED;
+                        $log->error_message = "Unknown node type: {$nodeType}";
+                        $log->completed_at = DateTime::now();
+                        $logsTable->save($log);
+                        break;
+                }
+
+                // Success — break out of retry loop
+                return;
+            } catch (Throwable $e) {
+                $lastException = $e;
+                $log->status = WorkflowExecutionLog::STATUS_FAILED;
+                $log->error_message = $e->getMessage();
+                $log->completed_at = DateTime::now();
+                $logsTable->save($log);
+
+                if ($attempt < $maxAttempts) {
+                    // Exponential backoff: 1s, 2s, 4s, ...
+                    $backoffSeconds = (int)pow(2, $attempt - 1);
+                    Log::warning(
+                        "WorkflowEngine: Node '{$nodeId}' attempt {$attempt}/{$maxAttempts} failed, "
+                        . "retrying in {$backoffSeconds}s: {$e->getMessage()}"
+                    );
+                    sleep($backoffSeconds);
+                }
+            }
         }
+
+        // All attempts exhausted — mark instance as failed
+        Log::error("WorkflowEngine: Node '{$nodeId}' failed after {$maxAttempts} attempt(s): {$lastException->getMessage()}");
+
+        $instance->status = WorkflowInstance::STATUS_FAILED;
+        $instance->completed_at = DateTime::now();
+        $instance->error_info = [
+            'failed_node' => $nodeId,
+            'error' => $lastException->getMessage(),
+            'attempts' => $maxAttempts,
+        ];
+        $this->updateInstance($instance, []);
+
+        throw $lastException;
     }
 
     /**
@@ -485,6 +593,32 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $actionConfig = WorkflowActionRegistry::getAction($actionName);
         if (!$actionConfig) {
             throw new \RuntimeException("Action '{$actionName}' not found in registry.");
+        }
+
+        // Async execution: queue the action instead of running inline
+        $isAsync = !empty($node['config']['isAsync']) || !empty($actionConfig['isAsync']);
+        if ($isAsync) {
+            $log->status = WorkflowExecutionLog::STATUS_WAITING;
+            $log->output_data = ['queued' => true, 'action' => $actionName];
+            $logsTable->save($log);
+
+            $instance->status = WorkflowInstance::STATUS_WAITING;
+            $this->updateInstance($instance, []);
+
+            $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
+            $queuedJobsTable->createJob('WorkflowResume', [
+                'instanceId' => $instance->id,
+                'nodeId' => $nodeId,
+                'outputPort' => 'default',
+                'additionalData' => [
+                    'asyncAction' => $actionName,
+                    'nodeConfig' => $node['config'] ?? [],
+                ],
+            ]);
+
+            Log::info("WorkflowEngine: Async action '{$actionName}' queued for node '{$nodeId}' instance #{$instance->id}.");
+
+            return;
         }
 
         $serviceClass = $actionConfig['serviceClass'];
@@ -766,6 +900,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
     /**
      * Execute an end node — completes this path, finishes instance if no active nodes remain.
+     * If this instance is a child workflow, resumes the parent instance.
      */
     protected function executeEndNode(
         WorkflowInstance $instance,
@@ -786,11 +921,31 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $instance->status = WorkflowInstance::STATUS_COMPLETED;
             $instance->completed_at = DateTime::now();
             $this->updateInstance($instance, []);
+
+            // Subworkflow completion callback: resume parent if this is a child instance
+            $context = $instance->context ?? [];
+            $parentInstanceId = $context['_internal']['parentInstanceId'] ?? null;
+            $parentNodeId = $context['_internal']['parentNodeId'] ?? null;
+
+            if ($parentInstanceId !== null && $parentNodeId !== null) {
+                Log::info(
+                    "WorkflowEngine: Child instance #{$instance->id} completed, "
+                    . "resuming parent instance #{$parentInstanceId} at node '{$parentNodeId}'."
+                );
+
+                $this->resumeWorkflow(
+                    (int)$parentInstanceId,
+                    $parentNodeId,
+                    'default',
+                    ['childResult' => $context['nodes'] ?? [], 'childInstanceId' => $instance->id],
+                );
+            }
         }
     }
 
     /**
      * Execute a subworkflow node — starts a child workflow, sets instance to WAITING.
+     * Passes parent instance/node info so the child can resume the parent on completion.
      */
     protected function executeSubworkflowNode(
         WorkflowInstance $instance,
@@ -814,10 +969,22 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $instance->entity_id,
         );
 
+        // Store parent info in the child instance's context so it can call back
+        $childInstanceId = $childResult->data['instanceId'] ?? null;
+        if ($childInstanceId !== null) {
+            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+            $childInstance = $instancesTable->get($childInstanceId);
+            $childContext = $childInstance->context ?? [];
+            $childContext['_internal']['parentInstanceId'] = $instance->id;
+            $childContext['_internal']['parentNodeId'] = $nodeId;
+            $childInstance->context = $childContext;
+            $instancesTable->save($childInstance);
+        }
+
         $context = $instance->context ?? [];
         $context['nodes'][$nodeId] = [
             'result' => $childResult->data,
-            'childInstanceId' => $childResult->data['instanceId'] ?? null,
+            'childInstanceId' => $childInstanceId,
         ];
         $instance->context = $context;
 
