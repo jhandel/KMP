@@ -64,9 +64,11 @@ $toggleUrl = $this->Url->build(['action' => 'toggleActive', '__id__']);
                     <td>
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox"
+                                id="toggle-active-<?= h($workflow->id) ?>"
                                 data-action="change->workflow-index#toggleActive"
                                 data-workflow-id="<?= h($workflow->id) ?>"
                                 <?= $workflow->is_active ? 'checked' : '' ?>>
+                            <label class="form-check-label visually-hidden" for="toggle-active-<?= h($workflow->id) ?>"><?= __('Toggle active for {0}', h($workflow->name)) ?></label>
                         </div>
                     </td>
                     <td>

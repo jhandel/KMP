@@ -518,3 +518,35 @@
     padding: 1px 4px;
     border-radius: 3px;
 }
+
+/* =============================================
+   Responsive Breakpoints
+   ============================================= */
+
+/* Tablet: collapse palette and config panels */
+@media (max-width: 1024px) {
+    .wf-palette {
+        display: none;
+    }
+    .wf-config-panel {
+        display: none;
+    }
+    .workflow-canvas {
+        min-width: 0;
+    }
+}
+
+/* Mobile: stack layout vertically */
+@media (max-width: 768px) {
+    .wf-designer-container {
+        flex-direction: column;
+    }
+    .workflow-toolbar {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .workflow-toolbar .ms-auto {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}

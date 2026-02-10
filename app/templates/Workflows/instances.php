@@ -87,4 +87,16 @@ $this->assign('title', __('Workflow Instances'));
             </tbody>
         </table>
     </div>
+
+    <!-- Pagination -->
+    <nav aria-label="<?= __('Workflow instances pagination') ?>">
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <div><?= $this->Paginator->counter(__('Page {{page}} of {{pages}}')) ?></div>
+            <ul class="pagination pagination-sm mb-0">
+                <?= $this->Paginator->prev('« ' . __('Previous')) ?>
+                <?= $this->Paginator->numbers() ?>
+                <?= $this->Paginator->next(__('Next') . ' »') ?>
+            </ul>
+        </div>
+    </nav>
 </div>

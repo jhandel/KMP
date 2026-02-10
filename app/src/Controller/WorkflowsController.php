@@ -278,7 +278,7 @@ class WorkflowsController extends AppController
             $query->where(['WorkflowInstances.workflow_definition_id' => $definitionId]);
         }
 
-        $instances = $query->limit(100)->all();
+        $instances = $this->paginate($query, ['limit' => 25]);
         $this->set(compact('instances', 'definitionId'));
     }
 
@@ -320,12 +320,13 @@ class WorkflowsController extends AppController
             }
         }
 
-        $recentApprovals = $this->fetchTable('WorkflowApprovals')->find()
-            ->contain(['WorkflowInstances' => ['WorkflowDefinitions'], 'WorkflowApprovalResponses'])
-            ->where(['WorkflowApprovals.status !=' => 'pending'])
-            ->orderBy(['WorkflowApprovals.modified' => 'DESC'])
-            ->limit(50)
-            ->all();
+        $recentApprovals = $this->paginate(
+            $this->fetchTable('WorkflowApprovals')->find()
+                ->contain(['WorkflowInstances' => ['WorkflowDefinitions'], 'WorkflowApprovalResponses'])
+                ->where(['WorkflowApprovals.status !=' => 'pending'])
+                ->orderBy(['WorkflowApprovals.modified' => 'DESC']),
+            ['limit' => 25, 'scope' => 'recent']
+        );
 
         $this->set(compact('pendingApprovals', 'recentApprovals'));
     }

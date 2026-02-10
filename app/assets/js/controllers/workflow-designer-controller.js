@@ -204,12 +204,12 @@ class WorkflowDesignerController extends Controller {
             { type: 'end', label: 'End', icon: 'fa-stop' },
         ]
         flowNodes.forEach(node => {
-            html += `<div class="palette-node" draggable="true" data-node-type="${node.type}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon(node.icon)} ${node.label}</div>`
+            html += `<div class="palette-node" draggable="true" data-node-type="${node.type}" data-action="dragstart->workflow-designer#onPaletteDragStart" role="button" aria-label="${node.label}">${makeIcon(node.icon)} ${node.label}</div>`
         })
         html += '</div>'
 
         html += '<div class="palette-category"><h6 class="palette-category-title">Approvals</h6>'
-        html += `<div class="palette-node" draggable="true" data-node-type="approval" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-check-double')} Approval Gate</div>`
+        html += `<div class="palette-node" draggable="true" data-node-type="approval" data-action="dragstart->workflow-designer#onPaletteDragStart" role="button" aria-label="Approval Gate">${makeIcon('fa-check-double')} Approval Gate</div>`
         html += '</div>'
 
         if (this.registryData.triggers && this.registryData.triggers.length > 0) {
@@ -217,7 +217,7 @@ class WorkflowDesignerController extends Controller {
             for (const [source, triggers] of Object.entries(groups)) {
                 html += `<div class="palette-category"><h6 class="palette-category-title"><i class="fa-solid fa-bolt fa-xs me-1"></i>Triggers — ${source}</h6>`
                 triggers.forEach(trigger => {
-                    html += `<div class="palette-node" draggable="true" data-node-type="trigger" data-node-event="${trigger.event}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-bolt')} ${trigger.label}</div>`
+                    html += `<div class="palette-node" draggable="true" data-node-type="trigger" data-node-event="${trigger.event}" data-action="dragstart->workflow-designer#onPaletteDragStart" role="button" aria-label="${trigger.label}">${makeIcon('fa-bolt')} ${trigger.label}</div>`
                 })
                 html += '</div>'
             }
@@ -228,7 +228,7 @@ class WorkflowDesignerController extends Controller {
             for (const [source, actions] of Object.entries(groups)) {
                 html += `<div class="palette-category"><h6 class="palette-category-title"><i class="fa-solid fa-gear fa-xs me-1"></i>Actions — ${source}</h6>`
                 actions.forEach(action => {
-                    html += `<div class="palette-node" draggable="true" data-node-type="action" data-node-action="${action.action}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-gear')} ${action.label}</div>`
+                    html += `<div class="palette-node" draggable="true" data-node-type="action" data-node-action="${action.action}" data-action="dragstart->workflow-designer#onPaletteDragStart" role="button" aria-label="${action.label}">${makeIcon('fa-gear')} ${action.label}</div>`
                 })
                 html += '</div>'
             }
@@ -239,7 +239,7 @@ class WorkflowDesignerController extends Controller {
             for (const [source, conditions] of Object.entries(groups)) {
                 html += `<div class="palette-category"><h6 class="palette-category-title"><i class="fa-solid fa-diamond fa-xs me-1"></i>Conditions — ${source}</h6>`
                 conditions.forEach(cond => {
-                    html += `<div class="palette-node" draggable="true" data-node-type="condition" data-node-condition="${cond.condition}" data-action="dragstart->workflow-designer#onPaletteDragStart">${makeIcon('fa-diamond')} ${cond.label}</div>`
+                    html += `<div class="palette-node" draggable="true" data-node-type="condition" data-node-condition="${cond.condition}" data-action="dragstart->workflow-designer#onPaletteDragStart" role="button" aria-label="${cond.label}">${makeIcon('fa-diamond')} ${cond.label}</div>`
                 })
                 html += '</div>'
             }
@@ -685,6 +685,7 @@ class WorkflowDesignerController extends Controller {
         const toast = document.createElement('div')
         toast.className = `alert alert-${type} alert-dismissible fade show wf-toast`
         toast.setAttribute('role', 'alert')
+        toast.setAttribute('aria-live', 'assertive')
         toast.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`
         document.body.appendChild(toast)
         setTimeout(() => toast.remove(), 4000)

@@ -73,7 +73,7 @@ $this->KMP->endBlock();
                 <?php endif; ?>
             </div>
             <?php if ($log->error_message) : ?>
-                <div class="alert alert-danger mt-2 mb-0 py-1 px-2 small">
+                <div class="alert alert-danger mt-2 mb-0 py-1 px-2 small" role="alert">
                     <?= h($log->error_message) ?>
                 </div>
             <?php endif; ?>

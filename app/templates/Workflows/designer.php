@@ -49,24 +49,24 @@ $this->KMP->endBlock();
         </h5>
 
         <div class="wf-zoom-controls ms-3">
-            <button class="btn btn-sm" data-action="workflow-designer#zoomOut" title="Zoom Out">
+            <button class="btn btn-sm" data-action="workflow-designer#zoomOut" title="Zoom Out" aria-label="<?= __('Zoom Out') ?>">
                 <i class="bi bi-dash"></i>
             </button>
             <span class="wf-zoom-level" data-workflow-designer-target="zoomLevel">100%</span>
-            <button class="btn btn-sm" data-action="workflow-designer#zoomIn" title="Zoom In">
+            <button class="btn btn-sm" data-action="workflow-designer#zoomIn" title="Zoom In" aria-label="<?= __('Zoom In') ?>">
                 <i class="bi bi-plus"></i>
             </button>
-            <button class="btn btn-sm" data-action="workflow-designer#zoomReset" title="Reset Zoom">
+            <button class="btn btn-sm" data-action="workflow-designer#zoomReset" title="Reset Zoom" aria-label="<?= __('Reset Zoom') ?>">
                 <i class="bi bi-arrows-angle-expand"></i>
             </button>
         </div>
 
         <div class="toolbar-separator"></div>
 
-        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#undo" title="Undo (Ctrl+Z)">
+        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#undo" title="Undo (Ctrl+Z)" aria-label="<?= __('Undo') ?>">
             <i class="bi bi-arrow-counterclockwise"></i>
         </button>
-        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#redo" title="Redo (Ctrl+Y)">
+        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#redo" title="Redo (Ctrl+Y)" aria-label="<?= __('Redo') ?>">
             <i class="bi bi-arrow-clockwise"></i>
         </button>
 
@@ -94,9 +94,9 @@ $this->KMP->endBlock();
     </div>
 
     <!-- Main Designer Area -->
-    <div class="workflow-designer-container">
+    <div class="workflow-designer-container wf-designer-container">
         <!-- Left: Node Palette -->
-        <div class="workflow-palette"
+        <div class="workflow-palette wf-palette"
             data-workflow-designer-target="nodePalette">
             <div style="padding: 0.25rem 0 0.5rem;">
                 <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #667085;">
@@ -113,7 +113,7 @@ $this->KMP->endBlock();
         </div>
 
         <!-- Right: Config Panel -->
-        <div class="workflow-config-panel"
+        <div class="workflow-config-panel wf-config-panel"
             data-workflow-designer-target="nodeConfig">
             <div class="config-panel-header">
                 <h6><i class="bi bi-sliders me-1"></i><?= __('Configuration') ?></h6>
@@ -126,5 +126,5 @@ $this->KMP->endBlock();
     </div>
 
     <!-- Validation Results (initially hidden) -->
-    <div data-workflow-designer-target="validationResults" class="wf-validation-results" style="display:none;"></div>
+    <div data-workflow-designer-target="validationResults" class="wf-validation-results" aria-live="polite" style="display:none;"></div>
 </div>

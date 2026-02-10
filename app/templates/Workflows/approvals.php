@@ -92,7 +92,7 @@ $this->assign('title', __('My Approvals'));
         <?php endforeach; ?>
     </div>
     <?php else : ?>
-    <div class="alert alert-info">
+    <div class="alert alert-info" role="alert">
         <i class="bi bi-info-circle me-1"></i><?= __('No pending approvals. You\'re all caught up!') ?>
     </div>
     <?php endif; ?>
@@ -128,4 +128,16 @@ $this->assign('title', __('My Approvals'));
             </tbody>
         </table>
     </div>
+
+    <!-- Pagination -->
+    <nav aria-label="<?= __('Recent approvals pagination') ?>">
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <div><?= $this->Paginator->counter(__('Page {{page}} of {{pages}}'), ['scope' => 'recent']) ?></div>
+            <ul class="pagination pagination-sm mb-0">
+                <?= $this->Paginator->prev('« ' . __('Previous'), ['scope' => 'recent']) ?>
+                <?= $this->Paginator->numbers(['scope' => 'recent']) ?>
+                <?= $this->Paginator->next(__('Next') . ' »', ['scope' => 'recent']) ?>
+            </ul>
+        </div>
+    </nav>
 </div>

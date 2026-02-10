@@ -120,7 +120,8 @@ $csrfToken = $this->request->getAttribute('csrfToken');
                         <button type="button" class="btn btn-outline-warning btn-sm"
                             data-action="click->workflow-versions#migrate"
                             data-version-id="<?= h($version->id) ?>"
-                            title="<?= __('Migrate Running Instances') ?>">
+                            title="<?= __('Migrate Running Instances') ?>"
+                            aria-label="<?= __('Migrate Running Instances') ?>">
                             <i class="bi bi-arrow-repeat"></i>
                         </button>
                         <?php endif; ?>
