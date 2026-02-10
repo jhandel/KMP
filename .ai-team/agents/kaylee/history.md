@@ -126,3 +126,36 @@ Completed 13 documentation tasks fixing inaccuracies found during codebase revie
 
 #### Pattern Observed
 Docs were consistently wrong about: DI registrations (showing services that aren't registered), session config structure (CakePHP uses flat `ini` block not nested objects), and event names (fictional ActiveWindow events). These likely came from AI-generated docs that assumed patterns rather than reading actual source.
+
+### 2026-02-10: Workflow Engine Deep-Dive
+
+#### Implementation Patterns
+- **Recursive graph traversal:** `executeNode()` is the central dispatcher — adds node to `active_nodes`, creates execution log, dispatches to type-specific handler, then calls `advanceToOutputs()` which recursively calls `executeNode()` on targets. No queue-based async — all in-process.
+- **Context as shared state:** All data flows through a JSON `context` object on `WorkflowInstance`. Trigger data at `$.trigger.*`, node outputs at `$.nodes.{nodeId}.result.*`, internal tracking at `$._internal.*`. Config values starting with `$.` are resolved at runtime via `CoreConditions::resolveFieldPath()`.
+- **Two edge formats:** Definitions support both per-node `outputs` arrays and top-level `edges` arrays. Port aliases `"default"` and `"next"` are treated as equivalent.
+- **Action/condition instantiation bypasses DI:** Services are created with `new $serviceClass()`, not from the DI container. `OfficerWorkflowActions` works around this by manually resolving DI via `Cake\Core\Container`.
+- **Approval halts execution:** Approval nodes set instance to `STATUS_WAITING`. Resumption happens externally via `recordApproval()` in the controller, which calls `resumeWorkflow()` with `approved`/`rejected` port.
+- **Static registries pattern:** `WorkflowActionRegistry`, `WorkflowConditionRegistry`, `WorkflowTriggerRegistry`, `WorkflowEntityRegistry` are all static registries populated at bootstrap via `WorkflowPluginLoader::loadFromPlugins()`.
+
+#### Database Schema Details
+- **7 tables:** `workflow_definitions`, `workflow_versions`, `workflow_instances`, `workflow_execution_logs`, `workflow_approvals`, `workflow_approval_responses`, `workflow_instance_migrations`
+- **No `getBranchId()`** on any workflow entity — no branch-scoped authorization yet
+- **JSON columns:** `definition`, `canvas_layout`, `context`, `active_nodes`, `error_info`, `approver_config`, `escalation_config`, `node_mapping`, `trigger_config` — all use CakePHP's JSON type via `getSchema()->setColumnType()`
+- **Unique constraints:** `[workflow_definition_id, version_number]` on versions, `[workflow_approval_id, member_id]` on responses, slug uniqueness on definitions
+- **Footprint behavior** only on `workflow_definitions` and `workflow_versions` (not on instances/logs)
+
+#### Queue Task Behavior and Edge Cases
+- **`WorkflowResumeTask`:** Creates fresh `DefaultWorkflowEngine` (no DI). 120s timeout, 3 retries. Edge case: if instance is no longer in WAITING state when task runs (e.g., already cancelled), `resumeWorkflow()` returns a ServiceResult failure but the task still counts as successful (doesn't throw).
+- **`WorkflowApprovalDeadlineTask`:** Unique=true (no parallel runs). Finds all PENDING approvals past deadline, marks EXPIRED, resumes on `expired` port. Edge case: no transaction — if marking approval expired succeeds but resume fails, approval is expired but workflow stays stuck in WAITING.
+- **Subworkflow completion gap:** `executeSubworkflowNode()` starts child workflow and sets parent to WAITING, but no mechanism exists for child completion to notify/resume the parent. Currently creates orphaned waiting parents.
+
+#### Integration Patterns (Warrants/Officers)
+- **WarrantWorkflowProvider** registers 3 triggers (`RosterCreated`, `Approved`, `Declined`) and 5 actions (`CreateWarrantRoster`, `ActivateWarrants`, `CreateDirectWarrant`, `DeclineRoster`, `NotifyWarrantIssued`)
+- **OfficersWorkflowProvider** registers 3 triggers (`HireRequested`, `Released`, `WarrantRequired`), 4 actions (`CreateOfficerRecord`, `ReleaseOfficer`, `SendHireNotification`, `RequestWarrantRoster`), 3 conditions (`OfficeRequiresWarrant`, `IsOnlyOnePerBranch`, `IsMemberWarrantable`), and 1 entity (Offices)
+- **Transaction ownership in actions:** Warrant actions manage their own `begin()/commit()/rollback()` transactions. The engine does NOT wrap node execution in transactions.
+- **Email in actions:** `notifyWarrantIssued` checks `Email.UseQueue` app setting and either queues via `Queue.Mailer` or sends synchronously as fallback. Uses `TimezoneHelper::formatDate()` correctly.
+- **Seed workflows:** Two seeded — `warrant-roster` (active, policy-based approval with `WarrantRosterPolicy::canApprove`) and `officer-hire` (inactive, complex branching with 11 nodes)
+
+📌 Team update (2026-02-10): Workflow engine backend deep-dive complete — 12 improvement items identified (3 P0/P1 critical: no transaction on recordResponse, no duplicate instance prevention, updateEntity has no allowlist). Full analysis in decisions/inbox/kaylee-workflow-backend-review.md. — decided by Kaylee
+
+📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Kaylee's DI bypass recs consolidated with Jayne's controller DI rec. Kaylee's approval transaction rec consolidated with Jayne's concurrency guard rec (P0). — decided by Mal, Kaylee, Wash, Jayne

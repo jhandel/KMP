@@ -1484,3 +1484,883 @@ Completed 13 documentation tasks fixing factual errors across 12 files. Every fi
 1. **`composer.json` says `php >= 8.1`** but docs now say 8.3. If someone deploys on 8.1/8.2, Composer will allow it but the docs won't cover it. Consider bumping `composer.json` to `>=8.3`.
 2. **The old `SuperUserAuthenticatedTrait` is still in the codebase.** A cleanup task to migrate remaining tests and remove it would be beneficial.
 3. **No `npm run lint`** exists — if linting is desired, an ESLint config + script should be added.
+
+---
+
+### 2026-02-10: Workflow engine architecture review
+**By:** Mal
+**What:** Architecture review and improvement recommendations for the workflow engine module
+**Why:** Team needs to understand the module's design and prioritize early improvements
+
+## Architecture Overview
+
+### Core Design
+
+The workflow engine is a **graph-based execution engine** that replaces the previous state-machine-based workflow system (which is archived via the migration as `*_legacy` tables). Workflows are defined as directed graphs of typed nodes (trigger, action, condition, approval, fork, join, loop, delay, end, subworkflow) connected by named output ports. The engine traverses these graphs synchronously in a depth-first manner, pausing only at approval gates, delay nodes, and subworkflow nodes.
+
+The module spans ~3,500 lines across ~30 files and introduces 7 new database tables plus 4 static registries.
+
+### Key Abstractions
+
+| Layer | Abstraction | Purpose |
+|-------|------------|---------|
+| **Contract** | `WorkflowEngineInterface` | Start, resume, cancel workflows; dispatch triggers |
+| **Contract** | `WorkflowVersionManagerInterface` | Draft/publish/archive versions; migrate instances; compare versions |
+| **Contract** | `WorkflowApprovalManagerInterface` | Create approval gates; record responses; check eligibility |
+| **Registry** | `WorkflowTriggerRegistry` | Static registry of events that can start workflows |
+| **Registry** | `WorkflowActionRegistry` | Static registry of executable actions (with service class + method) |
+| **Registry** | `WorkflowConditionRegistry` | Static registry of condition evaluators |
+| **Registry** | `WorkflowEntityRegistry` | Static registry of entity types for the visual designer's variable picker |
+| **Plugin Contract** | `KMPWorkflowPluginInterface` | 4-method contract for plugins to register triggers/actions/conditions/entities |
+| **Loader** | `WorkflowPluginLoader` | Discovers `KMPWorkflowPluginInterface` plugins + loads core/provider components |
+| **Execution** | `DefaultWorkflowEngine` | ~1,100-line engine that traverses the node graph |
+| **Static Helper** | `TriggerDispatcher` | Thin static wrapper for `dispatchTrigger()` |
+
+### How Plugins Extend the Engine
+
+Plugins can contribute workflow components through two paths:
+
+1. **Plugin interface path:** Plugin class implements `KMPWorkflowPluginInterface` → `WorkflowPluginLoader::loadFromPlugins()` calls the four getter methods during bootstrap → registries are populated. The Officers plugin uses this path.
+
+2. **Provider pattern:** Standalone provider classes (e.g., `WarrantWorkflowProvider`, `OfficersWorkflowProvider`) with a static `register()` method that directly calls registry `register()`. These are loaded via `WorkflowPluginLoader::loadCoreComponents()`. This is used for core app components that aren't CakePHP plugins.
+
+Each registry entry is a self-describing array with:
+- **Triggers:** event name, label, description, payload schema
+- **Actions:** action name, label, description, input/output schemas, service class + method, async flag
+- **Conditions:** condition name, label, description, input schema, evaluator class + method
+- **Entities:** entity type, label, description, table class, field definitions
+
+The registries expose `getForDesigner()` methods that strip internal class names for safe consumption by the frontend visual designer.
+
+### Versioning System
+
+Workflow definitions have a **version lifecycle**: draft → published → archived.
+
+- Only one version can be published at a time per definition.
+- Publishing auto-archives the previous published version.
+- Definitions track `current_version_id` as a FK to the published version.
+- Instances are pinned to a specific version at creation time.
+- Running instances can be **migrated** to a new version, with automatic node key mapping (or explicit mapping).
+- Migrations are audited in `workflow_instance_migrations` with before/after version IDs and node mappings.
+- Version comparison diffs added/removed/modified nodes between two versions.
+- Validation on publish: exactly one trigger node, at least one end node, all edges reference existing nodes, no orphan nodes, loop nodes must have maxIterations.
+
+### Approval System
+
+Approval gates are first-class node types in the workflow graph:
+
+- An approval node creates a `workflow_approvals` record and pauses the instance (status=WAITING).
+- Approver eligibility is resolved dynamically via 5 strategies: `permission`, `role`, `member`, `dynamic` (not yet implemented), `policy` (CakePHP policy check against the workflow's entity context).
+- Multiple approvers can respond; the gate resolves when `approved_count >= required_count` (approve) or any rejection (reject).
+- `required_count` can be static, from an AppSetting, or from the workflow context.
+- Deadlines are supported with configurable durations (e.g., "14d", "24h").
+- Resolution triggers workflow resumption via the controller's `recordApproval` action, which calls `resumeWorkflow()` with the appropriate output port (approved/rejected).
+- All responses are audit-logged in `workflow_approval_responses` with member ID, decision, comment, and timestamp.
+
+### DI Registration Pattern
+
+All three interfaces are registered in `Application::services()`:
+```
+WorkflowEngineInterface → DefaultWorkflowEngine
+WorkflowVersionManagerInterface → DefaultWorkflowVersionManager
+WorkflowApprovalManagerInterface → DefaultWorkflowApprovalManager
+```
+
+**However**, the controller and TriggerDispatcher bypass DI and instantiate implementations directly via `new DefaultWorkflowEngine()`. This is inconsistent with the DI registration and defeats the purpose of the interface contracts.
+
+### Integration with Existing Systems
+
+**Warrant system:** The `WarrantWorkflowProvider` registers triggers for roster created/approved/declined and actions for creating rosters, activating warrants, creating direct warrants, declining rosters, and sending notifications. The `WarrantWorkflowActions` class manually manages transactions (begin/commit/rollback) and interacts directly with warrant/roster tables, paralleling the existing `WarrantManager` logic. This creates a **dual-path problem** — the same business logic exists in both `WarrantManager` and `WarrantWorkflowActions`.
+
+**Officer system:** The `OfficersWorkflowProvider` registers triggers for hire/release/warrant-required events and actions for creating officers, releasing officers, sending notifications, and requesting warrant rosters. `OfficerWorkflowActions` is more sophisticated — it handles reporting hierarchies, one-per-branch conflicts, ActiveWindow management, and role assignment. It also directly instantiates `DefaultActiveWindowManager` and `DefaultWarrantManager`, bypassing DI.
+
+**Seeded workflows:** Two workflows are seeded:
+1. `warrant-roster` — Trigger on `Warrants.RosterCreated` → Approval gate → Activate/Decline
+2. `officer-hire` — Trigger on `Officers.HireRequested` → Check warrantability → Create officer → Notify → Check warrant required → Request warrant roster
+
+## Architectural Patterns
+
+### Good Patterns
+
+1. **Registry pattern consistency.** The 4 workflow registries follow the same structure as `NavigationRegistry` and `ViewCellRegistry` — static classes with register/get/clear/debug methods. This is a pattern the team already knows.
+
+2. **Interface-driven contracts.** All three major engine components have interface/implementation separation, enabling future testing and alternative implementations.
+
+3. **ServiceResult convention.** The engine follows the established `ServiceResult(success, reason, data)` pattern throughout.
+
+4. **Schema-driven registrations.** Each trigger/action/condition/entity registration includes input/output schemas that describe the data contract. This enables the visual designer to render appropriate configuration UIs.
+
+5. **Audit trail.** Execution logs capture every node execution with input/output data, status, and timing. Approval responses are individually tracked. Version migrations are audited.
+
+6. **Graph validation.** The version manager validates definitions before publishing — checking for orphan nodes, missing end nodes, dangling references, and unbounded loops.
+
+7. **Context resolution.** The `$.path.to.value` convention for resolving values from workflow context is consistent and supports both actions and conditions.
+
+### Concerning Patterns
+
+1. **DI bypass.** `TriggerDispatcher::dispatch()` and all three `WorkflowsController` helper methods instantiate implementations directly with `new`. This means the DI registrations in `Application::services()` are decorative — they're never used.
+
+2. **Synchronous depth-first execution.** The engine executes the entire graph synchronously in a single PHP request. A complex workflow with many action nodes will block the request thread. There's no queue-based async execution for action nodes even though some are marked `isAsync: true` in the registry.
+
+3. **No transaction management in the engine.** The engine creates instances, logs, and approvals without wrapping them in a transaction. Individual action implementations (e.g., `WarrantWorkflowActions`) manage their own transactions, but the engine-level state changes are not transactional. A failure mid-graph leaves the instance in an inconsistent state.
+
+4. **Duplicated business logic.** `WarrantWorkflowActions` duplicates significant warrant lifecycle logic from `WarrantManager`. `OfficerWorkflowActions` duplicates officer creation logic from `OfficerManager`. This violates DRY and creates divergence risk.
+
+5. **`resolveValue()` is duplicated.** The `$. path resolution` helper appears in `CoreActions`, `WarrantWorkflowActions`, `OfficerWorkflowConditions`, and `OfficerWorkflowActions` — each with its own copy.
+
+6. **No retry mechanism.** `attempt_number` exists in the execution log table but is always set to 1. There's no retry logic for failed action nodes.
+
+7. **Approval eligibility is N+1.** `getPendingApprovalsForMember()` loads all pending approvals then loops through each calling `isMemberEligible()`, which makes additional queries per approval. This won't scale.
+
+8. **Join node tracking is fragile.** Join nodes track completed inputs via `_internal.joinState` in the context JSON, but `findIncomingSource()` determines the incoming source by querying the most recently completed execution log — not by tracking which edge was actually followed. This could misidentify sources in complex graphs.
+
+## Improvement Recommendations
+
+| # | Title | Category | Priority | Rationale |
+|---|-------|----------|----------|-----------|
+| 1 | **Use DI containers instead of direct instantiation** | Architecture | P0 | `TriggerDispatcher` and `WorkflowsController` bypass the DI container by calling `new DefaultWorkflowEngine()` directly. This makes the interfaces meaningless for testing or swapping implementations. The controller should inject interfaces via constructor or use `$this->getService()`. |
+| 2 | **Wrap engine graph traversal in a transaction** | Reliability | P0 | `executeNode()` and its children create execution logs and update instance state without a transaction. If PHP dies mid-traversal, the instance's `active_nodes`, `context`, and `status` can be left inconsistent with the execution logs. The engine should wrap `startWorkflow()` and `resumeWorkflow()` in a transaction. |
+| 3 | **Delegate to existing service managers instead of reimplementing** | Architecture | P1 | `WarrantWorkflowActions` reimplements warrant roster creation, activation, and decline logic that already exists in `WarrantManager`. `OfficerWorkflowActions` reimplements officer creation logic from `OfficerManager`. Actions should call the existing service managers (injected via DI) to avoid business logic divergence. |
+| 4 | **Extract shared `resolveValue()` into a trait or base class** | Architecture | P1 | The `resolveValue()` helper (resolve `$.` context paths) is copy-pasted into 4 separate classes. Extract it into a `WorkflowContextAwareTrait` or a base `AbstractWorkflowAction` class. |
+| 5 | **Add async execution for long-running actions** | Performance | P1 | Actions marked `isAsync: true` in the registry (like `Core.SendEmail`, `Officers.SendHireNotification`) are still executed synchronously. Integrate with the Queue plugin to offload these to background jobs, or run the entire workflow graph as a queued job to avoid blocking HTTP requests. |
+| 6 | **Add workflow engine tests** | Reliability | P1 | There are zero tests for the workflow engine. At minimum, the engine needs unit tests for: graph traversal, condition branching, approval gate creation/resolution, version publish/archive lifecycle, and instance migration. Given the project's "no new features until testing is solid" directive, this is especially important. |
+| 7 | **Optimize approval eligibility queries** | Performance | P2 | `getPendingApprovalsForMember()` has an N+1 query problem — it loads all pending approvals then runs individual eligibility checks. For permission-based approvals, this can be pushed into the query itself with a JOIN to avoid loading approvals the member can't act on. |
+| 8 | **Implement the `dynamic` approver type** | Extensibility | P2 | The `APPROVER_TYPE_DYNAMIC` case in `isMemberEligible()` returns `false` unconditionally. This should either be implemented (callback-based resolution) or removed from the schema to avoid confusion. |
+| 9 | **Add escalation handling for approval deadlines** | Extensibility | P2 | The `deadline` and `escalation_config` columns exist in the approvals table and can be set, but nothing processes expired deadlines. A cron job or queue task is needed to check for expired approvals and trigger escalation actions. |
+| 10 | **Add `migrateInstances` version migration to use VersionManager** | Reliability | P2 | `WorkflowsController::migrateInstances()` does a raw `updateAll()` that just swaps the version ID without remapping active nodes or creating migration audit records. It should use `DefaultWorkflowVersionManager::migrateInstance()` for each running instance to get proper node mapping and audit trails. |
+| 11 | **Add workflow execution to route registration** | Documentation | P2 | The workflow controller's routes should be documented. There's no entry in `config/routes.php` visible for the workflow endpoints — need to verify these are properly registered and documented. |
+| 12 | **Consider event-driven trigger dispatch** | Architecture | P2 | Currently, trigger dispatch requires callers to explicitly call `TriggerDispatcher::dispatch()`. Consider integrating with CakePHP's EventManager so domain events (e.g., officer hired, warrant created) automatically dispatch to the workflow engine without modifying caller code. |
+
+---
+
+### 2026-02-10: Workflow engine backend deep-dive
+**By:** Kaylee
+**What:** Backend implementation review and improvement recommendations for the workflow engine
+**Why:** Team needs to understand the engine internals and identify technical improvements
+
+## Implementation Analysis
+
+### 1. Workflow Execution Flow (Start → Nodes → Transitions → End)
+
+The engine follows a **recursive graph traversal** pattern. Here's how it works end-to-end:
+
+**Starting a workflow:**
+1. `TriggerDispatcher::dispatch()` is called with an event name (e.g., `Warrants.RosterCreated`) and event data.
+2. This static method creates a `DefaultWorkflowEngine` instance and calls `dispatchTrigger()`.
+3. `dispatchTrigger()` scans *all* active workflow definitions with a published `current_version_id`, checks each trigger node's `config.event`/`config.eventName` for a match against the event name.
+4. For each match, it calls `startWorkflow()` with the definition's slug.
+5. `startWorkflow()` creates a `WorkflowInstance` with `STATUS_RUNNING`, initializes the context (`trigger`, `triggeredBy`, `nodes`, `_internal`), and saves it.
+6. It finds all trigger nodes (should be exactly one per validation), logs them as completed, stores trigger data in context, then follows their output targets.
+
+**Executing nodes:**
+The `executeNode()` method is the central dispatcher. It:
+1. Adds the node to `active_nodes` on the instance.
+2. Creates a `WorkflowExecutionLog` entry with `STATUS_RUNNING`.
+3. Dispatches to a type-specific handler based on `node.type`:
+   - `action` → `executeActionNode()` — looks up action in `WorkflowActionRegistry`, instantiates the service class, calls the method, stores output in context, advances to `default` port.
+   - `condition` → `executeConditionNode()` — looks up condition in `WorkflowConditionRegistry` (or falls back to `CoreConditions::evaluateExpression()` for inline expressions), evaluates to boolean, advances on `true` or `false` port.
+   - `approval` → `executeApprovalNode()` — creates a `WorkflowApproval` record, sets the instance to `STATUS_WAITING`. Execution halts here until approval response triggers resume.
+   - `fork` → `executeForkNode()` — executes ALL output targets (parallel branches). This is in-process — no actual parallelism via threads or queues.
+   - `join` → `executeJoinNode()` — tracks which input sources have arrived via `_internal.joinState`, only advances when all expected inputs complete.
+   - `loop` → `executeLoopNode()` — increments iteration counter in `_internal.loopState`, checks `maxIterations` and optional `exitCondition`, follows `continue` or `exit` port.
+   - `delay` → `executeDelayNode()` — sets instance to `STATUS_WAITING`. No automatic timer — requires external `WorkflowResumeTask` queue job.
+   - `end` → `executeEndNode()` — removes from active nodes. If no active nodes remain, sets instance to `STATUS_COMPLETED`.
+   - `subworkflow` → `executeSubworkflowNode()` — starts a child workflow synchronously via `startWorkflow()`, stores the child instance ID in context, sets parent to `STATUS_WAITING`.
+4. On any exception, the node log gets `STATUS_FAILED` and the instance transitions to `STATUS_FAILED` with `error_info`.
+
+**Resuming a waiting workflow:**
+When an approval is granted or a delay expires, `resumeWorkflow()` is called:
+1. Validates instance is in `STATUS_WAITING`.
+2. Merges `additionalData` into context as `resumeData`.
+3. Sets status to `STATUS_RUNNING`.
+4. Finds the waiting execution log, marks it completed.
+5. Removes the node from `active_nodes`.
+6. Follows the specified `outputPort` to continue execution.
+
+**Cancellation:**
+`cancelWorkflow()` sets instance to `STATUS_CANCELLED`, cancels all pending approvals.
+
+### 2. Graph/Definition Storage (JSON Structure)
+
+Workflow definitions are stored as JSON in the `definition` column on `workflow_versions`. The structure is:
+
+```json
+{
+  "nodes": {
+    "node-key": {
+      "type": "trigger|action|condition|approval|fork|join|loop|delay|end|subworkflow",
+      "label": "Human-readable name",
+      "config": {
+        // Type-specific configuration
+      },
+      "position": { "x": 100, "y": 200 },
+      "outputs": [
+        { "port": "default|true|false|continue|exit|approved|rejected|expired", "target": "other-node-key", "label": "optional" }
+      ]
+    }
+  }
+}
+```
+
+**Two edge formats are supported:**
+1. **Per-node `outputs` array** (primary format used by seed data/designer): Each node has an `outputs` array with `{port, target}` objects.
+2. **Top-level `edges` array** (alternative): An `edges` array at the definition root level with `{source, sourcePort, target}` objects.
+
+The engine checks both formats in `getNodeOutputTargets()` and `getAllOutputTargets()`. Port aliases `"default"` and `"next"` are treated as equivalent.
+
+**Canvas layout** is stored separately in the `canvas_layout` column — purely visual, not used by execution.
+
+### 3. Context Variable Passing Between Nodes
+
+Context is a JSON object stored on the `WorkflowInstance` entity and passed by reference through execution:
+
+```json
+{
+  "trigger": { /* original trigger/event data */ },
+  "triggeredBy": 42,
+  "nodes": {
+    "node-key": { "result": { /* action output or condition result */ } }
+  },
+  "resumeData": { /* data from most recent resume call */ },
+  "_internal": {
+    "joinState": { "join-node-key": { "completedInputs": ["source1", "source2"] } },
+    "loopState": { "loop-node-key": { "iteration": 3 } }
+  }
+}
+```
+
+**Resolution mechanism:** Values in node configs can reference context using `$.path.to.value` syntax. `CoreConditions::resolveFieldPath()` handles dot-separated path traversal with optional `$.` prefix stripping. Both `CoreActions` and `WarrantWorkflowActions` have `resolveValue()` helpers that delegate to this.
+
+**Data flow:** Each action node's output is stored at `context.nodes[nodeId].result`. Downstream nodes reference these via `$.nodes.previous-node.result.fieldName`. The trigger data is at `$.trigger.*` and the triggering member at `$.triggeredBy`.
+
+### 4. Condition Evaluation
+
+Conditions are evaluated via `executeConditionNode()`:
+
+1. If a named condition is specified (`config.condition` or `config.evaluator`), the engine looks it up in `WorkflowConditionRegistry`, instantiates the evaluator class, and calls its method.
+2. If no named condition exists, it falls back to `CoreConditions::evaluateExpression()` for inline expression evaluation.
+
+**Core conditions registered:**
+- `Core.FieldEquals` — loose comparison of a context field against a value
+- `Core.FieldNotEmpty` — checks for non-empty value at path
+- `Core.FieldGreaterThan` — numeric comparison
+- `Core.MemberHasPermission` — checks member's roles/permissions
+- `Core.Expression` — evaluates `field operator value` strings (supports `==`, `!=`, `>`, `<`, `>=`, `<=`)
+
+**Officers plugin conditions:**
+- `Officers.OfficeRequiresWarrant` — checks `office.requires_warrant` flag
+- `Officers.IsOnlyOnePerBranch` — checks `office.only_one_per_branch`
+- `Officers.IsMemberWarrantable` — checks `member.warrantable`
+
+Output: boolean result determines whether the `true` or `false` output port is followed.
+
+### 5. Action Execution
+
+Actions execute via `executeActionNode()`:
+
+1. The engine reads `config.action` (e.g., `"Warrants.CreateWarrantRoster"`).
+2. Looks up the action in `WorkflowActionRegistry.getAction()` which returns `{serviceClass, serviceMethod, ...}`.
+3. Instantiates the service class with `new $serviceClass()` (no DI injection).
+4. Merges `config.params` into the top-level config array.
+5. Calls `$service->$serviceMethod($context, $config)`.
+6. The method returns an array which gets stored at `context.nodes[nodeId].result`.
+
+**Core actions:** `sendEmail`, `createNote`, `updateEntity`, `assignRole`, `setVariable`
+**Warrant actions:** `createWarrantRoster`, `activateWarrants`, `createDirectWarrant`, `declineRoster`, `notifyWarrantIssued`
+**Officer actions:** `createOfficerRecord`, `releaseOfficer`, `sendHireNotification`, `requestWarrantRoster`
+
+### 6. Approval System (Request, Respond, Deadline)
+
+**Creating an approval:**
+When an approval node executes, `executeApprovalNode()`:
+1. Builds `approver_config` from node config (supports permission, role, member, dynamic, policy types).
+2. Resolves `requiredCount` — can be a literal int, an `app_setting` key, a context path, or a fixed config.
+3. Parses deadline (e.g., `"14d"`) into a future DateTime.
+4. Creates a `WorkflowApproval` record with `STATUS_PENDING`.
+5. Sets the execution log to `STATUS_WAITING` and the instance to `STATUS_WAITING`.
+
+**Recording a response:**
+`DefaultWorkflowApprovalManager::recordResponse()`:
+1. Validates the approval is still pending.
+2. Checks member eligibility via `isMemberEligible()` — dispatches by `approver_type`:
+   - `PERMISSION`: checks member's roles have the named permission
+   - `ROLE`: checks member has the named role
+   - `MEMBER`: exact member ID match
+   - `DYNAMIC`: not yet implemented (always returns false)
+   - `POLICY`: instantiates policy class, loads entity from context, calls policy method
+3. Checks for duplicate responses (unique constraint on `[approval_id, member_id]`).
+4. Creates a `WorkflowApprovalResponse` record.
+5. Updates approval counts (`approved_count`, `rejected_count`).
+6. Resolution logic: if `approved_count >= required_count` → `STATUS_APPROVED`; if any rejection → `STATUS_REJECTED`.
+
+**Resuming after approval:**
+The `WorkflowsController::recordApproval()` method calls `recordResponse()`, then checks if the approval is resolved. If so, it calls `resumeWorkflow()` with the `approved` or `rejected` output port.
+
+**Deadline handling:**
+`WorkflowApprovalDeadlineTask` runs as a queue scheduled task:
+1. Finds all pending approvals past their deadline.
+2. Marks them `STATUS_EXPIRED`.
+3. Resumes the workflow on the `expired` output port.
+
+### 7. Versioning (Publish, Migrate)
+
+**Version lifecycle:**
+- `createDraft()`: Creates a new version with `STATUS_DRAFT`, auto-increments `version_number`.
+- `updateDraft()`: Updates definition/layout/notes on a draft (published/archived versions are immutable).
+- `publish()`: Within a transaction — archives the current published version, marks the draft as `STATUS_PUBLISHED` with timestamp, updates `workflow_definitions.current_version_id`. Validates the definition first (trigger count, end nodes, reachable nodes, loop bounds).
+- `archive()`: Sets version to `STATUS_ARCHIVED`. If it was the current published version, clears `current_version_id` and deactivates the definition.
+
+**Instance migration:**
+`migrateInstance()` moves a running instance to a different version:
+1. Validates instance is not terminal and target version is published.
+2. Auto-generates node mapping by matching node keys that exist in both versions.
+3. Verifies all `active_nodes` can be mapped to the target version.
+4. Within a transaction: remaps `active_nodes` keys, updates `workflow_version_id`, creates a `WorkflowInstanceMigration` audit record.
+
+**Version comparison:**
+`compareVersions()` produces a structural diff of two versions' node sets: added, removed, modified nodes.
+
+### 8. Queue Task Integration
+
+**Two queue tasks:**
+
+1. **`WorkflowResumeTask`**: Asynchronously resumes a waiting workflow instance.
+   - Input: `instanceId`, `nodeId`, optional `outputPort` (default `'next'`), optional `additionalData`.
+   - Timeout: 120s, retries: 3.
+   - Creates a new `DefaultWorkflowEngine` and calls `resumeWorkflow()`.
+
+2. **`WorkflowApprovalDeadlineTask`**: Checks for expired approvals on a schedule.
+   - Finds all `STATUS_PENDING` approvals where `deadline < now()`.
+   - Marks them `STATUS_EXPIRED`.
+   - Resumes workflow on `expired` port.
+   - Unique: true (prevents parallel execution).
+   - Timeout: 300s.
+
+**Integration pattern:** Tasks create fresh `DefaultWorkflowEngine` instances directly (no DI). The engine is not DI-aware internally — all `TableRegistry::getTableLocator()->get()` calls are static.
+
+### 9. Error Handling / Rollback Story
+
+**Per-node error handling:**
+If any exception is thrown during `executeNode()`, the catch block:
+1. Logs the error.
+2. Sets the execution log to `STATUS_FAILED` with the error message.
+3. Sets the instance to `STATUS_FAILED` with `error_info` containing `failed_node` and `error` message.
+4. The instance is saved via `updateInstance()`.
+
+**No automatic retry:** There's no built-in retry mechanism for failed nodes. The `attempt_number` field exists on execution logs but is always set to 1.
+
+**No partial rollback:** If a node fails mid-workflow, previously completed nodes' side effects (created entities, sent emails, etc.) are NOT rolled back. The instance simply stops at the failed node.
+
+**Approval error handling:** The approval manager wraps everything in try/catch and returns `ServiceResult(false)` — errors never bubble up. This means approval failures are silently swallowed with only a log entry.
+
+**Action error handling:** Individual action methods (e.g., `WarrantWorkflowActions::activateWarrants()`) manage their own transactions with manual `begin()/commit()/rollback()`. The workflow engine itself does NOT wrap node execution in a transaction — each action is responsible for its own data integrity.
+
+### 10. Transaction Management Approach
+
+**Critical finding: The engine has a mixed/inconsistent transaction strategy.**
+
+| Component | Transaction Approach |
+|-----------|---------------------|
+| `DefaultWorkflowEngine` (node execution) | **No transactions.** Each node executes without a wrapping transaction. |
+| `DefaultWorkflowVersionManager::publish()` | ✅ Uses `ConnectionManager::get('default')->transactional()` |
+| `DefaultWorkflowVersionManager::migrateInstance()` | ✅ Uses `ConnectionManager::get('default')->transactional()` |
+| `WarrantWorkflowActions::createWarrantRoster()` | ✅ Manual `begin()/commit()/rollback()` |
+| `WarrantWorkflowActions::activateWarrants()` | ✅ Manual `begin()/commit()/rollback()` |
+| `WarrantWorkflowActions::declineRoster()` | ✅ Manual `begin()/commit()/rollback()` |
+| `DefaultWorkflowApprovalManager` | ❌ No transactions on `recordResponse()` — count update + status change not atomic. |
+| `DefaultWorkflowEngine::startWorkflow()` | ❌ Creates instance then executes nodes without a transaction. |
+| `DefaultWorkflowEngine::cancelWorkflow()` | ❌ Cancels instance and approvals without a transaction. |
+
+**Key risk:** If `recordResponse()` successfully saves the response but fails to update the approval counts/status, the data will be inconsistent. Similarly, `cancelWorkflow()` could partially cancel approvals if the loop fails midway.
+
+## Improvement Recommendations
+
+### 2026-02-10: Approval response atomicity and concurrency (consolidated)
+**By:** Kaylee, Jayne
+**What:** `recordResponse()` needs both transaction wrapping and atomic count updates.
+**Why:** Two independent issues identified: (1) The response save + count update + status change are not in a transaction — a crash mid-operation leaves inconsistent data and can cause workflows to never resume or double-resume (Kaylee, P0). (2) Concurrent responses race on read-increment-write of `approved_count` — two simultaneous responses could both read count=0, both increment to 1, and only the last write persists, potentially never reaching the approval threshold (Jayne, P1). Fix both: wrap in a transaction AND use SQL-level atomic increment (`approved_count = approved_count + 1`) or optimistic locking.
+- **Priority:** P0 (critical)
+
+### 2. Wrap `cancelWorkflow()` in a Transaction
+- **Category:** error-handling
+- **Priority:** P1 (important)
+- **Rationale:** Cancellation sets instance status and then iterates over pending approvals to cancel them. If the loop fails partway, some approvals remain pending for a cancelled instance. This creates orphaned approval records that would appear in members' pending approval lists.
+
+### 2026-02-10: DI bypass throughout workflow engine (consolidated)
+**By:** Kaylee, Jayne
+**What:** All workflow engine components bypass the DI container, defeating interface contracts.
+**Why:** Three independent analyses converged: (1) Actions/conditions instantiated via `new $serviceClass()` in engine — cannot use injected services; OfficerWorkflowActions manually resolves Container as workaround (Kaylee, P1). (2) `TriggerDispatcher::dispatch()` creates `DefaultWorkflowEngine` directly, making the DI registration decorative and testing impossible (Kaylee, P2). (3) Controller uses private factory methods that `new` up services despite DI registration, preventing mock injection in controller tests (Jayne, P2). All three should be fixed together: inject interfaces via constructor/container throughout engine, controller, dispatcher, and action classes.
+- **Priority:** P1 (important)
+
+### 4. Add Node Retry / Attempt Logic
+- **Category:** implementation
+- **Priority:** P1 (important)
+- **Rationale:** The `attempt_number` field exists on `WorkflowExecutionLog` but is always hardcoded to `1`. Transient failures (network issues, temporary DB locks) immediately fail the entire workflow with no recovery path. A configurable retry count with backoff per node type would make the engine significantly more resilient, especially for actions that call external services.
+
+### 5. Add Transaction Wrapping to `startWorkflow()`
+- **Category:** error-handling
+- **Priority:** P1 (important)
+- **Rationale:** `startWorkflow()` creates the instance, saves it, then executes trigger nodes and downstream nodes without any transaction boundary. If node execution fails after the instance is created, the instance exists in `STATUS_RUNNING` but no nodes completed — a confusing orphaned state that could also interfere with `dispatchTrigger()` which doesn't check for existing running instances of the same definition+entity.
+
+### 6. Prevent Duplicate Running Instances for Same Entity
+- **Category:** data-model
+- **Priority:** P1 (important)
+- **Rationale:** `dispatchTrigger()` starts a new workflow for every matching definition without checking if a running/waiting instance already exists for the same entity. This means re-triggering an event (e.g., submitting a roster twice) could create duplicate concurrent workflows for the same entity, leading to double-actions (duplicate warrants, duplicate emails).
+
+### 8. Add Temporal Scoping to Permission/Role Approval Checks
+- **Category:** security
+- **Priority:** P1 (important)
+- **Rationale:** `DefaultWorkflowApprovalManager::memberHasPermission()` and `memberHasRole()` query `MemberRoles` without filtering for active (unexpired) roles. A member whose role expired yesterday would still be eligible to approve workflows. The existing `ActiveWindowBehavior` temporal filtering should be applied to these queries.
+
+### 9. Implement Dynamic Approver Type
+- **Category:** implementation
+- **Priority:** P2 (nice-to-have)
+- **Rationale:** `APPROVER_TYPE_DYNAMIC` exists as a constant and is handled in the switch statement but always returns `false` for eligibility and empty arrays for `findEligibleMembers()`. The code has TODO-like stubs. This type would enable approval routing based on runtime context (e.g., "the branch seneschal of the officer's branch") which is important for multi-branch organizations.
+
+### 10. Add Index on `workflow_instances(entity_type, entity_id, status)`
+- **Category:** performance
+- **Priority:** P2 (nice-to-have)
+- **Rationale:** As instance volume grows, querying for existing running instances by entity (needed for duplicate prevention — see #6) and for display in the UI will benefit from a composite index. The migration currently has individual indexes on `entity_type` and `status` but not a composite one. Similarly, `workflow_approvals(status, deadline)` would benefit the deadline task's query.
+
+### 11. Add `updateEntity` Action Input Validation / Allowlist
+- **Category:** security
+- **Priority:** P1 (important)
+- **Rationale:** `CoreActions::updateEntity()` takes an `entityType` from the workflow config, resolves it to a CakePHP table name, and updates arbitrary fields. A misconfigured workflow definition could modify any table/field in the database — there is no allowlist of permitted entity types or field names. The `WorkflowEntityRegistry` exists but is not consulted by `updateEntity()`. This should validate against the registry before performing updates.
+
+### 12. Add Subworkflow Completion Callback
+- **Category:** implementation
+- **Priority:** P2 (nice-to-have)
+- **Rationale:** `executeSubworkflowNode()` starts a child workflow and sets the parent to `STATUS_WAITING`, but there is no mechanism for the child workflow to notify the parent when it completes. The child's `executeEndNode()` doesn't check if it's a child instance. This means subworkflow nodes currently create orphaned waiting parents that never resume.
+
+---
+
+### 2026-02-10: Workflow engine frontend/UI review
+**By:** Wash
+**What:** Frontend and UX review of the workflow engine UI with improvement recommendations
+**Why:** Team needs to understand the UI layer and identify UX improvements for the early-stage module
+
+## UI/UX Analysis
+
+### Pages & Views Inventory
+
+The workflow engine provides **7 distinct views**, all extending the `dashboard` layout:
+
+| View | File | Purpose |
+|------|------|---------|
+| **Index** | `index.php` | Lists all workflow definitions with search, active toggle, and action buttons |
+| **Add** | `add.php` | Simple form to create a new definition (name, slug, description, trigger type, entity type) |
+| **Designer** | `designer.php` | Full-page visual editor — the centerpiece. Three-panel layout: palette / canvas / config |
+| **Versions** | `versions.php` | Version history for a workflow definition. Includes version compare and migration tools |
+| **Instances** | `instances.php` | Lists workflow instances (running, completed, failed, etc.), optionally filtered by definition |
+| **View Instance** | `view_instance.php` | Detailed view of a single instance: summary card, execution log timeline, approval status |
+| **Approvals** | `approvals.php` | Personal approval dashboard with pending cards and recent decisions table |
+
+Navigation is registered in `CoreNavigationProvider.php` under a "Workflows" parent group (order 28) with three children: Definitions, My Approvals, and Instances.
+
+### How the Visual Designer Works
+
+The designer is the most complex UI component in the workflow engine and is powered by:
+
+- **Drawflow library** (`drawflow ^0.0.60`) — provides the graph canvas, node rendering, connection wiring, drag-and-drop, and zoom/pan
+- **`workflow-designer-controller.js`** (1,279 lines) — a single Stimulus controller that wraps Drawflow
+
+**Three-panel layout:**
+1. **Left: Node Palette** (230px) — Categorized draggable node tiles (Flow Control, Approvals, Triggers, Actions, Conditions). Categories for triggers/actions/conditions are dynamically loaded from the server registry and grouped by source.
+2. **Center: Canvas** — Drawflow canvas with dot-grid background. Drop targets for palette drag. Nodes rendered as styled cards with colored left accent stripes per type.
+3. **Right: Config Panel** (320px) — Shows "select a node" empty state; on node click, shows type-specific configuration form (trigger event, action type, condition field/value, approval config, delay duration, loop iterations, etc.)
+
+**Toolbar features:** Zoom in/out/reset, undo/redo, validate, save draft, publish. Back link to index.
+
+**Key interactions:**
+- Drag a node from palette → drop on canvas → Drawflow creates a node with styled HTML
+- Click a node → config panel populates with type-specific form
+- Connect output ports to input ports by dragging between nodes
+- Shift+click for multi-select, Delete/Backspace to remove
+- Keyboard shortcuts: Ctrl+S (save), Ctrl+Z (undo), Ctrl+Y/Ctrl+Shift+Z (redo)
+- Variable picker: config inputs with `data-variable-picker="true"` get a button that shows a searchable dropdown of available context variables from upstream nodes
+
+### User Flow: Creating & Managing Workflows
+
+1. **Create:** Nav → Workflows → Definitions → "New Workflow" button → `add.php` form → on submit redirects to designer
+2. **Design:** Three-panel editor → drag nodes → configure → wire connections → Save Draft → Validate → Publish
+3. **Version:** Nav → Versions page → compare versions, create new draft from published, migrate running instances
+4. **Monitor:** Nav → Instances → see running/completed instances → click View for execution log timeline
+5. **Approve:** Nav → My Approvals → see pending approval cards → approve/reject with optional comment
+
+### How Approvals Appear to Users
+
+The approvals page (`approvals.php`) is a personal dashboard:
+- **Pending approvals** shown as Bootstrap cards in a responsive grid (col-md-6 col-lg-4), each with:
+  - Workflow name, entity context, requester name, deadline, progress count (X/Y approvals)
+  - Inline comment textarea + Approve/Reject buttons
+- **Recent decisions** shown in a standard table below
+
+The `view_instance.php` page also shows approval status nested within the instance detail — card per approval with a table of individual responses (member ID, decision, comment, date).
+
+### Instance Progress Display
+
+`view_instance.php` presents a vertical timeline using Bootstrap `list-group`:
+- Each execution log entry shows: node type badge, node ID, timestamp, status badge, output port, duration in ms
+- Error messages displayed in inline `alert-danger` blocks
+- Summary card at top: workflow name, version, entity reference, start/completion dates
+
+### Stimulus Controller Patterns
+
+The `workflow-designer-controller.js` follows the project's Stimulus conventions:
+
+- **Registration:** Uses `window.Controllers["workflow-designer"]` pattern ✓
+- **Targets (7):** `canvas`, `nodeConfig`, `nodePalette`, `saveBtn`, `publishBtn`, `versionInfo`, `zoomLevel`, `validationResults`
+- **Values (8):** `saveUrl`, `loadUrl`, `publishUrl`, `registryUrl`, `workflowId`, `versionId`, `csrfToken`, `readonly`, `maxHistory`
+- **Actions:** `onPaletteDragStart`, `onCanvasDrop`, `onCanvasDragOver`, `updateNodeConfig`, `save`, `publish`, `validateWorkflow`, `zoomIn`, `zoomOut`, `zoomReset`, `undo`, `redo`
+- **Lifecycle:** `connect()` initializes Drawflow, loads registry, loads workflow; `disconnect()` unbinds keyboard shortcuts and clears the editor
+
+### Is the Designer Controller a Monolith?
+
+**Yes — 1,279 lines, and it's doing too much.** It handles:
+1. Drawflow initialization and event binding (~80 lines)
+2. Registry loading and palette rendering (~100 lines)
+3. Drag/drop from palette to canvas (~60 lines)
+4. Node creation and HTML building (~180 lines)
+5. Node selection, multi-select, config panel (~200 lines)
+6. Type-specific config form builders (~200 lines, one per node type)
+7. Export/import workflow data model transformation (~130 lines)
+8. Auto-layout algorithm (topological sort BFS) (~60 lines)
+9. Save/publish API calls (~55 lines)
+10. Undo/redo history management (~60 lines)
+11. Zoom controls (~25 lines)
+12. Keyboard shortcuts (~45 lines)
+13. Validation engine (~100 lines)
+14. Context variable picker with upstream traversal (~165 lines)
+
+This is a single-file monolith with mixed concerns. It's functional but will be hard to maintain and test as complexity grows.
+
+### Tab Ordering Integration
+
+**None.** The workflow views don't use the tab ordering system at all — they are standalone pages, not entity detail views with tabs. This is appropriate since workflows are a separate admin section, not tabs on an existing entity.
+
+### Accessibility Considerations
+
+**Significant gaps:**
+- **Zero ARIA attributes** across all 7 templates. No `role`, `aria-label`, `aria-describedby`, or `aria-live` on any interactive element.
+- The canvas-based designer is inherently inaccessible — drag-and-drop interactions have no keyboard alternative for node placement.
+- Form toggles (active switch on index) have no associated labels for screen readers.
+- Status badges are color-only — no icon or text differentiation for colorblind users (partially mitigated by text labels inside badges).
+- Toast notifications (`showFlash`) are appended to DOM without `role="alert"` or `aria-live="polite"`.
+- Variable picker dropdown has no ARIA combobox/listbox semantics.
+- Config panel content replacement has no screen reader announcement.
+
+### Mobile/Responsive Considerations
+
+**The designer is not mobile-friendly:**
+- Fixed 230px palette + 320px config panel + canvas = minimum ~650px, plus the canvas needs room to be useful. This is desktop-only by design.
+- No `@media` queries in `workflow-designer.css` — no responsive breakpoints at all.
+- The palette and config panel have no collapse/drawer behavior for smaller screens.
+- Other views (index, instances, approvals) use Bootstrap's responsive grid (`col-md-*`, `table-responsive`) and should work adequately on tablets.
+- Approval cards use `col-md-6 col-lg-4` which is properly responsive.
+
+### Template Quality
+
+**Inline `<script>` blocks:** The `index.php` and `versions.php` templates contain significant inline JavaScript (~40 and ~120 lines respectively) rather than using Stimulus controllers. This includes:
+- Client-side search filtering (index)
+- Active toggle via fetch (index)
+- Version compare via fetch (versions)
+- Create draft via fetch (versions)
+- Migrate instances via fetch (versions)
+
+This violates the project's Stimulus controller pattern and makes the code harder to test and maintain.
+
+**Duplicated `statusBadge` lambdas:** The badge-generating closure is copy-pasted across `index.php`, `versions.php`, `instances.php`, `view_instance.php`, and `approvals.php` — each with slightly different status-to-color mappings. This should be a shared helper or element.
+
+**Date formatting:** Templates display raw `h($instance->created)` and `h($approval->created->nice())` — inconsistent formatting and no timezone handling via `TimezoneHelper`.
+
+**Responder display:** `view_instance.php` line 126 shows `h($response->member_id)` — a raw integer ID instead of a member name. Poor UX.
+
+### CSS Quality
+
+The `workflow-designer.css` (521 lines) is well-structured:
+- Clean section organization with comments
+- Uses CSS custom properties from Bootstrap (`--bs-border-color`)
+- Consistent color palette across node types (palette icons, node cards, accent stripes, port colors)
+- Good use of transitions and subtle hover effects
+- Toast animation with `@keyframes`
+- No responsive breakpoints (see mobile concerns above)
+
+---
+
+## Improvement Recommendations
+
+### 1. Bug: Save Doesn't Send workflowId/versionId
+- **Category:** template-quality
+- **Priority:** P0 (critical)
+- **Rationale:** The `save()` method in `workflow-designer-controller.js` (line 747) sends `{ definition, canvasLayout }` but omits `workflowId` and `versionId`. The controller's `save()` PHP action checks `$data['workflowId']` to determine update vs. create. Without these values, every save creates a new workflow definition instead of updating the existing draft. This is a data-corruption bug.
+
+### 2. Extract Inline Scripts into Stimulus Controllers
+- **Category:** controller-design
+- **Priority:** P1 (important)
+- **Rationale:** `index.php` and `versions.php` contain ~160 combined lines of inline `<script>` with fetch calls, DOM manipulation, and event listeners. This bypasses the project's Stimulus pattern, can't be tested, and won't benefit from the asset pipeline. Extract into `workflow-index-controller.js` and `workflow-versions-controller.js`.
+
+### 3. Extract statusBadge into a Shared Helper or Element
+- **Category:** template-quality
+- **Priority:** P1 (important)
+- **Rationale:** The `$statusBadge` closure is duplicated across 5 templates with inconsistent status-to-color mappings. Should be a shared PHP element (`element/workflow_status_badge.php`) or a `KmpHelper` method. Currently, adding a new status means updating 5 files.
+
+### 4. Break Up the Designer Controller Monolith
+- **Category:** controller-design
+- **Priority:** P1 (important)
+- **Rationale:** At 1,279 lines, the controller mixes canvas management, config panel rendering, validation, undo/redo, variable picker, and API calls. Extract into focused modules: a validation service, a variable picker utility, config panel renderers, and a history manager. The main controller should orchestrate, not implement everything.
+
+### 5. Add ARIA Attributes and Live Regions
+- **Category:** accessibility
+- **Priority:** P1 (important)
+- **Rationale:** Zero ARIA attributes exist. At minimum: `role="alert"` on toast notifications, `aria-label` on icon-only buttons (zoom, undo/redo), `aria-live="polite"` on the config panel and validation results panel, proper `role` and `aria-*` on the variable picker dropdown. The active-toggle switches need associated `<label>` elements.
+
+### 6. Fix Date Display to Use TimezoneHelper
+- **Category:** UX
+- **Priority:** P1 (important)
+- **Rationale:** Templates use raw `h($instance->created)` which outputs server-timezone dates. The project convention is to use `TimezoneHelper::formatDate()` / `formatDateTime()` for user-facing dates. Instances, versions, and approvals all display dates that should respect the kingdom's configured timezone.
+
+### 7. Show Member Name Instead of ID in Approval Responses
+- **Category:** UX
+- **Priority:** P1 (important)
+- **Rationale:** `view_instance.php` line 126 displays `h($response->member_id)` — a raw integer. Users can't identify who approved/rejected from an ID alone. The controller should contain the `Members` association or the template should resolve the name (controller already does this for `startedBy` in the approvals page — apply the same pattern here).
+
+### 8. Add Responsive Breakpoints to Designer
+- **Category:** UX
+- **Priority:** P2 (nice-to-have)
+- **Rationale:** The three-panel designer layout has no responsive behavior. On tablet or narrow screens, the palette and config panel should collapse into slide-out drawers or a toggle-able overlay. Even just hiding the side panels and showing toggle buttons at `@media (max-width: 1024px)` would prevent layout breakage.
+
+### 9. Add Empty State and Loading UX to the Designer
+- **Category:** polish
+- **Priority:** P2 (nice-to-have)
+- **Rationale:** When the designer loads, the palette shows "Loading..." text but there's no skeleton/spinner on the canvas itself. If the registry or workflow load fails, the user gets a console error but no visual feedback. Add a loading overlay on the canvas during initialization and an error state if registry/workflow load fails.
+
+### 10. Add Visual Feedback for Save/Publish State
+- **Category:** polish
+- **Priority:** P2 (nice-to-have)
+- **Rationale:** The Save and Publish buttons have no loading/disabled state during async operations. Users can double-click and trigger duplicate requests. Add spinner + disabled state during save/publish, and consider showing "unsaved changes" indicator (dirty state tracking).
+
+### 11. Pagination on Instances and Approvals Lists
+- **Category:** performance
+- **Priority:** P2 (nice-to-have)
+- **Rationale:** The instances view uses `.limit(100)` and approvals uses `.limit(50)` — both hard-coded with no pagination controls in the template. For a system with many workflows, this will eventually truncate results silently. Add CakePHP pagination or at minimum a "load more" mechanism.
+
+### 12. Add Confirmation Before Leaving Designer with Unsaved Changes
+- **Category:** UX
+- **Priority:** P2 (nice-to-have)
+- **Rationale:** Users can navigate away from the designer (via "Back" button or browser navigation) without any unsaved-changes warning. A `beforeunload` event listener and dirty-state tracking would prevent accidental loss of work. The undo history is already tracking state — compare current vs. last-saved snapshot.
+
+---
+
+### 2026-02-10: Workflow engine testability audit
+**By:** Jayne
+**What:** Testability analysis and testing improvement recommendations for the workflow engine
+**Why:** Team needs to understand test coverage gaps and plan a testing strategy for this early-stage module
+
+---
+
+## Current Test Coverage
+
+**PHPUnit tests: ZERO.** No test files exist under `app/tests/TestCase/` that reference any workflow engine class — no service tests, no controller tests, no model tests, no entity tests, no policy tests.
+
+**Test fixtures: ZERO.** No workflow-related fixture files exist under `app/tests/Fixture/`.
+
+**BDD scenarios (Playwright):** `app/tests/ui/bdd/@workflows/workflow-admin.feature` — 5 scenarios covering superficial UI smoke tests:
+1. View workflow definitions list (checks for "Officer Hiring", "Warrant Roster Approval", "Direct Warrant")
+2. Open workflow designer (checks canvas and palette exist)
+3. View workflow instances list
+4. View workflow approvals list
+5. View workflow versions (checks for v1 with status "published")
+
+These are view-only smoke tests. They do not test any mutations, workflow execution, approval recording, version publishing, or error paths.
+
+**Interactive Playwright test:** `app/tests/workflow-interactive-test.js` — ~250 lines covering:
+- Multi-user login (admin, Eirik/Seneschal, Iris/basic user)
+- Workflow definitions list rendering
+- Designer page loads (canvas, palette, save button)
+- Instances page loads
+- Approvals page loads
+- Versions page loads
+- Registry JSON endpoint returns data
+- JS console error checks
+
+Again, surface-level read-only checks. No interaction testing (save, publish, approve/reject, create draft, toggle active).
+
+**Bottom line: 0% backend test coverage.** The workflow engine is entirely untested at the PHP level.
+
+---
+
+## Testability Analysis
+
+### Architecture Overview (what we're testing)
+
+The workflow engine comprises:
+- **7 tables** (WorkflowDefinitions, WorkflowVersions, WorkflowInstances, WorkflowExecutionLogs, WorkflowApprovals, WorkflowApprovalResponses, WorkflowInstanceMigrations)
+- **7 entities** with status constants and state transition methods
+- **3 service classes** (DefaultWorkflowEngine ~1150 LOC, DefaultWorkflowVersionManager ~485 LOC, DefaultWorkflowApprovalManager ~549 LOC)
+- **1 static dispatcher** (TriggerDispatcher)
+- **2 helper classes** (CoreActions, CoreConditions)
+- **4 static registries** (Action, Condition, Trigger, Entity)
+- **1 domain provider** (WarrantWorkflowProvider + WarrantWorkflowActions)
+- **1 controller** (WorkflowsController — 16 authorized actions)
+- **3 policy classes** (entity, table, controller)
+- **2 queue tasks** (WorkflowApprovalDeadlineTask, WorkflowResumeTask)
+
+### Critical Paths That MUST Have Tests
+
+1. **`DefaultWorkflowEngine::startWorkflow()`** — The entry point. Creates instance, logs trigger node, follows outputs, executes nodes recursively. Tests must verify instance creation, status transitions, context initialization, and node execution dispatch.
+
+2. **`DefaultWorkflowEngine::executeNode()` dispatch switch** — 9 node types (action, condition, approval, fork, join, loop, delay, end, subworkflow). Each type has distinct execution semantics. This is the core of the engine.
+
+3. **`DefaultWorkflowEngine::resumeWorkflow()`** — Resumes a WAITING instance after approval or delay. Must verify state transition from WAITING→RUNNING, log updates, active_node cleanup, and output port routing.
+
+4. **`DefaultWorkflowApprovalManager::recordResponse()`** — Records approval decisions, enforces eligibility checks (5 approver types), prevents duplicates, resolves approval status (threshold for approve, any-reject for reject).
+
+5. **`DefaultWorkflowVersionManager::publish()`** — Transactional publish: archives current published version, publishes new one, updates definition's current_version_id. Validates definition structure first.
+
+6. **`DefaultWorkflowVersionManager::validateDefinition()`** — Structural validation: exactly one trigger, at least one end, all targets exist, no orphan nodes, loop maxIterations required. Graph integrity validation.
+
+7. **`DefaultWorkflowVersionManager::migrateInstance()`** — Instance migration between versions: auto-generates node mapping, verifies active nodes can be mapped, remaps in transaction with audit trail.
+
+8. **`TriggerDispatcher::dispatch()` → `dispatchTrigger()`** — Finds active definitions matching event name, starts matching workflows. Static call in TriggerDispatcher wraps engine call.
+
+9. **`CoreConditions::evaluateExpression()`** — Expression parser with 6 operators (==, !=, >, <, >=, <=). Handles numeric casting, dot-path resolution. Used by condition nodes and loop exit conditions.
+
+10. **`CoreActions` methods** — Each action (sendEmail, createNote, updateEntity, assignRole, setVariable) resolves `$.` context paths and performs side effects via ORM.
+
+### Most Dangerous Edge Cases
+
+1. **Infinite loop in graph traversal** — `executeNode()` is recursive. A cyclic graph (A→B→A) without a loop node would recurse infinitely. The loop node has `maxIterations`, but a cycle via action/condition nodes has no guard.
+
+2. **Fork/join synchronization** — `executeJoinNode()` tracks completed inputs via `_internal.joinState`. If a fork path errors mid-execution, the join will wait forever — no timeout or deadlock detection.
+
+3. **Concurrent approval responses** — `recordResponse()` reads approval, checks counts, increments, checks threshold, saves. No row-level locking. Two simultaneous responses could both read `approved_count=0`, both increment to 1, and only save the last one's count — potentially never reaching the threshold.
+
+4. **Context mutation during parallel fork execution** — Fork executes all paths sequentially (not truly parallel), but each path mutates `$instance->context` in memory. If path A sets `nodes.nodeA.result` and path B reads it, the behavior depends on execution order — fragile.
+
+5. **Approval with requiredCount from app_setting** — `resolveRequiredCount()` reads from DB at approval creation time. If the setting changes mid-workflow, existing approvals have the old count. Not necessarily a bug, but tests need to verify the snapshot behavior.
+
+6. **migrateInstance() with active nodes that can't be mapped** — If a running instance has active nodes that don't exist in the new version, migration fails. But what if the instance is WAITING on an approval node that's been renamed?
+
+7. **Subworkflow node creates a child instance but parent stays WAITING** — No mechanism to detect child completion and resume parent. The subworkflow node sets parent to WAITING but nothing ever resumes it.
+
+8. **Deadline parsing edge cases** — `parseDeadline()` in both engine and approval manager handles "7d", "24h", "30m". What about "0d"? Negative values? Empty string? Non-matching format falls through to `new DateTime()` which could throw.
+
+9. **Expression parser operator precedence** — `evaluateExpression()` splits on first matching operator. Expression `a >= b` would first match `>` (splitting on `=`), giving wrong operands. Wait — it checks `>=` before `>` in the operators array, so this is actually correct. But `a == b > c` would match `>=` first (no), then `<=` (no), then `!=` (no), then `==` (yes), splitting into `a` and `b > c`. This is fine for simple expressions but misleading for complex ones.
+
+10. **WorkflowsController::migrateInstances()** — Uses `updateAll()` which bypasses entity validation, callbacks, and audit logging. Silently updates `workflow_version_id` without any node mapping or active_node remapping. This is a data integrity risk.
+
+### Hardest Things to Test (and Why)
+
+1. **Full workflow execution end-to-end** — `startWorkflow()` triggers recursive `executeNode()` which hits database for logs, potentially creates approvals, sends emails, updates entities. A single test needs: workflow definition + version in DB, registered actions/conditions in static registries, potentially seeded entities (Members, Roles, etc.). This requires substantial fixture setup.
+
+2. **TriggerDispatcher (static method)** — `TriggerDispatcher::dispatch()` is a static method that instantiates `DefaultWorkflowEngine` internally. Cannot inject a mock engine. The engine then hits multiple database tables. To test: must have full DB state, or refactor to accept engine as parameter.
+
+3. **Queue tasks** — `WorkflowApprovalDeadlineTask` and `WorkflowResumeTask` instantiate `DefaultWorkflowEngine` directly (`new DefaultWorkflowEngine()`). No constructor injection. Testing requires full DB state with instances in the right states.
+
+4. **Approval eligibility checks** — `isMemberEligible()` for permission/role types queries `MemberRoles→Roles→Permissions`. For policy type, it instantiates arbitrary policy classes and calls methods. Testing the policy type requires real policy classes and seeded entity relationships.
+
+5. **Context path resolution across node boundaries** — Testing that node A's output is accessible to node B via `$.nodes.nodeA.result.field` requires executing a multi-node workflow with real actions that produce real output.
+
+### Fixture Requirements
+
+The project uses `BaseTestCase` with transaction wrapping and seed data (NOT CakePHP fixtures). The workflow engine migration (`20260209160000`) creates the 7 tables. Workflow data is NOT in the seed SQL (`dev_seed_clean.sql`) — **it's loaded by WarrantWorkflowProvider at bootstrap time from static registry calls**.
+
+**Fixtures needed (as seed data, not CakePHP fixtures):**
+1. **WorkflowDefinitions** — At least 3 definitions (officer-hiring, warrant-roster-approval, direct-warrant) with different trigger types and entity types
+2. **WorkflowVersions** — Draft, published, and archived versions with valid definition JSON graphs
+3. **WorkflowInstances** — Instances in each status (pending, running, waiting, completed, failed, cancelled)
+4. **WorkflowExecutionLogs** — Logs for each node type and status
+5. **WorkflowApprovals** — Approvals in each status, with different approver types
+6. **WorkflowApprovalResponses** — Approve, reject, abstain responses
+7. **WorkflowInstanceMigrations** — At least one migration record
+
+**OR:** Tests can create their own data inline using `TableRegistry::getTableLocator()->get()` since we're in transaction-wrapped tests. This is actually cleaner for service-level tests where the exact data shape matters.
+
+### Untestable Patterns
+
+1. **`TriggerDispatcher::dispatch()` is static** — Cannot mock the engine inside it. Must test through full integration or refactor to accept engine injection.
+
+2. **Controller instantiates services via `new` in private methods** — `WorkflowsController::getWorkflowEngine()` returns `new DefaultWorkflowEngine()`. No DI injection despite services being registered in Application::services(). The controller bypasses the DI container entirely. This means controller tests always hit real services.
+
+3. **Static registries (WorkflowActionRegistry, etc.)** — Global static state. Tests that register actions/conditions pollute state for subsequent tests. Need `reset()` methods or per-test isolation.
+
+4. **`DefaultWorkflowEngine` uses `new` for CoreActions, CoreConditions** — Lines like `new $serviceClass()` and `new CoreConditions()` cannot be mocked. All node execution tests are integration tests by necessity.
+
+5. **Time-dependent behavior** — `parseDeadline()`, approval deadlines, and `DateTime::now()` calls throughout make time-sensitive tests fragile unless we mock the clock (CakePHP's `FrozenTime::setTestNow()`).
+
+### Test Strategy Recommendation
+
+**Phase 1: Unit tests (no DB)** — `CoreConditions`, `CoreActions::resolveValue()`, `validateDefinition()`, `compareVersions()`, `parseDeadline()`, `resolveRequiredCount()`, expression evaluation. These are pure logic with no side effects. ~30-40 test methods.
+
+**Phase 2: Integration tests (DB required)** — Service layer tests for `DefaultWorkflowVersionManager` (createDraft, updateDraft, publish, archive, migrateInstance), `DefaultWorkflowApprovalManager` (createApproval, recordResponse, eligibility checks), and `DefaultWorkflowEngine` (startWorkflow, resumeWorkflow, cancelWorkflow). Use `BaseTestCase` with inline data creation. ~50-60 test methods.
+
+**Phase 3: Controller integration tests** — `WorkflowsController` actions via `HttpIntegrationTestCase`. Test authorization (super user vs regular user vs unauthenticated), JSON API responses, form submissions. ~30-40 test methods.
+
+**Phase 4: Policy tests** — All 3 policy classes. Test super user bypass, permission-based access, and the `canApprovals`/`canRecordApproval` open-to-authenticated pattern. ~15-20 test methods.
+
+**Phase 5: Edge case and error scenario tests** — Cyclic graphs, concurrent approvals, migration failures, deadline expiry, subworkflow edge cases. ~20-30 test methods.
+
+---
+
+## Improvement Recommendations
+
+### 1. Create CoreConditions Unit Tests
+**Category:** test-coverage
+**Priority:** P0 (critical)
+**Rationale:** `CoreConditions` is pure logic with zero side effects — `resolveFieldPath()`, `fieldEquals()`, `fieldNotEmpty()`, `fieldGreaterThan()`, `evaluateExpression()`, `compare()`. This is the lowest-hanging fruit: high value, zero fixture overhead, catches expression parsing bugs before they cascade through workflow execution. Should cover dot-path resolution, `$.` prefix stripping, numeric casting, all 6 operators, empty expressions, missing fields, nested objects.
+
+### 2. Create WorkflowVersionManager Integration Tests
+**Category:** test-coverage
+**Priority:** P0 (critical)
+**Rationale:** Version lifecycle (draft→publish→archive) is the gatekeeper for all workflow execution. `publish()` runs in a transaction, archives existing published versions, validates definition structure, and updates the definition's current_version_id. Bugs here break all workflow starts. Must test: createDraft version numbering, updateDraft only-draft guard, publish transaction integrity, publish validation rejection, archive clearing current_version_id, migrateInstance node remapping.
+
+### 3. Create validateDefinition Unit Tests
+**Category:** test-coverage
+**Priority:** P0 (critical)
+**Rationale:** `validateDefinition()` enforces graph integrity before publishing. A bug here allows broken workflows into production. Test: empty nodes, missing trigger, multiple triggers, missing end node, dangling target references, orphan nodes (unreachable from trigger), loop without maxIterations, valid minimal graph, complex multi-path graph with conditions.
+
+### 4. Create DefaultWorkflowEngine Integration Tests (startWorkflow + node execution)
+**Category:** test-coverage
+**Priority:** P0 (critical)
+**Rationale:** The engine is 1150 LOC of recursive graph execution with 9 node types. Zero tests. Must test: start with valid slug, start with invalid slug, start with inactive definition, trigger→action→end linear flow, trigger→condition→true/false branching, trigger→approval pauses instance (WAITING), trigger→fork→join parallel paths, loop iteration counting and exit conditions, delay node sets WAITING, end node completes instance, subworkflow node starts child, error propagation marks instance FAILED.
+
+### 5. Create Approval Manager Tests (recordResponse + eligibility)
+**Category:** test-coverage
+**Priority:** P1 (important)
+**Rationale:** Approval gates block real business processes (warrant approval, officer hiring). `recordResponse()` enforces 5 eligibility types (permission, role, member, dynamic, policy), prevents duplicate responses, calculates resolution (threshold-based approve, any-reject). Bugs here either block legitimate approvers or allow unauthorized approvals. Test: each approver type, duplicate response rejection, threshold met → approved, single rejection → rejected, cancelled approval rejection, policy-based eligibility with real policy class.
+
+### 6. Create WorkflowsController Authorization Tests
+**Category:** security-testing
+**Priority:** P1 (important)
+**Rationale:** The controller has 16 authorized actions. `WorkflowDefinitionsTablePolicy` restricts most to super users, but `canApprovals` and `canRecordApproval` are open to any authenticated user. `WorkflowsControllerPolicy` checks `_hasPolicyForUrl()` for most actions. Must verify: unauthenticated users are redirected, non-super users cannot access admin actions (designer, save, publish, toggleActive, migrateInstances), all authenticated users CAN access approvals, super users pass all checks.
+
+### 7. Add Concurrency Guards to Approval Response Recording
+**Note:** Consolidated into "Approval response atomicity and concurrency" above (Kaylee + Jayne).
+
+### 8. Create Queue Task Tests (DeadlineTask + ResumeTask)
+**Category:** test-coverage
+**Priority:** P1 (important)
+**Rationale:** These tasks run unattended via cron/queue worker. `WorkflowApprovalDeadlineTask` finds expired approvals and resumes workflows on the 'expired' port. `WorkflowResumeTask` resumes a specific instance. Both instantiate `DefaultWorkflowEngine` directly. Test: deadline task with no expired approvals (no-op), deadline task with expired approval (marks expired + resumes), resume task with missing data (throws), resume task with valid data (resumes).
+
+### 9. Add Cycle Detection / Recursion Guard to executeNode
+**Category:** edge-cases
+**Priority:** P1 (important)
+**Rationale:** `executeNode()` is recursive with no depth limit. A definition with a cycle (action A → action B → action A) without a loop node would cause infinite recursion / stack overflow. `validateDefinition()` doesn't check for cycles, only reachability. Add a visited-node set or max-depth counter to `executeNode()`, and add a cycle detection rule to `validateDefinition()`. Write tests for both.
+
+### 10. Refactor Controller to Use DI-Injected Services
+**Note:** Consolidated into "DI bypass throughout workflow engine" above (Kaylee + Jayne).
+
+### 11. Add Static Registry Reset for Test Isolation
+**Category:** test-infrastructure
+**Priority:** P2 (nice-to-have)
+**Rationale:** `WorkflowActionRegistry`, `WorkflowConditionRegistry`, `WorkflowTriggerRegistry`, and `WorkflowEntityRegistry` use static arrays. Tests that call `register()` pollute global state. Add a `reset()` or `clear()` method to each registry, and call it in test `tearDown()`. Without this, test order can affect results.
+
+### 12. Create Entity State Transition Tests
+**Category:** test-coverage
+**Priority:** P2 (nice-to-have)
+**Rationale:** `WorkflowInstance::isTerminal()`, `WorkflowVersion::isDraft()`/`isPublished()`, `WorkflowApproval::isResolved()` — these are simple but critical state check methods. Unit tests for all entity status methods ensure refactoring doesn't break status logic. Quick wins, ~10 test methods total.
+
+### 13. Add migrateInstances() Data Integrity Test
+**Category:** security-testing
+**Priority:** P1 (important)
+**Rationale:** `WorkflowsController::migrateInstances()` uses `updateAll()` which bypasses entity events, validation, and audit logging. It updates `workflow_version_id` without remapping `active_nodes` or creating migration audit records. This is inconsistent with `DefaultWorkflowVersionManager::migrateInstance()` which does proper remapping. Either the controller method should delegate to the version manager, or tests should document the current behavior as intentional.

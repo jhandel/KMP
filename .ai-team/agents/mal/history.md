@@ -87,3 +87,40 @@ Completed 8 documentation tasks fixing cross-references, data models, interface 
 - **RecommendationsTablePolicy used `matching()` not `contain()`** — doc showed `contain(['Awards.Levels'])->where()`, actual code uses `matching('Awards.Levels', ...)`. Also undocumented: global access sentinel value `-10000000` that bypasses branch scoping.
 - **Cross-reference rot** — `5.2.2-awards-event-entity.md` and `5.2.3-awards-domains-table.md` never existed.
 - **Section number mismatch** — 5.4 filename but 5.5 title for GitHubIssueSubmitter.
+
+### 2026-02-10: Workflow Engine Architecture Review
+
+#### Key Architectural Patterns
+- **Graph-based execution engine** replacing old state-machine design (legacy tables archived). Workflows are directed graphs of typed nodes (trigger, action, condition, approval, fork, join, loop, delay, end, subworkflow) connected by named output ports.
+- **4 static registries** (`WorkflowTriggerRegistry`, `WorkflowActionRegistry`, `WorkflowConditionRegistry`, `WorkflowEntityRegistry`) follow the same pattern as `NavigationRegistry`/`ViewCellRegistry`.
+- **Plugin extension** via `KMPWorkflowPluginInterface` (4-method contract) or standalone Provider classes with static `register()`. Both paths populate the same registries.
+- **Context resolution** uses `$.path.to.value` dot-path convention throughout actions and conditions.
+- **Versioning lifecycle:** draft → published → archived. Only one published version per definition. Instances pinned to versions. Migration with node remapping and audit trail.
+- **Approval gates** are first-class nodes with 5 approver strategies: permission, role, member, dynamic (unimplemented), policy.
+
+#### Important File Paths
+- **Engine core:** `app/src/Services/WorkflowEngine/` — `WorkflowEngineInterface.php`, `DefaultWorkflowEngine.php` (~1,100 lines), `TriggerDispatcher.php`
+- **Version manager:** `DefaultWorkflowVersionManager.php` — includes graph validation, BFS reachability check
+- **Approval manager:** `DefaultWorkflowApprovalManager.php` — eligibility checks, response recording, policy-based approvals
+- **Registries:** `app/src/Services/WorkflowRegistry/` — 5 files (Trigger, Condition, Action, Entity, PluginLoader)
+- **Plugin contract:** `app/src/KMP/KMPWorkflowPluginInterface.php`
+- **Core actions/conditions:** `app/src/Services/WorkflowEngine/Actions/CoreActions.php`, `Conditions/CoreConditions.php`
+- **Warrant provider:** `app/src/Services/WorkflowEngine/Providers/WarrantWorkflowProvider.php`, `WarrantWorkflowActions.php`
+- **Officers integration:** `app/plugins/Officers/src/Services/OfficersWorkflowProvider.php`, `OfficerWorkflowActions.php`, `OfficerWorkflowConditions.php`
+- **Controller:** `app/src/Controller/WorkflowsController.php`
+- **Policies:** `app/src/Policy/WorkflowDefinitionPolicy.php`, `WorkflowsControllerPolicy.php`, `WorkflowDefinitionsTablePolicy.php`
+- **Schema:** `app/config/Migrations/20260209160000_CreateWorkflowEngine.php` (7 tables)
+- **Seed data:** `app/config/Migrations/20260209170000_SeedWorkflowDefinitions.php` (2 seeded workflows: warrant-roster, officer-hire)
+
+#### Concerns Worth Remembering
+1. **DI is bypassed everywhere.** Controller and TriggerDispatcher use `new DefaultWorkflowEngine()` instead of DI. The interface registrations in `Application::services()` are never consumed.
+2. **No transaction wrapping in engine.** Graph traversal creates logs and updates instance state without a transaction — mid-failure leaves inconsistent state.
+3. **Dual-path business logic.** `WarrantWorkflowActions` duplicates `WarrantManager` logic; `OfficerWorkflowActions` duplicates `OfficerManager` logic. Both will diverge.
+4. **Zero tests.** No test coverage exists for the workflow engine, which conflicts with the "no new features until testing is solid" directive.
+5. **Synchronous execution.** The entire graph runs in one PHP request. `isAsync: true` flag on registry entries is ignored at execution time.
+6. **`resolveValue()` copy-pasted** into 4 classes instead of being shared.
+7. **`migrateInstances()` controller action** does raw `updateAll()` bypassing the version manager's node-mapping logic.
+
+📌 Full review: `.ai-team/decisions/inbox/mal-workflow-architecture-review.md`
+
+📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Key consolidated decisions: DI bypass fix (P1, Kaylee+Jayne), approval atomicity+concurrency (P0, Kaylee+Jayne). Mal's architecture review merged to decisions.md. — decided by Mal, Kaylee, Wash, Jayne

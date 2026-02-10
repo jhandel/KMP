@@ -116,3 +116,42 @@ Fixed 13 documentation issues across 12 files by verifying each claim against ac
 
 **Files modified:** `docs/index.md`, `docs/1-introduction.md`, `docs/2-configuration.md`, `docs/2-getting-started.md`, `docs/3.5-er-diagrams.md`, `docs/7-development-workflow.md`, `docs/7.1-security-best-practices.md`, `docs/7.3-testing-infrastructure.md`, `docs/8-deployment.md`, `docs/8.1-environment-setup.md`, `docs/appendices.md`
 **Files deleted:** `docs/8-development-workflow.md`
+
+### 2026-02-10: Workflow Engine Testability Audit — Complete
+
+**Current test coverage: 0%.** Zero PHPUnit tests, zero fixtures, zero model/entity/policy/service tests. Only BDD smoke tests (5 view-only Playwright scenarios) and an interactive Playwright script that checks pages load. No backend logic is tested.
+
+**Module scope:** 7 tables, 7 entities, 3 service classes (~2200 LOC), 1 static dispatcher, 2 helper classes (CoreActions/CoreConditions), 4 static registries, 1 domain provider (Warrants), 1 controller (16 authorized actions), 3 policy classes, 2 queue tasks.
+
+**Critical paths needing tests first:**
+1. `DefaultWorkflowEngine::startWorkflow()` — instance creation + recursive node execution (9 node types)
+2. `DefaultWorkflowEngine::resumeWorkflow()` — WAITING→RUNNING transition + output port routing
+3. `DefaultWorkflowVersionManager::publish()` — transactional publish with archive + validation
+4. `DefaultWorkflowVersionManager::validateDefinition()` — graph integrity (trigger, end, targets, reachability, loops)
+5. `DefaultWorkflowApprovalManager::recordResponse()` — 5 eligibility types, duplicate prevention, resolution logic
+6. `CoreConditions::evaluateExpression()` — expression parser with 6 operators + dot-path resolution
+7. `WorkflowsController` — 16 actions with authorization checks (super user gating + open approvals)
+
+**Edge cases and failure modes discovered:**
+- Infinite recursion risk: `executeNode()` is recursive with no depth guard; cyclic action graphs = stack overflow
+- Race condition: `recordResponse()` reads/increments/saves approval counts without row locking
+- Fork/join deadlock: if a fork path fails, join waits forever (no timeout/dead-path detection)
+- Context mutation: parallel fork paths share in-memory context — execution order dependent
+- Subworkflow orphan: parent set to WAITING but no mechanism to detect child completion
+- `migrateInstances()` controller action uses `updateAll()` — bypasses node remapping, validation, audit
+- Deadline parsing: edge cases (0d, negative, empty string, non-matching format) weakly handled
+- Static registries: no `reset()` method — test pollution across PHPUnit runs
+
+**Testing patterns and fixture requirements:**
+- Use `BaseTestCase` with transaction wrapping (project standard)
+- Workflow tables exist from migration but seed SQL has NO workflow data — tests must create data inline via `TableRegistry::getTableLocator()->get()`
+- Static registries (Action, Condition, Trigger, Entity) need `reset()` methods or careful test isolation
+- Services are DI-registered in `Application::services()` but controller bypasses DI with `new` — controller tests are forced integration tests
+- `TriggerDispatcher::dispatch()` is static with hardcoded `new DefaultWorkflowEngine()` — untestable without refactor
+- Queue tasks also hardcode `new DefaultWorkflowEngine()` — integration tests only
+- Time-sensitive tests (deadlines) should use `FrozenTime::setTestNow()`
+- Recommended test strategy: Phase 1 unit (pure logic ~40 tests) → Phase 2 integration (services ~60 tests) → Phase 3 controller (~40 tests) → Phase 4 policies (~20 tests) → Phase 5 edge cases (~30 tests)
+
+Full report: `.ai-team/decisions/inbox/jayne-workflow-testing-review.md`
+
+📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Jayne's DI controller rec consolidated with Kaylee's DI recs. Jayne's concurrency guard rec consolidated with Kaylee's transaction rec (P0). 0% coverage finding confirmed by all agents. — decided by Mal, Kaylee, Wash, Jayne

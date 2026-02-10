@@ -87,3 +87,39 @@ Completed 9 documentation tasks (8 modified, 1 no-change-needed):
 - Bootstrap Icons version is 1.11.3 (from CSS header), not managed via npm
 - Only Waivers plugin CSS is auto-compiled; other plugins need manual webpack.mix.js entries
 - Service files (assets/js/services/) are also bundled into controllers.js
+
+### 2026-02-10: Workflow Engine Frontend Review
+
+#### Key UI Patterns
+- The workflow designer uses Drawflow (^0.0.60) for the visual canvas — a third-party graph editor library, new dependency for this project
+- Designer is a three-panel layout (palette 230px / canvas flex / config 320px) — all CSS, no responsive breakpoints
+- Node types have consistent color-coding across palette icons, card accent stripes, and port colors in `workflow-designer.css`
+- Context variable picker traverses upstream nodes via Drawflow's connection graph to build available variables
+
+#### Stimulus Controller Structure
+- `workflow-designer-controller.js` is 1,279 lines — the largest Stimulus controller in the project by far (most others are 50-200 lines)
+- Follows the window.Controllers registration pattern correctly
+- 7 targets, 8 values, ~12 action methods
+- Contains mixed concerns: canvas init, palette rendering, config panel forms, validation engine, undo/redo history, variable picker, auto-layout algorithm, API calls — all in one file
+- Has a bug: save() doesn't send workflowId/versionId to the server, so updates would create new definitions
+
+#### Template Patterns
+- index.php and versions.php contain significant inline `<script>` blocks (~160 lines total) instead of Stimulus controllers — breaks project convention
+- statusBadge closure is duplicated across 5 templates with inconsistent status-to-color mappings
+- Templates use raw `h($created)` instead of TimezoneHelper for date formatting
+- view_instance.php shows raw member_id instead of member name for approval responders
+- No ARIA attributes anywhere across all 7 workflow templates
+
+#### Navigation Integration
+- Registered in CoreNavigationProvider under "Workflows" parent group (order 28) with three children: Definitions, My Approvals, Instances
+- Uses bi-diagram-3 icon for the parent nav item
+- activePaths configured for designer and versions sub-pages
+
+#### UX Concerns
+- Designer is desktop-only — no mobile/tablet fallback, no panel collapse behavior
+- No unsaved-changes warning when leaving designer
+- No loading/disabled states on save/publish buttons during async operations
+- Instances page hard-limits to 100 results with no pagination
+- Approval cards are well-structured with responsive grid (col-md-6 col-lg-4)
+
+📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Wash's frontend review merged to decisions.md. P0 save bug confirmed. Backend agents found P0 issues in DI bypass and approval transactions that affect frontend integration. — decided by Mal, Kaylee, Wash, Jayne
