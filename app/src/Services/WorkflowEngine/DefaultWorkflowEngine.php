@@ -11,6 +11,7 @@ use App\Services\ServiceResult;
 use App\Services\WorkflowEngine\Conditions\CoreConditions;
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
+use Cake\Core\ContainerInterface;
 use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
@@ -25,6 +26,12 @@ use Throwable;
  */
 class DefaultWorkflowEngine implements WorkflowEngineInterface
 {
+    private ContainerInterface $container;
+
+    public function __construct(ContainerInterface $container)
+    {
+        $this->container = $container;
+    }
     /**
      * @inheritDoc
      */
@@ -472,7 +479,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $serviceClass = $actionConfig['serviceClass'];
         $serviceMethod = $actionConfig['serviceMethod'];
 
-        $service = new $serviceClass();
+        $service = $this->container->has($serviceClass)
+            ? $this->container->get($serviceClass)
+            : new $serviceClass();
         $context = $instance->context ?? [];
 
         // Merge config.params into top-level config so actions can read params directly
@@ -516,7 +525,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             if ($conditionConfig) {
                 $evaluatorClass = $conditionConfig['evaluatorClass'];
                 $evaluatorMethod = $conditionConfig['evaluatorMethod'];
-                $evaluator = new $evaluatorClass();
+                $evaluator = $this->container->has($evaluatorClass)
+                    ? $this->container->get($evaluatorClass)
+                    : new $evaluatorClass();
                 $result = (bool)$evaluator->{$evaluatorMethod}($context, $node['config']);
             } else {
                 throw new \RuntimeException("Condition '{$conditionName}' not found in registry.");

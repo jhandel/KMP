@@ -14,9 +14,9 @@ use App\Model\Entity\WarrantPeriod;
 use App\Model\Entity\WarrantRoster;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\ServiceResult;
-use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
-use App\Services\WorkflowEngine\DefaultWorkflowEngine;
 use App\Services\WorkflowEngine\TriggerDispatcher;
+use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use Cake\I18n\Date;
 use Cake\I18n\DateTime;
 use Cake\Mailer\MailerAwareTrait;
@@ -29,10 +29,20 @@ class DefaultWarrantManager implements WarrantManagerInterface
     use MailerAwareTrait;
 
     private ActiveWindowManagerInterface $activeWindowManager;
+    private TriggerDispatcher $triggerDispatcher;
+    private WorkflowApprovalManagerInterface $approvalManager;
+    private WorkflowEngineInterface $workflowEngine;
 
-    public function __construct(ActiveWindowManagerInterface $activeWindowManager)
-    {
+    public function __construct(
+        ActiveWindowManagerInterface $activeWindowManager,
+        TriggerDispatcher $triggerDispatcher,
+        WorkflowApprovalManagerInterface $approvalManager,
+        WorkflowEngineInterface $workflowEngine,
+    ) {
         $this->activeWindowManager = $activeWindowManager;
+        $this->triggerDispatcher = $triggerDispatcher;
+        $this->approvalManager = $approvalManager;
+        $this->workflowEngine = $workflowEngine;
         //Datetime tomorrow
         $yesterday = new DateTime();
         $yesterday->modify('-1 day');
@@ -121,7 +131,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
         $warrantRosterTable->getConnection()->commit();
 
         try {
-            TriggerDispatcher::dispatch('Warrants.RosterCreated', [
+            $this->triggerDispatcher->dispatch('Warrants.RosterCreated', [
                 'rosterId' => $warrantRoster->id,
                 'rosterName' => $warrantRoster->name,
                 'approvalsRequired' => $warrantRoster->approvals_required,
@@ -228,7 +238,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
 
         if ($warrantRoster->status === WarrantRoster::STATUS_APPROVED) {
             try {
-                TriggerDispatcher::dispatch('Warrants.Approved', [
+                $this->triggerDispatcher->dispatch('Warrants.Approved', [
                     'rosterId' => $warrantRoster->id,
                 ]);
             } catch (\Exception $e) {
@@ -303,7 +313,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
         $warrantRosterTable->getConnection()->commit();
 
         try {
-            TriggerDispatcher::dispatch('Warrants.Declined', [
+            $this->triggerDispatcher->dispatch('Warrants.Declined', [
                 'rosterId' => $warrantRoster->id,
                 'reason' => $reason,
             ]);
@@ -478,8 +488,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
                 }
 
                 // Record the approval response and resume the workflow
-                $approvalManager = new DefaultWorkflowApprovalManager();
-                $result = $approvalManager->recordResponse(
+                $result = $this->approvalManager->recordResponse(
                     $approval->id,
                     $approverId,
                     'approve',
@@ -489,8 +498,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
                 if ($result->isSuccess() && $result->getData()) {
                     $data = $result->getData();
                     if (($data['approvalStatus'] ?? '') === 'approved') {
-                        $engine = new DefaultWorkflowEngine();
-                        $engine->resumeWorkflow(
+                        $this->workflowEngine->resumeWorkflow(
                             $data['instanceId'],
                             $data['nodeId'],
                             'approved',
@@ -508,8 +516,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
                     $approval->approved_count = $approval->required_count;
                     $approval->status = WorkflowApproval::STATUS_APPROVED;
                     if ($approvalsTable->save($approval)) {
-                        $engine = new DefaultWorkflowEngine();
-                        $engine->resumeWorkflow(
+                        $this->workflowEngine->resumeWorkflow(
                             $approval->workflow_instance_id,
                             $approval->node_id,
                             'approved',
@@ -560,8 +567,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
                     continue;
                 }
 
-                $approvalManager = new DefaultWorkflowApprovalManager();
-                $result = $approvalManager->recordResponse(
+                $result = $this->approvalManager->recordResponse(
                     $approval->id,
                     $rejecterId,
                     'deny',
@@ -571,8 +577,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
                 if ($result->isSuccess() && $result->getData()) {
                     $data = $result->getData();
                     if (($data['approvalStatus'] ?? '') === 'denied') {
-                        $engine = new DefaultWorkflowEngine();
-                        $engine->resumeWorkflow(
+                        $this->workflowEngine->resumeWorkflow(
                             $data['instanceId'],
                             $data['nodeId'],
                             'denied',
@@ -589,8 +594,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
                     $approval->rejected_count = 1;
                     $approval->status = WorkflowApproval::STATUS_REJECTED;
                     if ($approvalsTable->save($approval)) {
-                        $engine = new DefaultWorkflowEngine();
-                        $engine->resumeWorkflow(
+                        $this->workflowEngine->resumeWorkflow(
                             $approval->workflow_instance_id,
                             $approval->node_id,
                             'denied',

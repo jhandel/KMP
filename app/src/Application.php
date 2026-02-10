@@ -66,10 +66,14 @@ use App\Services\ImpersonationService;
 use App\Services\ICalendarService;
 use App\Services\WarrantManager\DefaultWarrantManager;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
 use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\TriggerDispatcher;
+use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use App\Services\WorkflowEngine\DefaultWorkflowVersionManager;
 use App\Services\WorkflowEngine\WorkflowVersionManagerInterface;
+use App\Controller\WorkflowsController;
 use Authentication\AuthenticationService;
 use Authentication\AuthenticationServiceInterface;
 use Authentication\AuthenticationServiceProviderInterface;
@@ -532,11 +536,16 @@ class Application extends BaseApplication implements
         );
 
         // Register WarrantManager for warrant lifecycle management
-        // Depends on ActiveWindowManager for handling warrant validity periods
+        // Depends on ActiveWindowManager, TriggerDispatcher, ApprovalManager, and WorkflowEngine
         $container->add(
             WarrantManagerInterface::class,        // Interface for dependency injection
             DefaultWarrantManager::class,          // Concrete implementation
-        )->addArgument(ActiveWindowManagerInterface::class);  // Inject ActiveWindowManager dependency
+        )->addArguments([
+            ActiveWindowManagerInterface::class,
+            TriggerDispatcher::class,
+            WorkflowApprovalManagerInterface::class,
+            WorkflowEngineInterface::class,
+        ]);
 
         // Register CSV export service for data export functionality
         // No dependencies required - provides standalone export capabilities
@@ -552,8 +561,8 @@ class Application extends BaseApplication implements
 
         // Register WorkflowApprovalManager for approval gate lifecycle management
         $container->add(
-            \App\Services\WorkflowEngine\WorkflowApprovalManagerInterface::class,
-            \App\Services\WorkflowEngine\DefaultWorkflowApprovalManager::class,
+            WorkflowApprovalManagerInterface::class,
+            DefaultWorkflowApprovalManager::class,
         );
 
         // Register WorkflowVersionManager for workflow version lifecycle management
@@ -562,11 +571,26 @@ class Application extends BaseApplication implements
             DefaultWorkflowVersionManager::class,
         );
 
-        // Workflow Engine
+        // Workflow Engine — depends on ContainerInterface for dynamic service resolution
         $container->add(
             WorkflowEngineInterface::class,
             DefaultWorkflowEngine::class,
-        );
+        )->addArgument(ContainerInterface::class);
+
+        // TriggerDispatcher — depends on WorkflowEngineInterface
+        $container->add(
+            TriggerDispatcher::class,
+        )->addArgument(WorkflowEngineInterface::class);
+
+        // Register WorkflowsController for constructor injection
+        $container->add(WorkflowsController::class)
+            ->addArguments([
+                \Cake\Http\ServerRequest::class,
+                WorkflowEngineInterface::class,
+                WorkflowVersionManagerInterface::class,
+                WorkflowApprovalManagerInterface::class,
+                \Cake\Controller\ComponentRegistry::class,
+            ]);
     }
 
     /**

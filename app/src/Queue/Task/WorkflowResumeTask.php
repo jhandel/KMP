@@ -3,9 +3,10 @@ declare(strict_types=1);
 
 namespace App\Queue\Task;
 
-use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use Cake\Log\Log;
 use Queue\Queue\Task;
+use Queue\Queue\ServicesTrait;
 
 /**
  * Asynchronously resumes a waiting workflow instance at a specific node.
@@ -13,6 +14,8 @@ use Queue\Queue\Task;
  * Created via: QueuedJobs->createJob('WorkflowResume', $data)
  */
 class WorkflowResumeTask extends Task {
+
+	use ServicesTrait;
 
 	/**
 	 * Timeout for run, after which the Task is reassigned to a new worker.
@@ -45,7 +48,7 @@ class WorkflowResumeTask extends Task {
 
 		Log::info("WorkflowResumeTask: Resuming instance {$instanceId} at node {$nodeId} via port {$outputPort}");
 
-		$engine = new DefaultWorkflowEngine();
+		$engine = $this->getService(WorkflowEngineInterface::class);
 		$result = $engine->resumeWorkflow($instanceId, $nodeId, $outputPort, $additionalData);
 
 		if (!$result->isSuccess()) {

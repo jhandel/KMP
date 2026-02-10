@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Services\ServiceResult;
-use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
-use App\Services\WorkflowEngine\DefaultWorkflowEngine;
-use App\Services\WorkflowEngine\DefaultWorkflowVersionManager;
 use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use App\Services\WorkflowEngine\WorkflowVersionManagerInterface;
@@ -16,6 +13,8 @@ use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Services\WorkflowRegistry\WorkflowEntityRegistry;
 use App\Services\WorkflowRegistry\WorkflowTriggerRegistry;
 use App\Model\Entity\WorkflowInstance;
+use Cake\Controller\ComponentRegistry;
+use Cake\Http\ServerRequest;
 
 /**
  * Workflows Controller
@@ -28,6 +27,23 @@ use App\Model\Entity\WorkflowInstance;
 class WorkflowsController extends AppController
 {
     protected ?string $defaultTable = 'WorkflowDefinitions';
+
+    private WorkflowEngineInterface $engine;
+    private WorkflowVersionManagerInterface $versionManager;
+    private WorkflowApprovalManagerInterface $approvalManager;
+
+    public function __construct(
+        ServerRequest $request,
+        WorkflowEngineInterface $engine,
+        WorkflowVersionManagerInterface $versionManager,
+        WorkflowApprovalManagerInterface $approvalManager,
+        ?ComponentRegistry $components = null,
+    ) {
+        parent::__construct($request, null, null, $components);
+        $this->engine = $engine;
+        $this->versionManager = $versionManager;
+        $this->approvalManager = $approvalManager;
+    }
 
     public function initialize(): void
     {
@@ -523,16 +539,16 @@ class WorkflowsController extends AppController
 
     private function getWorkflowEngine(): WorkflowEngineInterface
     {
-        return new DefaultWorkflowEngine();
+        return $this->engine;
     }
 
     private function getVersionManager(): WorkflowVersionManagerInterface
     {
-        return new DefaultWorkflowVersionManager();
+        return $this->versionManager;
     }
 
     private function getApprovalManager(): WorkflowApprovalManagerInterface
     {
-        return new DefaultWorkflowApprovalManager();
+        return $this->approvalManager;
     }
 }

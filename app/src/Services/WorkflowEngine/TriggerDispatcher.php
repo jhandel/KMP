@@ -11,6 +11,13 @@ use Cake\Log\Log;
  */
 class TriggerDispatcher
 {
+    private WorkflowEngineInterface $engine;
+
+    public function __construct(WorkflowEngineInterface $engine)
+    {
+        $this->engine = $engine;
+    }
+
     /**
      * Dispatch a trigger event to find and start matching workflows.
      *
@@ -19,12 +26,10 @@ class TriggerDispatcher
      * @param int|null $triggeredBy Member who triggered
      * @return array Array of ServiceResult from started workflows
      */
-    public static function dispatch(string $eventName, array $eventData = [], ?int $triggeredBy = null): array
+    public function dispatch(string $eventName, array $eventData = [], ?int $triggeredBy = null): array
     {
         try {
-            $engine = new DefaultWorkflowEngine();
-
-            return $engine->dispatchTrigger($eventName, $eventData, $triggeredBy);
+            return $this->engine->dispatchTrigger($eventName, $eventData, $triggeredBy);
         } catch (\Throwable $e) {
             Log::error("TriggerDispatcher failed for {$eventName}: " . $e->getMessage());
 

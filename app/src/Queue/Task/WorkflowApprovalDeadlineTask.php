@@ -4,11 +4,12 @@ declare(strict_types=1);
 namespace App\Queue\Task;
 
 use App\Model\Entity\WorkflowApproval;
-use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\Locator\LocatorAwareTrait;
 use Queue\Queue\Task;
+use Queue\Queue\ServicesTrait;
 
 /**
  * Checks for expired workflow approvals and resumes their workflows.
@@ -19,6 +20,8 @@ use Queue\Queue\Task;
  * Schedule via cron: bin/cake queue add WorkflowApprovalDeadline
  */
 class WorkflowApprovalDeadlineTask extends Task {
+
+	use ServicesTrait;
 
 	/**
 	 * Timeout for run, after which the Task is reassigned to a new worker.
@@ -58,7 +61,7 @@ class WorkflowApprovalDeadlineTask extends Task {
 
 		Log::info("WorkflowApprovalDeadlineTask: Found {$count} expired approval(s)");
 
-		$engine = new DefaultWorkflowEngine();
+		$engine = $this->getService(WorkflowEngineInterface::class);
 		$processed = 0;
 		$errors = 0;
 
