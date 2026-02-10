@@ -135,6 +135,20 @@ class WarrantWorkflowActions
             $rosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
 
             $roster = $rosterTable->get($rosterId);
+
+            // If roster was already approved (e.g. via direct WarrantManager path),
+            // check if warrants are already Current and treat as success
+            if ($roster->status === WarrantRoster::STATUS_APPROVED) {
+                $currentCount = $warrantTable->find()
+                    ->where([
+                        'warrant_roster_id' => $rosterId,
+                        'status' => Warrant::CURRENT_STATUS,
+                    ])
+                    ->count();
+
+                return ['activated' => true, 'count' => $currentCount];
+            }
+
             if ($roster->status !== WarrantRoster::STATUS_PENDING) {
                 return ['activated' => false, 'count' => 0];
             }

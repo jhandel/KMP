@@ -9,10 +9,13 @@ use App\KMP\TimezoneHelper;
 use App\Mailer\QueuedMailerAwareTrait;
 use App\Model\Entity\MemberRole;
 use App\Model\Entity\Warrant;
+use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WarrantPeriod;
 use App\Model\Entity\WarrantRoster;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\ServiceResult;
+use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
+use App\Services\WorkflowEngine\DefaultWorkflowEngine;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\I18n\Date;
 use Cake\I18n\DateTime;
@@ -231,6 +234,9 @@ class DefaultWarrantManager implements WarrantManagerInterface
             } catch (\Exception $e) {
                 \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Approved: ' . $e->getMessage());
             }
+
+            // Advance the corresponding workflow instance if one exists
+            $this->advanceWorkflowForRoster($warrantRoster->id, $approver_id);
         }
 
         return new ServiceResult(true);
@@ -304,6 +310,9 @@ class DefaultWarrantManager implements WarrantManagerInterface
         } catch (\Exception $e) {
             \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Declined: ' . $e->getMessage());
         }
+
+        // Advance the corresponding workflow instance if one exists
+        $this->declineWorkflowForRoster($warrantRoster->id, $rejecter_id, $reason);
 
         return new ServiceResult(true);
     }
@@ -429,6 +438,176 @@ class DefaultWarrantManager implements WarrantManagerInterface
         }
 
         return $warrantPeriod;
+    }
+
+    /**
+     * Advance the pending workflow approval for a roster so the workflow completes.
+     *
+     * When a roster is approved via the direct path, any associated workflow instance
+     * stays stuck in WAITING state. This method finds and resolves the pending workflow
+     * approval, allowing the workflow to proceed to warrant activation and notification.
+     */
+    protected function advanceWorkflowForRoster(int $rosterId, int $approverId): void
+    {
+        try {
+            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+            // Find a waiting workflow instance for this roster
+            $instances = $instancesTable->find()
+                ->where(['status' => 'waiting'])
+                ->all();
+
+            foreach ($instances as $instance) {
+                $context = $instance->context ?? [];
+                $triggerRosterId = $context['trigger']['rosterId'] ?? null;
+                if ((int)$triggerRosterId !== $rosterId) {
+                    continue;
+                }
+
+                // Find the pending approval for this instance
+                $approval = $approvalsTable->find()
+                    ->where([
+                        'workflow_instance_id' => $instance->id,
+                        'status' => WorkflowApproval::STATUS_PENDING,
+                    ])
+                    ->first();
+
+                if (!$approval) {
+                    continue;
+                }
+
+                // Record the approval response and resume the workflow
+                $approvalManager = new DefaultWorkflowApprovalManager();
+                $result = $approvalManager->recordResponse(
+                    $approval->id,
+                    $approverId,
+                    'approve',
+                    'Approved via warrant roster direct approval',
+                );
+
+                if ($result->isSuccess() && $result->getData()) {
+                    $data = $result->getData();
+                    if (($data['approvalStatus'] ?? '') === 'approved') {
+                        $engine = new DefaultWorkflowEngine();
+                        $engine->resumeWorkflow(
+                            $data['instanceId'],
+                            $data['nodeId'],
+                            'approved',
+                            [
+                                'approval' => $data,
+                                'approverId' => $approverId,
+                                'decision' => 'approve',
+                                'comment' => 'Approved via warrant roster direct approval',
+                            ],
+                        );
+                    }
+                } else {
+                    // Fallback: directly resolve the approval and resume workflow
+                    // This handles cases where eligibility check fails for the direct approver
+                    $approval->approved_count = $approval->required_count;
+                    $approval->status = WorkflowApproval::STATUS_APPROVED;
+                    if ($approvalsTable->save($approval)) {
+                        $engine = new DefaultWorkflowEngine();
+                        $engine->resumeWorkflow(
+                            $approval->workflow_instance_id,
+                            $approval->node_id,
+                            'approved',
+                            [
+                                'approverId' => $approverId,
+                                'decision' => 'approve',
+                                'comment' => 'Approved via warrant roster direct approval (fallback)',
+                            ],
+                        );
+                    }
+                }
+
+                break; // Only advance the first matching workflow
+            }
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Failed to advance workflow for roster ' . $rosterId . ': ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Decline the pending workflow approval for a roster so the workflow completes via the decline path.
+     */
+    protected function declineWorkflowForRoster(int $rosterId, int $rejecterId, string $reason): void
+    {
+        try {
+            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+            $instances = $instancesTable->find()
+                ->where(['status' => 'waiting'])
+                ->all();
+
+            foreach ($instances as $instance) {
+                $context = $instance->context ?? [];
+                $triggerRosterId = $context['trigger']['rosterId'] ?? null;
+                if ((int)$triggerRosterId !== $rosterId) {
+                    continue;
+                }
+
+                $approval = $approvalsTable->find()
+                    ->where([
+                        'workflow_instance_id' => $instance->id,
+                        'status' => WorkflowApproval::STATUS_PENDING,
+                    ])
+                    ->first();
+
+                if (!$approval) {
+                    continue;
+                }
+
+                $approvalManager = new DefaultWorkflowApprovalManager();
+                $result = $approvalManager->recordResponse(
+                    $approval->id,
+                    $rejecterId,
+                    'deny',
+                    $reason,
+                );
+
+                if ($result->isSuccess() && $result->getData()) {
+                    $data = $result->getData();
+                    if (($data['approvalStatus'] ?? '') === 'denied') {
+                        $engine = new DefaultWorkflowEngine();
+                        $engine->resumeWorkflow(
+                            $data['instanceId'],
+                            $data['nodeId'],
+                            'denied',
+                            [
+                                'approval' => $data,
+                                'approverId' => $rejecterId,
+                                'decision' => 'deny',
+                                'comment' => $reason,
+                            ],
+                        );
+                    }
+                } else {
+                    // Fallback: directly resolve the approval and resume workflow
+                    $approval->rejected_count = 1;
+                    $approval->status = WorkflowApproval::STATUS_REJECTED;
+                    if ($approvalsTable->save($approval)) {
+                        $engine = new DefaultWorkflowEngine();
+                        $engine->resumeWorkflow(
+                            $approval->workflow_instance_id,
+                            $approval->node_id,
+                            'denied',
+                            [
+                                'approverId' => $rejecterId,
+                                'decision' => 'deny',
+                                'comment' => $reason . ' (fallback)',
+                            ],
+                        );
+                    }
+                }
+
+                break;
+            }
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Failed to decline workflow for roster ' . $rosterId . ': ' . $e->getMessage());
+        }
     }
 
     protected function cancelWarrant($warrantTable, $warrant, $expiresOn, $rejecter_id, $reason): ServiceResult
