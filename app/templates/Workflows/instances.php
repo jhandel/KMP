@@ -16,17 +16,6 @@ $this->KMP->endBlock();
 
 $this->assign('title', __('Workflow Instances'));
 
-$statusBadge = function (string $status): string {
-    $map = [
-        'running' => 'primary',
-        'completed' => 'success',
-        'failed' => 'danger',
-        'cancelled' => 'secondary',
-        'waiting' => 'warning',
-    ];
-    $color = $map[$status] ?? 'light';
-    return '<span class="badge bg-' . $color . '">' . h($status) . '</span>';
-};
 ?>
 
 <div class="workflows instances content">
@@ -76,9 +65,9 @@ $statusBadge = function (string $status): string {
                             —
                         <?php endif; ?>
                     </td>
-                    <td><?= $statusBadge($instance->status) ?></td>
-                    <td><?= h($instance->created) ?></td>
-                    <td><?= $instance->completed_at ? h($instance->completed_at) : '—' ?></td>
+                    <td><?= $this->KMP->workflowStatusBadge($instance->status) ?></td>
+                    <td><?= h(\App\KMP\TimezoneHelper::formatDateTime($instance->created)) ?></td>
+                    <td><?= $instance->completed_at ? h(\App\KMP\TimezoneHelper::formatDateTime($instance->completed_at)) : '—' ?></td>
                     <td class="text-end">
                         <?= $this->Html->link(
                             '<i class="bi bi-eye"></i> ' . __('View'),

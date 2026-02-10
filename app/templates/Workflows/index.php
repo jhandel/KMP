@@ -18,17 +18,12 @@ $this->assign('title', __('Workflows'));
 $csrfToken = $this->request->getAttribute('csrfToken');
 $toggleUrl = $this->Url->build(['action' => 'toggleActive', '__id__']);
 
-$versionStatusBadge = function (?object $version): string {
-    if (!$version) {
-        return '<span class="badge bg-light text-dark">' . __('No version') . '</span>';
-    }
-    $map = ['draft' => 'secondary', 'published' => 'success', 'archived' => 'dark'];
-    $color = $map[$version->status] ?? 'light';
-    return 'v' . h($version->version_number) . ' <span class="badge bg-' . $color . '">' . h($version->status) . '</span>';
-};
 ?>
 
-<div class="workflows index content">
+<div class="workflows index content"
+    data-controller="workflow-index"
+    data-workflow-index-toggle-url-value="<?= h($toggleUrl) ?>"
+    data-workflow-index-csrf-value="<?= h($csrfToken) ?>">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h3><?= __('Workflow Definitions') ?></h3>
         <div>
@@ -42,12 +37,14 @@ $versionStatusBadge = function (?object $version): string {
 
     <!-- Search/Filter -->
     <div class="mb-3">
-        <input type="text" class="form-control" id="wf-search-input"
+        <input type="text" class="form-control"
+            data-workflow-index-target="search"
+            data-action="input->workflow-index#filter"
             placeholder="<?= __('Search workflows by name, slug, or trigger...') ?>">
     </div>
 
     <div class="table-responsive">
-        <table class="table table-striped table-hover" id="wf-table">
+        <table class="table table-striped table-hover">
             <thead>
                 <tr>
                     <th><?= __('Name') ?></th>
@@ -59,19 +56,27 @@ $versionStatusBadge = function (?object $version): string {
                     <th class="text-end"><?= __('Actions') ?></th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody data-workflow-index-target="body">
                 <?php foreach ($workflows as $workflow) : ?>
                 <tr data-search-text="<?= h(strtolower($workflow->name . ' ' . $workflow->slug . ' ' . $workflow->trigger_type . ' ' . ($workflow->entity_type ?? ''))) ?>">
                     <td><strong><?= h($workflow->name) ?></strong></td>
                     <td><code><?= h($workflow->slug) ?></code></td>
                     <td>
                         <div class="form-check form-switch">
-                            <input class="form-check-input wf-toggle-active" type="checkbox"
+                            <input class="form-check-input" type="checkbox"
+                                data-action="change->workflow-index#toggleActive"
                                 data-workflow-id="<?= h($workflow->id) ?>"
                                 <?= $workflow->is_active ? 'checked' : '' ?>>
                         </div>
                     </td>
-                    <td><?= $versionStatusBadge($workflow->current_version ?? null) ?></td>
+                    <td>
+                        <?php if ($workflow->current_version) : ?>
+                            v<?= h($workflow->current_version->version_number) ?>
+                            <?= $this->KMP->workflowStatusBadge($workflow->current_version->status) ?>
+                        <?php else : ?>
+                            <span class="badge bg-light text-dark"><?= __('No version') ?></span>
+                        <?php endif; ?>
+                    </td>
                     <td><?= h($workflow->trigger_type) ?></td>
                     <td><?= h($workflow->entity_type) ?: '—' ?></td>
                     <td class="text-end">
@@ -107,43 +112,3 @@ $versionStatusBadge = function (?object $version): string {
         </table>
     </div>
 </div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Search/filter
-    const searchInput = document.getElementById('wf-search-input');
-    if (searchInput) {
-        searchInput.addEventListener('input', function() {
-            const query = this.value.toLowerCase().trim();
-            document.querySelectorAll('#wf-table tbody tr[data-search-text]').forEach(row => {
-                const text = row.dataset.searchText || '';
-                row.style.display = text.includes(query) ? '' : 'none';
-            });
-        });
-    }
-
-    // Toggle active status
-    document.querySelectorAll('.wf-toggle-active').forEach(toggle => {
-        toggle.addEventListener('change', async function() {
-            const id = this.dataset.workflowId;
-            const url = '<?= $toggleUrl ?>'.replace('__id__', id);
-            try {
-                const resp = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-Token': '<?= h($csrfToken) ?>',
-                        'Accept': 'application/json',
-                    },
-                });
-                if (!resp.ok) {
-                    this.checked = !this.checked;
-                    alert('<?= __("Failed to update status.") ?>');
-                }
-            } catch (e) {
-                this.checked = !this.checked;
-                alert('<?= __("Error updating status.") ?>');
-            }
-        });
-    });
-});
-</script>

@@ -294,7 +294,7 @@ class WorkflowsController extends AppController
             'WorkflowDefinitions',
             'WorkflowVersions',
             'WorkflowExecutionLogs' => ['sort' => ['WorkflowExecutionLogs.created' => 'ASC']],
-            'WorkflowApprovals' => ['WorkflowApprovalResponses'],
+            'WorkflowApprovals' => ['WorkflowApprovalResponses' => ['Members']],
         ]);
         $this->set(compact('instance'));
     }

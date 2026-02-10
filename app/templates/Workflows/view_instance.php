@@ -13,27 +13,13 @@ echo $this->KMP->startBlock("title");
 echo $this->KMP->getAppSetting("KMP.ShortSiteTitle") . ': Instance #' . $instance->id;
 $this->KMP->endBlock();
 
-$statusBadge = function (string $status): string {
-    $map = [
-        'running' => 'primary',
-        'completed' => 'success',
-        'failed' => 'danger',
-        'cancelled' => 'secondary',
-        'waiting' => 'warning',
-        'pending' => 'warning',
-        'approved' => 'success',
-        'rejected' => 'danger',
-    ];
-    $color = $map[$status] ?? 'light';
-    return '<span class="badge bg-' . $color . '">' . h($status) . '</span>';
-};
 ?>
 
 <div class="workflows view-instance content">
     <h3>
         <?= $this->element('backButton') ?>
         <?= __('Workflow Instance') ?> #<?= h($instance->id) ?>
-        <?= $statusBadge($instance->status) ?>
+        <?= $this->KMP->workflowStatusBadge($instance->status) ?>
     </h3>
 
     <!-- Instance Summary -->
@@ -54,11 +40,11 @@ $statusBadge = function (string $status): string {
                 </div>
                 <div class="col-md-2">
                     <strong><?= __('Started') ?></strong><br>
-                    <?= h($instance->created) ?>
+                    <?= h(\App\KMP\TimezoneHelper::formatDateTime($instance->created)) ?>
                 </div>
                 <div class="col-md-3">
                     <strong><?= __('Completed') ?></strong><br>
-                    <?= $instance->completed_at ? h($instance->completed_at) : __('In progress') ?>
+                    <?= $instance->completed_at ? h(\App\KMP\TimezoneHelper::formatDateTime($instance->completed_at)) : __('In progress') ?>
                 </div>
             </div>
         </div>
@@ -75,10 +61,10 @@ $statusBadge = function (string $status): string {
                     <span class="badge bg-info me-1"><?= h($log->node_type) ?></span>
                     <?= h($log->node_id) ?>
                 </h6>
-                <small class="text-muted"><?= h($log->created) ?></small>
+                <small class="text-muted"><?= h(\App\KMP\TimezoneHelper::formatDateTime($log->created)) ?></small>
             </div>
             <div class="d-flex align-items-center gap-2">
-                <?= $statusBadge($log->status) ?>
+                <?= $this->KMP->workflowStatusBadge($log->status) ?>
                 <?php if ($log->output_port) : ?>
                     <span class="text-muted small">→ <?= h($log->output_port) ?></span>
                 <?php endif; ?>
@@ -108,7 +94,7 @@ $statusBadge = function (string $status): string {
                 <?= __('Approval') ?> #<?= h($approval->id) ?>
                 — <?= __('Node:') ?> <?= h($approval->node_id) ?>
             </span>
-            <?= $statusBadge($approval->status) ?>
+            <?= $this->KMP->workflowStatusBadge($approval->status) ?>
         </div>
         <div class="card-body">
             <?php if (!empty($approval->workflow_approval_responses)) : ?>
@@ -124,10 +110,10 @@ $statusBadge = function (string $status): string {
                 <tbody>
                     <?php foreach ($approval->workflow_approval_responses as $response) : ?>
                     <tr>
-                        <td><?= h($response->member_id) ?></td>
-                        <td><?= $statusBadge($response->decision) ?></td>
+                        <td><?= h($response->member->sca_name ?? $response->member->email_address ?? $response->member_id) ?></td>
+                        <td><?= $this->KMP->workflowStatusBadge($response->decision) ?></td>
                         <td><?= h($response->comment) ?: '—' ?></td>
-                        <td><?= h($response->created) ?></td>
+                        <td><?= h(\App\KMP\TimezoneHelper::formatDateTime($response->created)) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>

@@ -16,17 +16,6 @@ $this->KMP->endBlock();
 
 $this->assign('title', __('My Approvals'));
 
-$statusBadge = function (string $status): string {
-    $map = [
-        'pending' => 'warning',
-        'approved' => 'success',
-        'rejected' => 'danger',
-        'cancelled' => 'secondary',
-        'expired' => 'dark',
-    ];
-    $color = $map[$status] ?? 'light';
-    return '<span class="badge bg-' . $color . '">' . h(ucfirst($status)) . '</span>';
-};
 ?>
 
 <div class="workflows approvals content">
@@ -54,7 +43,7 @@ $statusBadge = function (string $status): string {
             <div class="card border-warning shadow-sm">
                 <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
                     <strong><i class="bi bi-diagram-3 me-1"></i><?= h($workflowName) ?></strong>
-                    <?= $statusBadge('pending') ?>
+                    <?= $this->KMP->workflowStatusBadge('pending') ?>
                 </div>
                 <div class="card-body">
                     <dl class="row mb-2 small">
@@ -67,10 +56,10 @@ $statusBadge = function (string $status): string {
                         <dd class="col-sm-8"><?= h($startedBy) ?></dd>
                         <?php endif; ?>
                         <dt class="col-sm-4 text-muted"><?= __('Created') ?></dt>
-                        <dd class="col-sm-8"><?= h($approval->created->nice()) ?></dd>
+                        <dd class="col-sm-8"><?= h(\App\KMP\TimezoneHelper::formatDateTime($approval->created)) ?></dd>
                         <?php if ($approval->deadline) : ?>
                         <dt class="col-sm-4 text-muted"><?= __('Deadline') ?></dt>
-                        <dd class="col-sm-8"><?= h($approval->deadline->nice()) ?></dd>
+                        <dd class="col-sm-8"><?= h(\App\KMP\TimezoneHelper::formatDateTime($approval->deadline)) ?></dd>
                         <?php endif; ?>
                         <dt class="col-sm-4 text-muted"><?= __('Progress') ?></dt>
                         <dd class="col-sm-8"><?= h($approval->approved_count) ?> / <?= h($approval->required_count) ?> <?= __('approvals') ?></dd>
@@ -124,9 +113,9 @@ $statusBadge = function (string $status): string {
                 <?php foreach ($recentApprovals as $approval) : ?>
                 <tr>
                     <td><?= h($approval->workflow_instance->workflow_definition->name ?? '—') ?></td>
-                    <td><?= $statusBadge($approval->status) ?></td>
+                    <td><?= $this->KMP->workflowStatusBadge($approval->status) ?></td>
                     <td><?= h($approval->approved_count) ?>/<?= h($approval->required_count) ?></td>
-                    <td><?= h($approval->modified) ?></td>
+                    <td><?= h(\App\KMP\TimezoneHelper::formatDateTime($approval->modified)) ?></td>
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($recentApprovals) || (is_object($recentApprovals) && $recentApprovals->count() === 0)) : ?>
