@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Officers\Services;
 
-use App\Services\WorkflowEngine\Conditions\CoreConditions;
+use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
 use Cake\ORM\TableRegistry;
 
 /**
@@ -12,6 +12,8 @@ use Cake\ORM\TableRegistry;
  */
 class OfficerWorkflowConditions
 {
+    use WorkflowContextAwareTrait;
+
     /**
      * Check if an office requires a warrant.
      *
@@ -22,10 +24,7 @@ class OfficerWorkflowConditions
     public function officeRequiresWarrant(array $context, array $config): bool
     {
         try {
-            $officeId = $config['officeId'] ?? null;
-            if (is_string($officeId) && str_starts_with($officeId, '$.')) {
-                $officeId = CoreConditions::resolveFieldPath($context, $officeId);
-            }
+            $officeId = $this->resolveValue($config['officeId'] ?? null, $context);
 
             if (empty($officeId)) {
                 return false;
@@ -50,10 +49,7 @@ class OfficerWorkflowConditions
     public function isOnlyOnePerBranch(array $context, array $config): bool
     {
         try {
-            $officeId = $config['officeId'] ?? null;
-            if (is_string($officeId) && str_starts_with($officeId, '$.')) {
-                $officeId = CoreConditions::resolveFieldPath($context, $officeId);
-            }
+            $officeId = $this->resolveValue($config['officeId'] ?? null, $context);
 
             if (empty($officeId)) {
                 return false;
@@ -78,10 +74,7 @@ class OfficerWorkflowConditions
     public function isMemberWarrantable(array $context, array $config): bool
     {
         try {
-            $memberId = $config['memberId'] ?? null;
-            if (is_string($memberId) && str_starts_with($memberId, '$.')) {
-                $memberId = CoreConditions::resolveFieldPath($context, $memberId);
-            }
+            $memberId = $this->resolveValue($config['memberId'] ?? null, $context);
 
             if (empty($memberId)) {
                 return false;

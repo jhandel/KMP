@@ -392,17 +392,28 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     }
 
     /**
-     * Check if a member has a specific permission via their roles.
+     * Check if a member has a specific permission via their active (unexpired) roles.
      */
     private function memberHasPermission(int $memberId, string $permissionName): bool
     {
         $memberRolesTable = TableRegistry::getTableLocator()->get('MemberRoles');
+        $now = DateTime::now();
 
         $count = $memberRolesTable->find()
             ->innerJoinWith('Roles.Permissions')
             ->where([
                 'MemberRoles.member_id' => $memberId,
                 'Permissions.name' => $permissionName,
+                'OR' => [
+                    'MemberRoles.start_on IS' => null,
+                    'MemberRoles.start_on <=' => $now,
+                ],
+            ])
+            ->where([
+                'OR' => [
+                    'MemberRoles.expires_on IS' => null,
+                    'MemberRoles.expires_on >=' => $now,
+                ],
             ])
             ->count();
 
@@ -410,17 +421,28 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     }
 
     /**
-     * Check if a member has a specific role.
+     * Check if a member has a specific active (unexpired) role.
      */
     private function memberHasRole(int $memberId, string $roleName): bool
     {
         $memberRolesTable = TableRegistry::getTableLocator()->get('MemberRoles');
+        $now = DateTime::now();
 
         $count = $memberRolesTable->find()
             ->innerJoinWith('Roles')
             ->where([
                 'MemberRoles.member_id' => $memberId,
                 'Roles.name' => $roleName,
+                'OR' => [
+                    'MemberRoles.start_on IS' => null,
+                    'MemberRoles.start_on <=' => $now,
+                ],
+            ])
+            ->where([
+                'OR' => [
+                    'MemberRoles.expires_on IS' => null,
+                    'MemberRoles.expires_on >=' => $now,
+                ],
             ])
             ->count();
 
@@ -428,34 +450,60 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     }
 
     /**
-     * Find all members who have a role granting the specified permission.
+     * Find all members who have an active (unexpired) role granting the specified permission.
      *
      * @return \App\Model\Entity\Member[]
      */
     private function findMembersByPermission(string $permissionName): array
     {
         $membersTable = TableRegistry::getTableLocator()->get('Members');
+        $now = DateTime::now();
 
         return $membersTable->find()
             ->innerJoinWith('MemberRoles.Roles.Permissions')
-            ->where(['Permissions.name' => $permissionName])
+            ->where([
+                'Permissions.name' => $permissionName,
+                'OR' => [
+                    'MemberRoles.start_on IS' => null,
+                    'MemberRoles.start_on <=' => $now,
+                ],
+            ])
+            ->where([
+                'OR' => [
+                    'MemberRoles.expires_on IS' => null,
+                    'MemberRoles.expires_on >=' => $now,
+                ],
+            ])
             ->group(['Members.id'])
             ->all()
             ->toArray();
     }
 
     /**
-     * Find all members who have the specified role.
+     * Find all members who have the specified active (unexpired) role.
      *
      * @return \App\Model\Entity\Member[]
      */
     private function findMembersByRole(string $roleName): array
     {
         $membersTable = TableRegistry::getTableLocator()->get('Members');
+        $now = DateTime::now();
 
         return $membersTable->find()
             ->innerJoinWith('MemberRoles.Roles')
-            ->where(['Roles.name' => $roleName])
+            ->where([
+                'Roles.name' => $roleName,
+                'OR' => [
+                    'MemberRoles.start_on IS' => null,
+                    'MemberRoles.start_on <=' => $now,
+                ],
+            ])
+            ->where([
+                'OR' => [
+                    'MemberRoles.expires_on IS' => null,
+                    'MemberRoles.expires_on >=' => $now,
+                ],
+            ])
             ->group(['Members.id'])
             ->all()
             ->toArray();

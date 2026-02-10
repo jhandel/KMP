@@ -72,6 +72,7 @@ use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use App\Services\WorkflowEngine\DefaultWorkflowVersionManager;
+use App\Services\WorkflowEngine\Providers\WarrantWorkflowActions;
 use App\Services\WorkflowEngine\WorkflowVersionManagerInterface;
 use App\Controller\WorkflowsController;
 use Authentication\AuthenticationService;
@@ -581,6 +582,10 @@ class Application extends BaseApplication implements
         $container->add(
             TriggerDispatcher::class,
         )->addArgument(WorkflowEngineInterface::class);
+
+        // WarrantWorkflowActions — workflow actions delegating to WarrantManager
+        $container->add(WarrantWorkflowActions::class)
+            ->addArgument(WarrantManagerInterface::class);
 
         // Register WorkflowsController for constructor injection
         $container->add(WorkflowsController::class)

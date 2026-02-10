@@ -6,7 +6,9 @@ namespace Officers\Services;
 
 use App\KMP\TimezoneHelper;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
-use App\Services\WorkflowEngine\Conditions\CoreConditions;
+use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WarrantManager\WarrantRequest;
+use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
 use Cake\Core\App;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
@@ -15,19 +17,23 @@ use Officers\Model\Entity\Officer;
 
 /**
  * Workflow action implementations for officer lifecycle operations.
+ *
+ * Uses injected ActiveWindowManagerInterface and WarrantManagerInterface
+ * rather than direct instantiation.
  */
 class OfficerWorkflowActions
 {
-    /**
-     * Resolve a config value from context if it starts with '$.'.
-     */
-    private function resolveValue(mixed $value, array $context): mixed
-    {
-        if (is_string($value) && str_starts_with($value, '$.')) {
-            return CoreConditions::resolveFieldPath($context, $value);
-        }
+    use WorkflowContextAwareTrait;
 
-        return $value;
+    private ActiveWindowManagerInterface $activeWindowManager;
+    private WarrantManagerInterface $warrantManager;
+
+    public function __construct(
+        ActiveWindowManagerInterface $activeWindowManager,
+        WarrantManagerInterface $warrantManager,
+    ) {
+        $this->activeWindowManager = $activeWindowManager;
+        $this->warrantManager = $warrantManager;
     }
 
     /**
@@ -119,9 +125,8 @@ class OfficerWorkflowActions
             }
 
             // Start ActiveWindow (manages role assignment and temporal lifecycle)
-            $awManager = $this->getActiveWindowManager();
             try {
-                $awResult = $awManager->start(
+                $awResult = $this->activeWindowManager->start(
                     'Officers.Officers',
                     $officer->id,
                     $approverId > 0 ? $approverId : $memberId,
@@ -208,14 +213,6 @@ class OfficerWorkflowActions
         }
 
         return $result;
-    }
-
-    /**
-     * Get the ActiveWindowManager by direct instantiation.
-     */
-    private function getActiveWindowManager(): ActiveWindowManagerInterface
-    {
-        return new \App\Services\ActiveWindowManager\DefaultActiveWindowManager();
     }
 
     /**
@@ -327,7 +324,7 @@ class OfficerWorkflowActions
                 $officeName .= ' (' . $officer->deputy_description . ')';
             }
 
-            $warrantRequest = new \App\Services\WarrantManager\WarrantRequest(
+            $warrantRequest = new WarrantRequest(
                 "Hiring Warrant: {$branch->name} - {$officeName}",
                 'Officers.Officers',
                 $officer->id,
@@ -338,10 +335,7 @@ class OfficerWorkflowActions
                 $officer->granted_member_role_id,
             );
 
-            $awm = new \App\Services\ActiveWindowManager\DefaultActiveWindowManager();
-            $warrantManager = new \App\Services\WarrantManager\DefaultWarrantManager($awm);
-
-            $result = $warrantManager->request(
+            $result = $this->warrantManager->request(
                 "{$office->name} : {$member->sca_name}",
                 '',
                 [$warrantRequest],

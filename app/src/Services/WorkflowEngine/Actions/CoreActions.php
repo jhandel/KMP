@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\WorkflowEngine\Actions;
 
-use App\Services\WorkflowEngine\Conditions\CoreConditions;
+use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
+use App\Services\WorkflowRegistry\WorkflowEntityRegistry;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
 
@@ -13,21 +14,7 @@ use Cake\ORM\TableRegistry;
  */
 class CoreActions
 {
-    /**
-     * Resolve a config value — if it starts with '$.' treat it as a context path.
-     *
-     * @param mixed $value Raw value or context path
-     * @param array $context Current workflow context
-     * @return mixed Resolved value
-     */
-    public function resolveValue(mixed $value, array $context): mixed
-    {
-        if (is_string($value) && str_starts_with($value, '$.')) {
-            return CoreConditions::resolveFieldPath($context, $value);
-        }
-
-        return $value;
-    }
+    use WorkflowContextAwareTrait;
 
     /**
      * Send an email notification using queued mailer infrastructure.
@@ -98,6 +85,28 @@ class CoreActions
     {
         try {
             $tableName = $this->resolveValue($config['entityType'], $context);
+
+            // Validate entity type is registered in WorkflowEntityRegistry
+            $registeredEntity = WorkflowEntityRegistry::getEntity($tableName);
+            if ($registeredEntity === null) {
+                Log::warning("Workflow UpdateEntity rejected: entity type '{$tableName}' is not registered in WorkflowEntityRegistry");
+
+                return ['updated' => false, 'error' => "Entity type '{$tableName}' is not registered for workflow operations."];
+            }
+
+            // Validate fields against the registered entity's allowed field list
+            $allowedFields = array_keys($registeredEntity['fields'] ?? []);
+            if (!empty($allowedFields)) {
+                $requestedFields = array_keys($config['fields'] ?? []);
+                $disallowed = array_diff($requestedFields, $allowedFields);
+                if (!empty($disallowed)) {
+                    $fieldList = implode(', ', $disallowed);
+                    Log::warning("Workflow UpdateEntity rejected: fields [{$fieldList}] are not in the allowed list for '{$tableName}'");
+
+                    return ['updated' => false, 'error' => "Fields [{$fieldList}] are not allowed for entity type '{$tableName}'."];
+                }
+            }
+
             $table = TableRegistry::getTableLocator()->get($tableName);
             $entityId = $this->resolveValue($config['entityId'], $context);
             $entity = $table->get($entityId);
