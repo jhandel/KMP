@@ -158,7 +158,7 @@ RUN apt-get update && \
     apt-get install -y xauth x11-apps gh && \
     rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code @beads/bd
+RUN npm install -g @anthropic-ai/claude-code
 
 # Usage:
 # 1. On your macOS, run an X server (e.g., XQuartz) and enable network connections.
