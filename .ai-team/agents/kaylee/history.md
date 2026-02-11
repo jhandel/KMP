@@ -103,3 +103,16 @@ Added `activities-authorization` workflow definition to `20260209170000_SeedWork
 
 📌 Team update (2026-02-11): Activities workflow scope limited to submit-to-approval only; Revoked/Expired out-of-band — decided by Josh Handel
 📌 Team update (2026-02-11): Auth queue permission gating question raised — MoAS/Armored marshals get unauthorized on /activities/authorization-approvals/my-queue. May need policy update or confirmation that /workflows/approvals is the intended path — found by Jayne
+
+### 2026-02-12: Dynamic Resolver Bug Fix
+
+**Bug:** Activities Authorization approval-gate seed used flat config keys (`resolverService`, `activity_id`) that the engine's `executeApprovalNode()` never picked up into `approverConfig`. Also used wrong key name (`resolverService` vs engine-expected `service`) and omitted `method`. Result: `approver_config` saved as `{"serial_pick_next": true}` — no service, no method, no activity_id. `resolveDynamicApproverIds()` threw RuntimeException.
+
+**Fix 1 — Seed:** Changed `approval-gate` config to use nested `approverConfig` with correct keys: `service` (not `resolverService`), `method` (`getEligibleApproverIds`), and `activity_id`. This is the preferred format — engine uses it directly.
+
+**Fix 2 — Engine:** Added flat config fallback for dynamic resolver in `executeApprovalNode()`. Inside the `empty($approverConfig)` block: maps `resolverService`→`service`, `resolverMethod`→`method`, and for `dynamic` approverType preserves non-standard custom keys into `approverConfig`. Makes engine robust for both nested (preferred) and flat (backward compat) configs.
+
+**Key learning:** Approval node config has two paths: nested `approverConfig` (used directly) and flat keys (assembled by engine). Dynamic resolver keys must be in either the nested config or explicitly handled in the flat fallback. Always use nested `approverConfig` for new approval nodes.
+
+📌 Team update (2026-02-12): Fixed activities-authorization dynamic resolver bug — seed used wrong config structure and key names. Engine now supports flat config fallback for dynamic resolvers. 603 tests pass. — fixed by Kaylee
+📌 Team update (2026-02-12): Config panel now shows resolver service/method (read-only) + custom config fields with value picker for dynamic approvers. — decided by Wash

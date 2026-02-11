@@ -3567,3 +3567,87 @@ The authorization approvals queue at `/activities/authorization-approvals/my-que
 ## Screenshots
 
 16 screenshots saved in `test-results/e2e-*.png` for visual verification.
+
+---
+
+### 2026-02-12: Approval Node Config Must Use Nested `approverConfig` for Dynamic Resolvers
+
+**Date:** 2026-02-12
+**Author:** Kaylee
+**Status:** Implemented
+
+## Context
+
+The `executeApprovalNode()` method in `DefaultWorkflowEngine` has two config paths:
+1. **Nested:** `config.approverConfig` — used directly, preferred
+2. **Flat:** Individual keys (`permission`, `role`, `policyClass`, etc.) assembled into `approverConfig`
+
+The flat path only handled a fixed set of known keys. Dynamic resolver keys (`service`, `method`, custom keys like `activity_id`) were silently dropped.
+
+## Decision
+
+1. **New approval nodes MUST use nested `approverConfig`** for dynamic resolver definitions. This is the canonical format:
+   ```php
+   'config' => [
+       'approverType' => 'dynamic',
+       'approverConfig' => [
+           'service' => 'Fully\\Qualified\\ResolverClass',
+           'method' => 'getEligibleApproverIds',
+           // custom keys resolved from context
+       ],
+   ]
+   ```
+
+2. **Engine flat config fallback now supports dynamic resolvers** for backward compat: `resolverService`→`service`, `resolverMethod`→`method`, plus custom key passthrough for `dynamic` type. But nested format is preferred.
+
+## Impact
+
+- Seed migrations for approval nodes with dynamic resolvers
+- Any future workflow designer UI that generates approval node configs
+- Engine is now backward-compatible with both formats
+
+---
+
+### 2025-07-14: Remove `action-create` node from Activities Authorization workflow
+
+**Author:** Kaylee (Backend Dev)  
+**Date:** 2025-07-14  
+**Status:** Implemented  
+**File:** `app/config/Migrations/20260209170000_SeedWorkflowDefinitions.php`
+
+## Problem
+
+`DefaultAuthorizationManager::request()` already creates the authorization record and first approval, then fires the `Activities.AuthorizationRequested` event. The seed workflow definition had an `action-create` node that called `Activities.CreateAuthorizationRequest`, which invoked `request()` again — producing a **duplicate authorization**.
+
+## Decision
+
+Removed the `action-create` node from `getActivitiesAuthorizationDefinition()` and wired `trigger-auth` directly to `approval-gate`. This follows the same pattern used by the warrant workflow (`trigger-1 → approval-1`), where the trigger fires from within the creation code so no separate create action is needed.
+
+## Changes
+
+- **Removed** the `action-create` node entirely (9 nodes → 8 nodes)
+- **Rewired** `trigger-auth` output from `target: 'action-create'` to `target: 'approval-gate'`
+- **Shifted positions left** by 300px for all downstream nodes to fill the gap
+
+## Final graph
+
+```
+trigger-auth → approval-gate → [approved] → action-activate → action-notify-approved → end-approved
+                             → [rejected] → action-deny → action-notify-denied → end-denied
+```
+
+## Verification
+
+- `approval-gate.config.activity_id` references `$.trigger.activityId` ✓
+- `approval-gate.config.requiredCount` references `$.trigger.requiredApprovals` ✓
+- PHP syntax check passes ✓
+- No other files modified ✓
+
+---
+
+### Dynamic Approval Config Panel — Resolver Service Display
+**By:** Wash
+**Date:** 2026-02-12
+**What:** Extended the dynamic approver section in `_approvalHTML()` to show resolver service details when `approverConfig.service` is present, instead of only showing a bare "Context Path" input.
+**Why:** Activities workflow uses `approverConfig: { service, method, activity_id }` pattern. The config panel was hiding this information, making it impossible to see or edit custom resolver fields like `activity_id: "$.trigger.activityId"` in the designer.
+**Decision:** Resolver service/method fields are read-only (they're set by workflow definition, not user-editable). Custom config keys get `renderValuePicker()` with context path support so users can bind them to trigger data. Internal keys are excluded from display via a hardcoded list.

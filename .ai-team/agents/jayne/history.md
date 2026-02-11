@@ -109,3 +109,4 @@ Added 4 tests to `app/tests/TestCase/Services/WorkflowEngine/DefaultWorkflowEngi
 
 📌 Team update (2026-02-11): Activities authorization seed migration implemented (Phase 4) — 9-node graph, is_active=0, matches architecture spec — implemented by Kaylee
 📌 Team update (2026-02-11): Activities workflow scope limited to submit-to-approval only; Revoked/Expired out-of-band — decided by Josh Handel
+📌 Team update (2026-02-12): Dynamic resolver config fixed (nested approverConfig + engine fallback) and `action-create` node removed from Activities workflow. Config panel updated with resolver service display. — decided by Kaylee, Wash

@@ -136,3 +136,17 @@ Implemented frontend for the `serialPickNext` approval node enhancement per Mal'
 
 📌 Team update (2026-02-11): Activities workflow scope limited to submit-to-approval only; Revoked/Expired out-of-band — decided by Josh Handel
 📌 Team update (2026-02-11): Auth queue permission gating question — MoAS/Armored users get unauthorized on auth queue page. May affect approval UI routing — found by Jayne
+
+### 2026-02-12: Dynamic Approval Node — Resolver Service Display
+
+Updated `_approvalHTML()` in `workflow-config-panel.js` to handle the `approverConfig` resolver pattern for dynamic approval nodes.
+
+**What changed (lines 268-305):** The `data-approver-section="dynamic"` div now uses an IIFE to detect two sub-modes:
+1. **Resolver service mode** (`config.approverConfig.service` exists): Shows read-only "Resolver Service" and "Resolver Method" fields, plus any custom config keys (e.g. `activity_id`) rendered via `renderValuePicker()` with context path support. Internal keys (`service`, `method`, `serial_pick_next`, `exclude_member_ids`, `current_approver_id`, `approval_chain`) are excluded from custom fields.
+2. **Simple context path mode** (no `service` key): Shows the original "Context Path" text input — backward compatible.
+
+**Pattern used:** IIFE inside template literal (`${(() => { ... })()}`) to keep conditional logic inline without restructuring the surrounding template. Custom config fields use `approverConfig.{key}` as the field name for `renderValuePicker()`.
+
+**Second `data-approver-section="dynamic"` div (Serial Pick Next toggle, lines 353-361):** Left unchanged — it controls a separate feature.
+📌 Team update (2026-02-12): Approval nodes MUST use nested `approverConfig` for dynamic resolvers. Engine flat config fallback added for backward compat. — decided by Kaylee
+📌 Team update (2026-02-12): `action-create` node removed from Activities Authorization workflow to fix dual-write bug. — decided by Kaylee
