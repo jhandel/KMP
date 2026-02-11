@@ -93,6 +93,9 @@ $this->KMP->endBlock();
         </div>
     </div>
 
+    <!-- Validation Results (initially hidden) -->
+    <div data-workflow-designer-target="validationResults" class="wf-validation-results" aria-live="polite" style="display:none;"></div>
+
     <!-- Main Designer Area -->
     <div class="workflow-designer-container wf-designer-container">
         <!-- Left: Node Palette -->
@@ -125,6 +128,4 @@ $this->KMP->endBlock();
         </div>
     </div>
 
-    <!-- Validation Results (initially hidden) -->
-    <div data-workflow-designer-target="validationResults" class="wf-validation-results" aria-live="polite" style="display:none;"></div>
 </div>
