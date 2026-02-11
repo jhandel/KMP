@@ -87,9 +87,9 @@ class OfficersWorkflowProvider
                 'label' => 'Create Officer Assignment',
                 'description' => 'Create an officer record for a member in an office',
                 'inputSchema' => [
-                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
-                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true],
-                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID', 'required' => true],
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true, 'description' => 'The ID of the member being assigned'],
+                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The ID of the office to assign'],
+                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID', 'required' => true, 'description' => 'The branch where the assignment applies'],
                     'startOn' => ['type' => 'datetime', 'label' => 'Start Date'],
                     'expiresOn' => ['type' => 'datetime', 'label' => 'Expires On'],
                 ],
@@ -105,8 +105,8 @@ class OfficersWorkflowProvider
                 'label' => 'Release Officer',
                 'description' => 'Release an officer from their position',
                 'inputSchema' => [
-                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true],
-                    'reason' => ['type' => 'string', 'label' => 'Reason'],
+                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true, 'description' => 'The officer record to release'],
+                    'reason' => ['type' => 'string', 'label' => 'Reason', 'default' => ''],
                     'expiresOn' => ['type' => 'datetime', 'label' => 'Release Date'],
                 ],
                 'outputSchema' => [
@@ -121,7 +121,7 @@ class OfficersWorkflowProvider
                 'label' => 'Send Hire Notification',
                 'description' => 'Send email notification about officer hire',
                 'inputSchema' => [
-                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true],
+                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true, 'description' => 'The officer record to notify about'],
                 ],
                 'outputSchema' => [
                     'sent' => ['type' => 'boolean'],
@@ -135,7 +135,7 @@ class OfficersWorkflowProvider
                 'label' => 'Request Warrant Roster',
                 'description' => 'Create a warrant roster for the officer and start the warrant approval workflow',
                 'inputSchema' => [
-                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true],
+                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true, 'description' => 'The officer record needing a warrant roster'],
                 ],
                 'outputSchema' => [
                     'rosterId' => ['type' => 'integer', 'label' => 'Roster ID'],
@@ -160,7 +160,7 @@ class OfficersWorkflowProvider
                 'label' => 'Office Requires Warrant',
                 'description' => 'Check if the office requires a warrant for the officer',
                 'inputSchema' => [
-                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true],
+                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The office to check for warrant requirements'],
                 ],
                 'evaluatorClass' => $conditionsClass,
                 'evaluatorMethod' => 'officeRequiresWarrant',
@@ -170,7 +170,7 @@ class OfficersWorkflowProvider
                 'label' => 'Office Only One Per Branch',
                 'description' => 'Check if this office allows only one officer per branch',
                 'inputSchema' => [
-                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true],
+                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The office to check for one-per-branch rule'],
                 ],
                 'evaluatorClass' => $conditionsClass,
                 'evaluatorMethod' => 'isOnlyOnePerBranch',
@@ -180,7 +180,7 @@ class OfficersWorkflowProvider
                 'label' => 'Member Is Warrantable',
                 'description' => 'Check if a member meets warrant eligibility requirements',
                 'inputSchema' => [
-                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true, 'description' => 'The member to check warrant eligibility for'],
                 ],
                 'evaluatorClass' => $conditionsClass,
                 'evaluatorMethod' => 'isMemberWarrantable',

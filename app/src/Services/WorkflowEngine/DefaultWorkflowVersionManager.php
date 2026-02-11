@@ -7,6 +7,8 @@ namespace App\Services\WorkflowEngine;
 use App\Model\Entity\WorkflowInstanceMigration;
 use App\Model\Entity\WorkflowVersion;
 use App\Services\ServiceResult;
+use App\Services\WorkflowRegistry\WorkflowActionRegistry;
+use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
 use Cake\ORM\TableRegistry;
@@ -228,6 +230,50 @@ class DefaultWorkflowVersionManager implements WorkflowVersionManagerInterface
             $cycles = $this->detectCycles($triggerKey, $nodes);
             foreach ($cycles as $cycle) {
                 $errors[] = "Cycle detected in graph: " . implode(' -> ', $cycle) . ".";
+            }
+        }
+
+        // Validate action and condition node required params (only when config is present)
+        foreach ($nodes as $key => $node) {
+            $type = $node['type'] ?? '';
+
+            if ($type === 'action' && isset($node['config']['action'])) {
+                $actionName = $node['config']['action'];
+
+                $actionConfig = WorkflowActionRegistry::getAction($actionName);
+                if (!$actionConfig) {
+                    $errors[] = "Action node '{$key}' references unknown action '{$actionName}'.";
+                    continue;
+                }
+
+                $inputSchema = $actionConfig['inputSchema'] ?? [];
+                $params = $node['config']['params'] ?? [];
+
+                foreach ($inputSchema as $paramKey => $paramMeta) {
+                    if (!empty($paramMeta['required']) && empty($params[$paramKey]) && !isset($node['config'][$paramKey])) {
+                        $errors[] = "Action node '{$key}' ({$actionName}): required parameter '{$paramKey}' is not configured.";
+                    }
+                }
+            }
+
+            if ($type === 'condition' && isset($node['config']['condition'])) {
+                $conditionName = $node['config']['condition'];
+                if (!str_starts_with($conditionName, 'Core.')) {
+                    $condConfig = WorkflowConditionRegistry::getCondition($conditionName);
+                    if (!$condConfig) {
+                        $errors[] = "Condition node '{$key}' references unknown condition '{$conditionName}'.";
+                        continue;
+                    }
+
+                    $inputSchema = $condConfig['inputSchema'] ?? [];
+                    $params = $node['config']['params'] ?? [];
+
+                    foreach ($inputSchema as $paramKey => $paramMeta) {
+                        if (!empty($paramMeta['required']) && empty($params[$paramKey]) && !isset($node['config'][$paramKey])) {
+                            $errors[] = "Condition node '{$key}' ({$conditionName}): required parameter '{$paramKey}' is not configured.";
+                        }
+                    }
+                }
             }
         }
 

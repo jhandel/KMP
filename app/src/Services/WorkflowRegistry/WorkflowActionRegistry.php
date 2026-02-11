@@ -20,6 +20,18 @@ class WorkflowActionRegistry
     private static bool $initialized = false;
 
     /**
+     * Output schema for approval nodes.
+     * Used by the designer UI variable picker.
+     */
+    public const APPROVAL_OUTPUT_SCHEMA = [
+        'status' => ['type' => 'string', 'label' => 'Approval Status'],
+        'approverId' => ['type' => 'integer', 'label' => 'Approver Member ID'],
+        'comment' => ['type' => 'string', 'label' => 'Approval Comment'],
+        'rejectionComment' => ['type' => 'string', 'label' => 'Rejection Comment'],
+        'decision' => ['type' => 'string', 'label' => 'Decision (approve/reject)'],
+    ];
+
+    /**
      * Required fields for each action registration.
      */
     private const REQUIRED_FIELDS = [

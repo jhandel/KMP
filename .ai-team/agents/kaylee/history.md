@@ -139,3 +139,15 @@ Added 4 backend endpoints for the workflow designer UI's approval node configura
 All endpoints use `skipAuthorization()` matching the existing Members autocomplete pattern. Routes: Roles/Permissions via fallback routing, policy endpoints via explicit `/workflows/policy-classes` and `/workflows/policy-actions` routes.
 
 📌 Team update (2026-02-10): Workflow autocomplete endpoints implemented — 4 endpoints for roles, permissions, policy classes, and policy actions. Ready for Wash's frontend integration. — decided by Josh Handel, implemented by Kaylee
+
+### 2026-02-10: Action Schema & Context Mapping (Phases 3–5)
+
+Implemented three phases of the Action Schema & Context Mapping feature:
+
+- **Phase 3:** Added `APPROVAL_OUTPUT_SCHEMA` constant to `WorkflowActionRegistry` (5 fields: status, approverId, comment, rejectionComment, decision). Extended `WorkflowsController::registry()` endpoint to return `approvalOutputSchema` and `builtinContext` arrays for the designer UI variable picker.
+- **Phase 4:** Extended `DefaultWorkflowVersionManager::validateDefinition()` with publish-time param validation. Checks action/condition nodes against their registered `inputSchema` — flags unknown action/condition references and missing required parameters. Only validates nodes with `config.action`/`config.condition` set to avoid false positives on test fixtures.
+- **Phase 5:** Enriched `inputSchema` entries with `description` fields in `WarrantWorkflowProvider` (5 actions) and `OfficersWorkflowProvider` (4 actions, 3 conditions). Added `default` values where sensible (e.g., `description: ''`, `reason: ''`).
+
+Key finding: `WorkflowConditionRegistry::getCondition()` already existed — no new method needed. Validation imports both `WorkflowActionRegistry` and `WorkflowConditionRegistry` in the version manager.
+
+📌 Team update (2026-02-10): Action Schema phases 3–5 implemented — approval output schema constant, builtinContext in registry endpoint, publish-time param validation, schema descriptions in 2 providers. All 20 ValidateDefinitionTest tests pass. — decided by Josh Handel, implemented by Kaylee

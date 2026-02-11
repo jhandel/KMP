@@ -74,11 +74,11 @@ class WarrantWorkflowProvider
                 'label' => 'Create Warrant Roster',
                 'description' => 'Create a warrant roster for approval',
                 'inputSchema' => [
-                    'name' => ['type' => 'string', 'label' => 'Roster Name', 'required' => true],
-                    'description' => ['type' => 'string', 'label' => 'Description'],
-                    'entityType' => ['type' => 'string', 'label' => 'Entity Type', 'required' => true],
-                    'entityId' => ['type' => 'integer', 'label' => 'Entity ID', 'required' => true],
-                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                    'name' => ['type' => 'string', 'label' => 'Roster Name', 'required' => true, 'description' => 'Display name for the warrant roster'],
+                    'description' => ['type' => 'string', 'label' => 'Description', 'default' => ''],
+                    'entityType' => ['type' => 'string', 'label' => 'Entity Type', 'required' => true, 'description' => 'CakePHP table alias for the warranted entity'],
+                    'entityId' => ['type' => 'integer', 'label' => 'Entity ID', 'required' => true, 'description' => 'Primary key of the warranted entity'],
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true, 'description' => 'The member receiving the warrant'],
                     'startOn' => ['type' => 'datetime', 'label' => 'Start Date', 'required' => true],
                     'expiresOn' => ['type' => 'datetime', 'label' => 'Expires On'],
                     'memberRoleId' => ['type' => 'integer', 'label' => 'Member Role ID'],
@@ -95,8 +95,8 @@ class WarrantWorkflowProvider
                 'label' => 'Activate Warrants',
                 'description' => 'Activate all warrants in an approved roster',
                 'inputSchema' => [
-                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true],
-                    'approverId' => ['type' => 'integer', 'label' => 'Approver ID', 'required' => true],
+                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true, 'description' => 'The ID of the warrant roster to activate'],
+                    'approverId' => ['type' => 'integer', 'label' => 'Approver ID', 'required' => true, 'description' => 'Member ID of the approver'],
                 ],
                 'outputSchema' => [
                     'activated' => ['type' => 'boolean', 'label' => 'Activation Successful'],
@@ -131,9 +131,9 @@ class WarrantWorkflowProvider
                 'label' => 'Decline Warrant Roster',
                 'description' => 'Decline a warrant roster and cancel its warrants',
                 'inputSchema' => [
-                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true],
-                    'reason' => ['type' => 'string', 'label' => 'Decline Reason', 'required' => true],
-                    'rejecterId' => ['type' => 'integer', 'label' => 'Rejecter ID', 'required' => true],
+                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true, 'description' => 'The ID of the warrant roster to decline'],
+                    'reason' => ['type' => 'string', 'label' => 'Decline Reason', 'required' => true, 'description' => 'Reason for declining the warrant roster'],
+                    'rejecterId' => ['type' => 'integer', 'label' => 'Rejecter ID', 'required' => true, 'description' => 'Member ID of the person declining'],
                 ],
                 'outputSchema' => [
                     'declined' => ['type' => 'boolean', 'label' => 'Decline Successful'],
@@ -147,7 +147,7 @@ class WarrantWorkflowProvider
                 'label' => 'Notify Warrant Issued',
                 'description' => 'Send warrant-issued notification emails to each member in the roster',
                 'inputSchema' => [
-                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true],
+                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true, 'description' => 'The ID of the warrant roster to notify about'],
                 ],
                 'outputSchema' => [
                     'emailsSent' => ['type' => 'integer', 'label' => 'Emails Sent'],

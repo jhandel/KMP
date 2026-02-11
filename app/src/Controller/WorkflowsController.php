@@ -155,6 +155,12 @@ class WorkflowsController extends AppController
             'actions' => WorkflowActionRegistry::getForDesigner(),
             'conditions' => WorkflowConditionRegistry::getForDesigner(),
             'entities' => WorkflowEntityRegistry::getForDesigner(),
+            'approvalOutputSchema' => WorkflowActionRegistry::APPROVAL_OUTPUT_SCHEMA,
+            'builtinContext' => [
+                ['path' => '$.instance.id', 'label' => 'Instance ID', 'type' => 'integer'],
+                ['path' => '$.instance.created', 'label' => 'Instance Created', 'type' => 'datetime'],
+                ['path' => '$.triggeredBy', 'label' => 'Triggered By (member ID)', 'type' => 'integer'],
+            ],
         ];
         $this->set('data', $data);
         $this->viewBuilder()->setOption('serialize', 'data');
