@@ -125,3 +125,15 @@ Completed 9 documentation tasks (8 modified, 1 no-change-needed):
 📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Wash's frontend review merged to decisions.md. P0 save bug confirmed. Backend agents found P0 issues in DI bypass and approval transactions that affect frontend integration. — decided by Mal, Kaylee, Wash, Jayne
 
 📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee
+
+### 2026-02-10: Workflow Designer — Policy Approver Type
+
+Added "By Policy" approver type to `workflow-config-panel.js` `_approvalHTML()`. The seeded warrant workflow uses `approverType: "policy"` with fields `policyClass`, `policyAction`, `entityTable`, `entityIdKey`, and `permission` — but the designer dropdown was missing this option, making policy configs invisible and vulnerable to being wiped on save.
+
+Changes:
+- Added `<option value="policy">By Policy</option>` to the approverType dropdown
+- Added 5 conditional policy fields (policyClass, policyAction, entityTable, entityIdKey, permission) with inline `display` toggle based on `isPolicy`
+- Hid the Permission/Role (`approverValue`) field when policy is selected since policy type uses its own field set
+- All new fields use the same `data-action="change->workflow-designer#updateNodeConfig"` pattern
+- entityIdKey field has `data-variable-picker="true"` since it references context variables (e.g. `trigger.rosterId`)
+- Note: The config panel is statically rendered — visibility toggles are baked into the HTML at render time. When the user changes the dropdown, `updateNodeConfig` fires which re-renders the entire config panel with the new approverType, so the toggle works correctly without JS event listeners.
