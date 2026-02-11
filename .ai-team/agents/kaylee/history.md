@@ -170,3 +170,34 @@ Key finding: `WorkflowConditionRegistry::getCondition()` already existed — no 
 📌 Team update (2026-02-11): Fixed approval node context bug — `resumeWorkflow()` now populates `$context['nodes'][$nodeId]` with APPROVAL_OUTPUT_SCHEMA fields so `$.nodes.<nodeId>.approverId` etc. resolve at runtime. 459 tests pass. — fixed by Kaylee
 
 📌 Team update (2026-02-11): Approval node context fix consolidated with Jayne's test coverage into single decision — decided by Scribe
+
+### 2026-02-11: Fix TriggerDispatcher Static Call Bug in DefaultOfficerManager
+
+**Bug:** `DefaultOfficerManager` called `TriggerDispatcher::dispatch()` statically in two places (assign line 91, release line 606), but `dispatch()` is an instance method requiring `WorkflowEngineInterface` via constructor injection. This caused a fatal error when the officer-hire workflow was active.
+
+**Fix:** Injected `TriggerDispatcher` into `DefaultOfficerManager` via constructor DI, matching the existing pattern in `DefaultWarrantManager`. Updated `OfficersPlugin::services()` to pass `TriggerDispatcher::class` as a DI argument. Changed both static calls to instance calls (`$this->triggerDispatcher->dispatch(...)`).
+
+**Files changed:** `DefaultOfficerManager.php` (constructor + 2 call sites), `OfficersPlugin.php` (DI registration). No other static callers found in the codebase. All 463 tests pass.
+
+**Rule:** `TriggerDispatcher` must always be injected via DI and called on an instance. It cannot work statically because it depends on `WorkflowEngineInterface`.
+
+📌 Team update (2026-02-11): Fixed TriggerDispatcher static call bug — `DefaultOfficerManager` now injects TriggerDispatcher via DI instead of calling statically. 2 files changed, 463 tests pass. — fixed by Kaylee
+
+### 2026-02-11: Fix Grid Date Column Timezone Display & Filters
+
+**Bug:** The `case 'date':` block in `dataverse_table.php` displayed dates using raw `$value->format('F j, Y')` (UTC), while the `case 'datetime':` block correctly used `$this->Timezone->format($value)`. Warrant grid columns `start_on` and `expires_on` are type `date`, so they showed UTC dates to users.
+
+**Fixes (3 files):**
+
+1. **`dataverse_table.php`** — Changed `case 'date':` to use `$this->Timezone->date($value)` (the view helper's date-only method that converts to user/kingdom timezone before formatting). Matches the pattern already used by `case 'datetime':`.
+
+2. **`DataverseGridTrait.php`** — Added `TzHelper::toUtc()` conversion for date-only filter values (Y-m-d strings) before applying them to SQL queries. Start dates convert start-of-day (`00:00:00`) in kingdom timezone to UTC. End dates convert end-of-day (`23:59:59`) in kingdom timezone to UTC. Original values preserved for filter pill display. This affects all grids with `date-range` filter columns (Warrants, WarrantRosters, Gatherings, GatheringAttendances, WarrantPeriods, MemberRoles).
+
+3. **`WarrantsGridColumns.php`** — Changed system view boundary dates from `FrozenDate::today()` (UTC) to kingdom-timezone-aware today using `TzHelper::getAppTimezone()`. Ensures "Current", "Upcoming", "Previous" views use the kingdom's local date.
+
+#### Key Patterns Discovered
+- The `Timezone` view helper already had a `date()` method perfect for date-only display with timezone conversion — wraps `TzHelper::toUserTimezone()` + `TzHelper::formatDate()`.
+- `TzHelper::toUtc()` with `$member = null` falls back to the app's configured timezone (`KMP.DefaultTimezone`), which is the kingdom's timezone. This is the correct default for grid filters.
+- Expression tree date handling in `GridViewConfig.php` does NOT do timezone conversion — potential follow-up item for system views that use `expression` blocks with date operators (e.g., the "Previous" warrants view's OR expression).
+
+📌 Team update (2026-02-11): Fixed grid date timezone bug — `case 'date':` now uses `$this->Timezone->date()`, date-range filters convert to UTC via `TzHelper::toUtc()`, warrants system views use kingdom-timezone today. 3 files changed, 463 tests pass. — fixed by Kaylee

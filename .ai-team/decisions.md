@@ -2587,3 +2587,69 @@ Any JavaScript code that needs to render autocomplete widgets must use `renderAu
 **Why:** Consistency — every node type now has a proper config panel. Trigger nodes can map payload fields via `inputMapping.*` namespace. Delay inputs support variable references. Subworkflow, fork, join, and end get appropriate UI. Variable picker outputs added for delay, loop, and subworkflow so downstream nodes can reference their results.
 **Pattern:** `inputMapping.*` form fields follow the same nesting pattern as `params.*` — collected in `updateNodeConfig()` and stored as `config.inputMapping = {}`. The `event` field now triggers config panel re-render like `action` and `condition`.
 
+# Decision: TriggerDispatcher Must Be Injected via DI, Never Called Statically
+
+**Date:** 2026-02-11
+**Author:** Kaylee (Backend Dev)
+**Status:** Implemented
+
+## Context
+
+`TriggerDispatcher::dispatch()` is an instance method that depends on `WorkflowEngineInterface` injected via constructor. `DefaultOfficerManager` was calling it statically (`TriggerDispatcher::dispatch(...)`) in two places, causing a fatal error when the officer-hire workflow was active.
+
+## Decision
+
+`TriggerDispatcher` must always be injected via the DI container and called on an instance (`$this->triggerDispatcher->dispatch(...)`), never statically. This matches the existing pattern in `DefaultWarrantManager`.
+
+## Changes Made
+
+1. **`DefaultOfficerManager.php`** — Added `TriggerDispatcher` as a third constructor parameter. Changed both static calls (lines 91, 606) to instance calls.
+2. **`OfficersPlugin.php`** — Added `TriggerDispatcher::class` as a DI argument for `OfficerManagerInterface` registration.
+
+## Rule for Future Development
+
+Any service that needs to dispatch workflow triggers must inject `TriggerDispatcher` via constructor DI. Do not call `TriggerDispatcher::dispatch()` statically — it will always fail at runtime.
+# Decision: Grid Date Columns Use Timezone Conversion
+
+**Date:** 2026-02-11
+**Author:** Kaylee
+**Status:** Implemented
+**Requested by:** Josh Handel
+
+## Context
+
+The `dataverse_table.php` template had two date rendering paths:
+- `case 'datetime':` — correctly used `$this->Timezone->format($value)` for timezone conversion
+- `case 'date':` — used raw `$value->format('F j, Y')` with no timezone conversion
+
+Warrant grid columns `start_on` and `expires_on` are type `date`, so they displayed in UTC.
+
+## Decision
+
+1. **All `date` type grid columns now use timezone conversion** via `$this->Timezone->date($value)`. This affects every grid that has `type: 'date'` columns, not just warrants.
+
+2. **Date-range filter values are converted from kingdom timezone to UTC** before being applied to SQL queries. `TzHelper::toUtc()` handles the conversion using the kingdom's configured timezone (`KMP.DefaultTimezone` app setting). Original values are preserved for filter pill display.
+
+3. **System view boundary dates use kingdom-timezone "today"** instead of UTC today. `WarrantsGridColumns::getSystemViews()` now uses `TzHelper::getAppTimezone()` to determine the current date in the kingdom's timezone.
+
+## Impact
+
+- All grids with `date` type columns will now display in user/kingdom timezone
+- All grids with `date-range` filter columns will convert filter boundaries to UTC (Warrants, WarrantRosters, Gatherings, GatheringAttendances, WarrantPeriods, MemberRoles)
+- System view dates for warrants are now kingdom-timezone-aware
+
+## Known Limitation
+
+`GridViewConfig.php`'s expression tree (`extractExpression`) does NOT perform timezone conversion for `dateRange`, `lt`, `gt`, etc. operators. System views using `expression` blocks with date values (e.g., the "Previous" warrants view's OR expression) may have ±1 day boundary inaccuracy near timezone midnight boundaries. This is mitigated by the fact that status filters (EXPIRED, DEACTIVATED) handle most cases in the OR condition.
+
+## Files Changed
+
+- `app/templates/element/dataverse_table.php` — display fix
+- `app/src/Controller/DataverseGridTrait.php` — filter UTC conversion
+- `app/src/KMP/GridColumns/WarrantsGridColumns.php` — kingdom-timezone today
+
+
+---
+---
+
+
