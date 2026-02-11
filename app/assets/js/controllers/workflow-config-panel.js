@@ -127,22 +127,15 @@ export default class WorkflowConfigPanel {
                 html += '<h6 class="mt-3 mb-2 text-muted small">Input Parameters</h6>'
                 const params = config.params || {}
                 for (const [key, meta] of Object.entries(action.inputSchema)) {
-                    const currentVal = params[key] || ''
-                    const escapedVal = this._escapeAttr(currentVal)
-                    const required = meta.required ? '<span class="text-danger">*</span>' : ''
-                    const typeHint = `<span class="text-muted small">(${meta.type})</span>`
+                    const currentVal = params[key] !== undefined ? params[key] : ''
                     const desc = meta.description ? `<small class="form-text text-muted">${meta.description}</small>` : ''
-                    html += `<div class="mb-2">
-                        <label class="form-label form-label-sm mb-0">
-                            ${meta.label || key} ${required} ${typeHint}
-                        </label>
-                        <input type="text" class="form-control form-control-sm"
-                            name="params.${key}" value="${escapedVal}"
-                            placeholder="${meta.description || '$.path or literal value'}"
-                            data-action="change->workflow-designer#updateNodeConfig"
-                            data-variable-picker="true">
-                        ${desc}
-                    </div>`
+                    html += this.renderValuePicker(`params.${key}`, {
+                        label: meta.label || key,
+                        type: meta.type || 'string',
+                        required: meta.required || false,
+                        description: meta.description || ''
+                    }, currentVal, {allowContext: true, allowAppSetting: true})
+                    html += desc
                 }
             }
         }
@@ -175,11 +168,13 @@ export default class WorkflowConfigPanel {
             html += `<div class="mb-3">
                 <label class="form-label">Field Path</label>
                 <input type="text" class="form-control form-control-sm" name="field" value="${config.field || ''}" placeholder="$.entity.field_name" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Expected Value</label>
-                <input type="text" class="form-control form-control-sm" name="expectedValue" value="${config.expectedValue || ''}" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
             </div>`
+            html += this.renderValuePicker('expectedValue', {
+                label: 'Expected Value',
+                type: 'string',
+                required: false,
+                description: 'Value to compare against'
+            }, config.expectedValue, {allowContext: true, allowAppSetting: true})
         }
 
         if (config.condition && !config.condition.startsWith('Core.')) {
@@ -188,19 +183,13 @@ export default class WorkflowConfigPanel {
                 html += '<h6 class="mt-3 mb-2 text-muted small">Condition Parameters</h6>'
                 const params = config.params || {}
                 for (const [key, meta] of Object.entries(cond.inputSchema)) {
-                    const currentVal = params[key] || config[key] || ''
-                    const escapedVal = this._escapeAttr(currentVal)
-                    const required = meta.required ? '<span class="text-danger">*</span>' : ''
-                    html += `<div class="mb-2">
-                        <label class="form-label form-label-sm mb-0">
-                            ${meta.label || key} ${required} <span class="text-muted small">(${meta.type})</span>
-                        </label>
-                        <input type="text" class="form-control form-control-sm"
-                            name="params.${key}" value="${escapedVal}"
-                            placeholder="$.path or literal value"
-                            data-action="change->workflow-designer#updateNodeConfig"
-                            data-variable-picker="true">
-                    </div>`
+                    const currentVal = params[key] !== undefined ? params[key] : (config[key] || '')
+                    html += this.renderValuePicker(`params.${key}`, {
+                        label: meta.label || key,
+                        type: meta.type || 'string',
+                        required: meta.required || false,
+                        description: meta.description || ''
+                    }, currentVal, {allowContext: true, allowAppSetting: true})
                 }
             }
         }
@@ -323,7 +312,12 @@ export default class WorkflowConfigPanel {
                    data-action="change->workflow-designer#updateNodeConfig">
           </div>
         </div>
-        ${this._requiredCountHTML(config)}
+        ${this.renderValuePicker('requiredCount', {
+            label: 'Required Approvals',
+            type: 'integer',
+            required: true,
+            description: 'Number of approvals needed'
+        }, config.requiredCount, {allowContext: true, allowAppSetting: true})}
         <div class="form-check mb-3">
             <input type="checkbox" class="form-check-input" name="allowParallel" id="allowParallel" ${config.allowParallel !== false ? 'checked' : ''} data-action="change->workflow-designer#updateNodeConfig">
             <label class="form-check-label" for="allowParallel">Allow Parallel Approvals</label>
@@ -335,13 +329,13 @@ export default class WorkflowConfigPanel {
     }
 
     _delayHTML(config) {
-        return `<div class="mb-3">
-            <label class="form-label">Duration</label>
-            <input type="text" class="form-control form-control-sm" name="duration"
-                value="${config.duration || ''}" placeholder="e.g. 1h, 2d, 30m, or $.path"
-                data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
-        </div>
-        <div class="mb-3">
+        return this.renderValuePicker('duration', {
+            label: 'Duration',
+            type: 'string',
+            required: false,
+            description: 'e.g. 1h, 2d, 30m'
+        }, config.duration, {allowContext: true, allowAppSetting: true}) +
+        `<div class="mb-3">
             <label class="form-label">Wait For Event (optional)</label>
             <input type="text" class="form-control form-control-sm" name="waitEvent"
                 value="${config.waitEvent || ''}" placeholder="Event to resume on"
@@ -350,11 +344,13 @@ export default class WorkflowConfigPanel {
     }
 
     _loopHTML(config) {
-        return `<div class="mb-3">
-            <label class="form-label">Max Iterations</label>
-            <input type="number" class="form-control form-control-sm" name="maxIterations" value="${config.maxIterations || 100}" min="1" data-action="change->workflow-designer#updateNodeConfig">
-        </div>
-        <div class="mb-3">
+        return this.renderValuePicker('maxIterations', {
+            label: 'Max Iterations',
+            type: 'integer',
+            required: false,
+            description: 'Maximum loop iterations'
+        }, config.maxIterations !== undefined ? config.maxIterations : 100, {allowContext: true, allowAppSetting: true}) +
+        `<div class="mb-3">
             <label class="form-label">Exit Condition</label>
             <input type="text" class="form-control form-control-sm" name="exitCondition" value="${config.exitCondition || ''}" placeholder="Expression to evaluate" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>`
@@ -404,50 +400,113 @@ export default class WorkflowConfigPanel {
         </div>`
     }
 
-    _requiredCountHTML(config) {
-        const rc = config.requiredCount
-        let rcType = 'fixed'
-        let rcFixedVal = 1
-        let rcSettingKey = ''
-        let rcContextPath = ''
+    /**
+     * Render a universal value picker for any parameter field.
+     * @param {string} fieldName - Config key (e.g., 'requiredCount', 'params.memberId', 'duration')
+     * @param {object} fieldMeta - {label, type ('string'|'integer'|'boolean'), required, description}
+     * @param {*} currentValue - Current value (scalar, $.path string, or {type,value|path|key} object)
+     * @param {object} options - {allowContext: true, allowAppSetting: true}
+     * @returns {string} HTML string
+     */
+    renderValuePicker(fieldName, fieldMeta, currentValue, options = {}) {
+        const allowContext = options.allowContext !== false
+        const allowAppSetting = options.allowAppSetting !== false
 
-        if (typeof rc === 'object' && rc !== null) {
-            rcType = rc.type || 'fixed'
-            if (rcType === 'app_setting') rcSettingKey = rc.key || ''
-            else if (rcType === 'context') rcContextPath = rc.path || ''
-            else if (rcType === 'fixed') rcFixedVal = rc.value || 1
-        } else if (rc !== undefined && rc !== null && rc !== '') {
-            rcFixedVal = parseInt(rc, 10) || 1
+        // Parse currentValue to determine active type and value
+        let activeType = 'fixed'
+        let fixedValue = ''
+        let contextPath = ''
+        let settingKey = ''
+
+        if (currentValue === null || currentValue === undefined) {
+            activeType = 'fixed'
+            fixedValue = ''
+        } else if (typeof currentValue === 'object' && currentValue !== null && currentValue.type) {
+            activeType = currentValue.type
+            if (activeType === 'context') contextPath = currentValue.path || ''
+            else if (activeType === 'app_setting') settingKey = currentValue.key || ''
+            else if (activeType === 'fixed') fixedValue = currentValue.value ?? ''
+        } else if (typeof currentValue === 'string' && currentValue.startsWith('$.')) {
+            activeType = 'context'
+            contextPath = currentValue
+        } else {
+            activeType = 'fixed'
+            fixedValue = currentValue
         }
 
-        return `<div class="mb-3">
-            <label class="form-label">Required Approvals</label>
-            <select class="form-select form-select-sm mb-2" name="requiredCountType"
-                data-action="change->workflow-designer#onRequiredCountTypeChange">
-                <option value="fixed" ${rcType === 'fixed' ? 'selected' : ''}>Fixed Value</option>
-                <option value="app_setting" ${rcType === 'app_setting' ? 'selected' : ''}>App Setting</option>
-                <option value="context" ${rcType === 'context' ? 'selected' : ''}>Context Path</option>
-            </select>
-            <div data-rc-section="fixed" style="display:${rcType === 'fixed' ? 'block' : 'none'};">
-                <input type="number" class="form-control form-control-sm" name="requiredCountFixedValue"
-                    value="${rcFixedVal}" min="1"
-                    data-action="change->workflow-designer#updateNodeConfig">
-            </div>
-            <div data-rc-section="app_setting" style="display:${rcType === 'app_setting' ? 'block' : 'none'};">
-                <select class="form-select form-select-sm" name="requiredCountSettingKey"
-                    data-action="change->workflow-designer#updateNodeConfig"
-                    data-rc-settings-select="true">
-                    <option value="">Loading settings...</option>
-                    ${rcSettingKey ? `<option value="${this._escapeAttr(rcSettingKey)}" selected>${this._escapeAttr(rcSettingKey)}</option>` : ''}
+        const label = fieldMeta.label || fieldName
+        const requiredMark = fieldMeta.required ? ' <span class="text-danger">*</span>' : ''
+        const escapedFieldName = this._escapeAttr(fieldName)
+
+        // Type dropdown options
+        let typeOptions = `<option value="fixed" ${activeType === 'fixed' ? 'selected' : ''}>Fixed Value</option>`
+        if (allowContext) {
+            typeOptions += `<option value="context" ${activeType === 'context' ? 'selected' : ''}>Context Path</option>`
+        }
+        if (allowAppSetting) {
+            typeOptions += `<option value="app_setting" ${activeType === 'app_setting' ? 'selected' : ''}>App Setting</option>`
+        }
+
+        // Build the dynamic input based on active type
+        const inputHTML = this._renderValuePickerInput(fieldName, fieldMeta, activeType, {
+            fixedValue, contextPath, settingKey
+        })
+
+        return `<div class="mb-2 value-picker" data-vp-field="${escapedFieldName}">
+            <label class="form-label form-label-sm mb-0">${label}${requiredMark}</label>
+            <div class="input-group input-group-sm mb-1">
+                <select class="form-select form-select-sm" data-vp-type="${escapedFieldName}"
+                    data-action="change->workflow-designer#onValuePickerTypeChange"
+                    style="max-width: 140px;">
+                    ${typeOptions}
                 </select>
-            </div>
-            <div data-rc-section="context" style="display:${rcType === 'context' ? 'block' : 'none'};">
-                <input type="text" class="form-control form-control-sm" name="requiredCountContextPath"
-                    value="${this._escapeAttr(rcContextPath)}" placeholder="$.someField"
-                    data-action="change->workflow-designer#updateNodeConfig"
-                    data-variable-picker="true">
+                ${inputHTML}
             </div>
         </div>`
+    }
+
+    _renderValuePickerInput(fieldName, fieldMeta, activeType, values) {
+        const escapedFieldName = this._escapeAttr(fieldName)
+        const dataType = fieldMeta.type || 'string'
+
+        if (activeType === 'context') {
+            return `<input type="text" class="form-control form-control-sm"
+                name="${escapedFieldName}" value="${this._escapeAttr(values.contextPath)}"
+                placeholder="$.path.to.value"
+                data-action="change->workflow-designer#updateNodeConfig"
+                data-variable-picker="true">`
+        }
+
+        if (activeType === 'app_setting') {
+            const keyEsc = this._escapeAttr(values.settingKey)
+            return `<select class="form-select form-select-sm" name="${escapedFieldName}"
+                data-action="change->workflow-designer#updateNodeConfig"
+                data-vp-settings-select="${escapedFieldName}">
+                <option value="">Loading settings...</option>
+                ${values.settingKey ? `<option value="${keyEsc}" selected>${keyEsc}</option>` : ''}
+            </select>`
+        }
+
+        // Fixed value input
+        if (dataType === 'integer') {
+            return `<input type="number" class="form-control form-control-sm"
+                name="${escapedFieldName}" value="${this._escapeAttr(String(values.fixedValue))}"
+                data-action="change->workflow-designer#updateNodeConfig">`
+        }
+
+        if (dataType === 'boolean') {
+            const checked = values.fixedValue ? 'checked' : ''
+            return `<div class="form-check ms-2 mt-1">
+                <input type="checkbox" class="form-check-input" name="${escapedFieldName}"
+                    ${checked}
+                    data-action="change->workflow-designer#updateNodeConfig">
+            </div>`
+        }
+
+        // Default: string text input
+        return `<input type="text" class="form-control form-control-sm"
+            name="${escapedFieldName}" value="${this._escapeAttr(String(values.fixedValue))}"
+            data-action="change->workflow-designer#updateNodeConfig">`
     }
 
     _escapeAttr(str) {

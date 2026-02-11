@@ -406,11 +406,13 @@ class WorkflowDesignerController extends Controller {
             if (nodeConfig.approverType === 'policy' && nodeConfig.policyClass) {
                 this._loadPolicyActions(nodeConfig.policyClass, nodeConfig.policyAction)
             }
-            // Pre-populate app settings dropdown for requiredCount
-            const rc = nodeConfig.requiredCount
-            if (typeof rc === 'object' && rc !== null && rc.type === 'app_setting') {
-                this._loadAppSettings(this.nodeConfigTarget, rc.key)
-            }
+            // Pre-populate app settings dropdowns for value pickers
+            this.nodeConfigTarget.querySelectorAll('[data-vp-settings-select]').forEach(selectEl => {
+                const currentVal = selectEl.value
+                if (currentVal) {
+                    this._loadAppSettingsForPicker(selectEl, currentVal)
+                }
+            })
         }
     }
 
@@ -462,16 +464,70 @@ class WorkflowDesignerController extends Controller {
         })
     }
 
-    onRequiredCountTypeChange(event) {
-        this.updateNodeConfig(event)
-        const form = event.target.closest('form')
-        const selectedType = event.target.value
-        form.querySelectorAll('[data-rc-section]').forEach(section => {
-            section.style.display = section.dataset.rcSection === selectedType ? 'block' : 'none'
+    onValuePickerTypeChange(event) {
+        const select = event.target
+        const fieldName = select.dataset.vpType
+        const selectedType = select.value
+        const container = select.closest('.value-picker')
+        const form = select.closest('form')
+        const nodeId = form?.dataset.nodeId
+        const nodeData = nodeId ? this.editor.getNodeFromId(nodeId) : null
+        const inputGroup = select.closest('.input-group')
+
+        // Determine fieldMeta type from existing input or default to string
+        const existingInput = inputGroup.querySelector(`[name="${fieldName}"]`)
+        const isNumber = existingInput?.type === 'number'
+        const dataType = isNumber ? 'integer' : 'string'
+
+        // Remove old input (everything after the select in the input-group)
+        const oldInputs = inputGroup.querySelectorAll(`[name="${fieldName}"]`)
+        oldInputs.forEach(el => {
+            // For checkbox, remove the wrapping form-check div
+            if (el.type === 'checkbox') {
+                el.closest('.form-check')?.remove()
+            } else {
+                el.remove()
+            }
         })
-        if (selectedType === 'app_setting') {
-            this._loadAppSettings(form)
+
+        let newInputHTML = ''
+        if (selectedType === 'context') {
+            newInputHTML = `<input type="text" class="form-control form-control-sm"
+                name="${fieldName}" value="" placeholder="$.path.to.value"
+                data-action="change->workflow-designer#updateNodeConfig"
+                data-variable-picker="true">`
+        } else if (selectedType === 'app_setting') {
+            newInputHTML = `<select class="form-select form-select-sm" name="${fieldName}"
+                data-action="change->workflow-designer#updateNodeConfig"
+                data-vp-settings-select="${fieldName}">
+                <option value="">Loading settings...</option>
+            </select>`
+        } else {
+            // Fixed value
+            if (dataType === 'integer') {
+                newInputHTML = `<input type="number" class="form-control form-control-sm"
+                    name="${fieldName}" value=""
+                    data-action="change->workflow-designer#updateNodeConfig">`
+            } else {
+                newInputHTML = `<input type="text" class="form-control form-control-sm"
+                    name="${fieldName}" value=""
+                    data-action="change->workflow-designer#updateNodeConfig">`
+            }
         }
+
+        inputGroup.insertAdjacentHTML('beforeend', newInputHTML)
+
+        // For app_setting, fetch and populate the dropdown
+        if (selectedType === 'app_setting') {
+            this._loadAppSettingsForPicker(inputGroup.querySelector(`[data-vp-settings-select="${fieldName}"]`))
+        }
+
+        // Re-attach variable pickers if context type
+        if (selectedType === 'context' && this._variablePicker && nodeId) {
+            this._variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+        }
+
+        this.updateNodeConfig(event)
     }
 
     async onPolicyClassChange(event) {
@@ -517,10 +573,8 @@ class WorkflowDesignerController extends Controller {
         }
     }
 
-    async _loadAppSettings(formOrContainer, selectedKey) {
-        const settingsSelect = (formOrContainer || this.nodeConfigTarget)
-            .querySelector('[data-rc-settings-select]')
-        if (!settingsSelect) return
+    async _loadAppSettingsForPicker(selectEl, selectedKey) {
+        if (!selectEl) return
 
         try {
             const response = await fetch('/app-settings/workflow-list.json')
@@ -534,13 +588,13 @@ class WorkflowDesignerController extends Controller {
                 const selected = key === selectedKey ? 'selected' : ''
                 options += `<option value="${key}" ${selected}>${label}</option>`
             })
-            settingsSelect.innerHTML = options
+            selectEl.innerHTML = options
         } catch (error) {
             console.error('Failed to load app settings:', error)
             if (!selectedKey) {
-                settingsSelect.innerHTML = '<option value="">Settings unavailable</option>'
+                selectEl.innerHTML = '<option value="">Settings unavailable</option>'
             } else {
-                settingsSelect.innerHTML =
+                selectEl.innerHTML =
                     `<option value="">Settings unavailable</option>` +
                     `<option value="${selectedKey}" selected>${selectedKey}</option>`
             }
@@ -561,7 +615,16 @@ class WorkflowDesignerController extends Controller {
         const newInputMapping = {}
         let hasInputMapping = false
 
+        // Collect value picker type selections first
+        const vpTypeSelects = form.querySelectorAll('[data-vp-type]')
+        const vpFields = new Set()
+        vpTypeSelects.forEach(select => vpFields.add(select.dataset.vpType))
+
         for (const [key, value] of formData.entries()) {
+            // Skip fields managed by value pickers — they're composed below
+            if (vpFields.has(key)) continue
+            if (key.startsWith('params.') && vpFields.has(key)) continue
+
             if (key.startsWith('params.')) {
                 const paramKey = key.substring(7)
                 newParams[paramKey] = value
@@ -575,6 +638,33 @@ class WorkflowDesignerController extends Controller {
             }
         }
 
+        // Generic value picker composition
+        vpTypeSelects.forEach(select => {
+            const fieldName = select.dataset.vpType
+            const selectedType = select.value
+            const container = select.closest('.value-picker')
+            const input = container.querySelector(`[name="${fieldName}"]`)
+            const rawValue = input?.value ?? ''
+
+            let composedValue
+            if (selectedType === 'fixed') {
+                const isNumber = input?.type === 'number'
+                composedValue = isNumber ? (rawValue === '' ? '' : Number(rawValue)) : rawValue
+            } else if (selectedType === 'context') {
+                composedValue = rawValue ? { type: 'context', path: rawValue } : ''
+            } else if (selectedType === 'app_setting') {
+                composedValue = rawValue ? { type: 'app_setting', key: rawValue } : ''
+            }
+
+            if (fieldName.startsWith('params.')) {
+                const paramKey = fieldName.substring(7)
+                newParams[paramKey] = composedValue
+                hasParams = true
+            } else {
+                nodeData.data.config[fieldName] = composedValue
+            }
+        })
+
         if (hasParams) {
             nodeData.data.config.params = newParams
         }
@@ -583,24 +673,6 @@ class WorkflowDesignerController extends Controller {
         }
 
         nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true
-
-        // Compose requiredCount from type selector + value fields
-        if (nodeData.data.config.requiredCountType !== undefined) {
-            const rcType = nodeData.data.config.requiredCountType
-            if (rcType === 'app_setting') {
-                const key = nodeData.data.config.requiredCountSettingKey || ''
-                nodeData.data.config.requiredCount = key ? { type: 'app_setting', key } : 1
-            } else if (rcType === 'context') {
-                const path = nodeData.data.config.requiredCountContextPath || ''
-                nodeData.data.config.requiredCount = path ? { type: 'context', path } : 1
-            } else {
-                nodeData.data.config.requiredCount = parseInt(nodeData.data.config.requiredCountFixedValue, 10) || 1
-            }
-            delete nodeData.data.config.requiredCountType
-            delete nodeData.data.config.requiredCountFixedValue
-            delete nodeData.data.config.requiredCountSettingKey
-            delete nodeData.data.config.requiredCountContextPath
-        }
 
         this.editor.updateNodeDataFromId(nodeId, nodeData.data)
 

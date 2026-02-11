@@ -641,10 +641,14 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             : new $serviceClass();
         $context = $instance->context ?? [];
 
-        // Merge config.params into top-level config so actions can read params directly
+        // Resolve and merge config.params into top-level config so actions can read params directly
         $nodeConfig = $node['config'] ?? [];
         if (!empty($nodeConfig['params']) && is_array($nodeConfig['params'])) {
-            $nodeConfig = array_merge($nodeConfig, $nodeConfig['params']);
+            $resolvedParams = [];
+            foreach ($nodeConfig['params'] as $key => $paramValue) {
+                $resolvedParams[$key] = $this->resolveParamValue($paramValue, $context);
+            }
+            $nodeConfig = array_merge($nodeConfig, $resolvedParams);
         }
 
         $result = $service->{$serviceMethod}($context, $nodeConfig);
@@ -685,10 +689,17 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 $evaluator = $this->container->has($evaluatorClass)
                     ? $this->container->get($evaluatorClass)
                     : new $evaluatorClass();
-                // Merge config.params into top-level config so evaluators can read params directly
+                // Resolve and merge config.params into top-level config so evaluators can read params directly
                 $nodeConfig = $node['config'] ?? [];
+                if (isset($nodeConfig['expectedValue'])) {
+                    $nodeConfig['expectedValue'] = $this->resolveParamValue($nodeConfig['expectedValue'], $context);
+                }
                 if (!empty($nodeConfig['params']) && is_array($nodeConfig['params'])) {
-                    $nodeConfig = array_merge($nodeConfig, $nodeConfig['params']);
+                    $resolvedParams = [];
+                    foreach ($nodeConfig['params'] as $key => $paramValue) {
+                        $resolvedParams[$key] = $this->resolveParamValue($paramValue, $context);
+                    }
+                    $nodeConfig = array_merge($nodeConfig, $resolvedParams);
                 }
                 $result = (bool)$evaluator->{$evaluatorMethod}($context, $nodeConfig);
             } else {
@@ -1030,48 +1041,82 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     }
 
     /**
-     * Resolve a required count value that may be an integer or a config object.
+     * Resolve a parameter value that may be a plain scalar, a $.path string,
+     * or a value descriptor object {type: '...', ...}.
      *
-     * Supported types: int, {"type": "fixed", "value": N},
-     * {"type": "app_setting", "key": "Setting.Name"}
+     * @param mixed $value The raw parameter value from workflow config
+     * @param array $context The workflow instance context
+     * @param mixed $default Fallback if resolution fails
+     * @return mixed The resolved value
      */
-    protected function resolveRequiredCount(mixed $value, array $context): int
+    protected function resolveParamValue(mixed $value, array $context, mixed $default = null): mixed
     {
-        if (is_int($value) || is_numeric($value)) {
-            return (int)$value;
+        if ($value === null || $value === '') {
+            return $default;
         }
 
+        // Plain scalar (not a string starting with $.)
+        if (is_scalar($value) && !(is_string($value) && str_starts_with($value, '$.'))) {
+            return $value;
+        }
+
+        // Shorthand: string starting with $. is a context path
+        if (is_string($value) && str_starts_with($value, '$.')) {
+            $resolved = $this->resolveContextValue($context, $value);
+
+            return $resolved ?? $default;
+        }
+
+        // Value descriptor object
         if (is_array($value)) {
             $type = $value['type'] ?? 'fixed';
             switch ($type) {
+                case 'fixed':
+                    return $value['value'] ?? $default;
+
+                case 'context':
+                    $path = $value['path'] ?? '';
+                    if ($path) {
+                        $resolved = $this->resolveContextValue($context, $path);
+
+                        return $resolved ?? ($value['default'] ?? $default);
+                    }
+
+                    return $value['default'] ?? $default;
+
                 case 'app_setting':
                     $key = $value['key'] ?? '';
                     if ($key) {
                         $settingsTable = TableRegistry::getTableLocator()->get('AppSettings');
                         $setting = $settingsTable->find()->where(['name' => $key])->first();
                         if ($setting) {
-                            return (int)$setting->value;
+                            return $setting->value;
                         }
                     }
-                    return (int)($value['default'] ?? 1);
 
-                case 'fixed':
-                    return (int)($value['value'] ?? 1);
-
-                case 'context':
-                    $path = $value['path'] ?? '';
-                    if ($path) {
-                        $resolved = $this->resolveContextValue($context, $path);
-                        return (int)($resolved ?? 1);
-                    }
-                    return 1;
+                    return $value['default'] ?? $default;
 
                 default:
-                    return 1;
+                    Log::warning("WorkflowEngine: Unknown value resolution type '{$type}'");
+
+                    return $default;
             }
         }
 
-        return 1;
+        return $default;
+    }
+
+    /**
+     * Resolve a required count value that may be an integer or a config object.
+     *
+     * Delegates to resolveParamValue() for universal resolution, then ensures
+     * the result is an integer >= 1.
+     */
+    protected function resolveRequiredCount(mixed $value, array $context): int
+    {
+        $resolved = $this->resolveParamValue($value, $context, 1);
+
+        return max(1, (int)$resolved);
     }
 
     /**
