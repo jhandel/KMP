@@ -119,12 +119,12 @@ export default class WorkflowConfigPanel {
     }
 
     _approvalHTML(config) {
-        const permInitSel = config.approverType === 'permission' && config.approverValue
-            ? JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;') : ''
-        const roleInitSel = config.approverType === 'role' && config.approverValue
-            ? JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;') : ''
-        const memberInitSel = config.approverType === 'member' && config.approverValue
-            ? JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;') : ''
+        const permInitAttr = config.approverType === 'permission' && config.approverValue
+            ? `data-ac-init-selection-value='${JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;')}'` : ''
+        const roleInitAttr = config.approverType === 'role' && config.approverValue
+            ? `data-ac-init-selection-value='${JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;')}'` : ''
+        const memberInitAttr = config.approverType === 'member' && config.approverValue
+            ? `data-ac-init-selection-value='${JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;')}'` : ''
 
         return `<div class="mb-3">
             <label class="form-label">Approver Type</label>
@@ -139,69 +139,72 @@ export default class WorkflowConfigPanel {
         <div data-approver-section="permission" style="display:${config.approverType === 'permission' || !config.approverType ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Permission</label>
-            <div data-controller="auto-complete"
-                 data-auto-complete-url-value="/permissions/auto-complete"
-                 data-auto-complete-min-length-value="2"
-                 data-auto-complete-allow-other-value="true"
-                 data-auto-complete-init-selection-value='${permInitSel}'
-                 style="position:relative;">
+            <div data-controller="ac"
+                 data-ac-url-value="/permissions/auto-complete"
+                 data-ac-min-length-value="2"
+                 data-ac-allow-other-value="true"
+                 ${permInitAttr}
+                 class="position-relative">
               <input type="text" class="form-control form-control-sm"
-                     data-auto-complete-target="input" placeholder="Search permissions...">
+                     data-ac-target="input" placeholder="Search permissions...">
               <input type="hidden" name="approverValue" value="${config.approverType === 'permission' ? (config.approverValue || '') : ''}"
-                     data-auto-complete-target="hidden"
+                     data-ac-target="hidden"
                      data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-auto-complete-target="hiddenText">
+              <input type="hidden" data-ac-target="hiddenText">
               <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-auto-complete-target="clearBtn" style="display:none;position:absolute;right:8px;top:8px;">
+                      data-ac-target="clearBtn" data-action="ac#clear"
+                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
                 <i class="bi bi-x-lg"></i>
               </button>
-              <ul class="list-group shadow-sm" data-auto-complete-target="results" style="position:absolute;z-index:1050;width:100%;"></ul>
+              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
             </div>
           </div>
         </div>
         <div data-approver-section="role" style="display:${config.approverType === 'role' ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Role</label>
-            <div data-controller="auto-complete"
-                 data-auto-complete-url-value="/roles/auto-complete"
-                 data-auto-complete-min-length-value="2"
-                 data-auto-complete-allow-other-value="true"
-                 data-auto-complete-init-selection-value='${roleInitSel}'
-                 style="position:relative;">
+            <div data-controller="ac"
+                 data-ac-url-value="/roles/auto-complete"
+                 data-ac-min-length-value="2"
+                 data-ac-allow-other-value="true"
+                 ${roleInitAttr}
+                 class="position-relative">
               <input type="text" class="form-control form-control-sm"
-                     data-auto-complete-target="input" placeholder="Search roles...">
+                     data-ac-target="input" placeholder="Search roles...">
               <input type="hidden" name="approverValue" value="${config.approverType === 'role' ? (config.approverValue || '') : ''}"
-                     data-auto-complete-target="hidden"
+                     data-ac-target="hidden"
                      data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-auto-complete-target="hiddenText">
+              <input type="hidden" data-ac-target="hiddenText">
               <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-auto-complete-target="clearBtn" style="display:none;position:absolute;right:8px;top:8px;">
+                      data-ac-target="clearBtn" data-action="ac#clear"
+                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
                 <i class="bi bi-x-lg"></i>
               </button>
-              <ul class="list-group shadow-sm" data-auto-complete-target="results" style="position:absolute;z-index:1050;width:100%;"></ul>
+              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
             </div>
           </div>
         </div>
         <div data-approver-section="member" style="display:${config.approverType === 'member' ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Member</label>
-            <div data-controller="auto-complete"
-                 data-auto-complete-url-value="/members/auto-complete"
-                 data-auto-complete-min-length-value="2"
-                 data-auto-complete-allow-other-value="false"
-                 data-auto-complete-init-selection-value='${memberInitSel}'
-                 style="position:relative;">
+            <div data-controller="ac"
+                 data-ac-url-value="/members/auto-complete"
+                 data-ac-min-length-value="2"
+                 data-ac-allow-other-value="false"
+                 ${memberInitAttr}
+                 class="position-relative">
               <input type="text" class="form-control form-control-sm"
-                     data-auto-complete-target="input" placeholder="Search members...">
+                     data-ac-target="input" placeholder="Search members...">
               <input type="hidden" name="approverValue" value="${config.approverType === 'member' ? (config.approverValue || '') : ''}"
-                     data-auto-complete-target="hidden"
+                     data-ac-target="hidden"
                      data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-auto-complete-target="hiddenText">
+              <input type="hidden" data-ac-target="hiddenText">
               <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-auto-complete-target="clearBtn" style="display:none;position:absolute;right:8px;top:8px;">
+                      data-ac-target="clearBtn" data-action="ac#clear"
+                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
                 <i class="bi bi-x-lg"></i>
               </button>
-              <ul class="list-group shadow-sm" data-auto-complete-target="results" style="position:absolute;z-index:1050;width:100%;"></ul>
+              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
             </div>
           </div>
         </div>
