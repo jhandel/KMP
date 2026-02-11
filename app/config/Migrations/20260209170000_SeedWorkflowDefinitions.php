@@ -153,6 +153,7 @@ class SeedWorkflowDefinitions extends AbstractMigration
                         'params' => [
                             'rosterId' => '$.trigger.rosterId',
                             'reason' => '$.approval-1.rejectionComment',
+                            'rejecterId' => '$.nodes.approval-1.approverId',
                         ],
                     ],
                     'position' => ['x' => 650, 'y' => 300],
