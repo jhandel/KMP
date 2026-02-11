@@ -133,3 +133,36 @@ Added `resolveParamValue()` as the universal value resolution method for workflo
 📌 Team update (2026-02-11): Universal `resolveParamValue()` added to DefaultWorkflowEngine — handles fixed/context/app_setting value descriptors and $.path shorthand. `resolveRequiredCount()` refactored to delegate. `executeActionNode()` and `executeConditionNode()` now resolve params through it. 1 file changed, 463 tests pass. — implemented by Kaylee
 
 📌 Team update (2026-02-11): Universal value picker frontend complete — Wash built `renderValuePicker()`, refactored all 5 config panels, deleted `_requiredCountHTML()` prototype. Data attributes: `data-vp-type`, `data-vp-field`, `data-vp-settings-select`. — decided by Wash
+
+### 2026-02-11: Approvals DataverseGrid Backend (approvalsGridData)
+
+Built the backend for the My Approvals page redesign using two DataverseGrid system views.
+
+**New file: `ApprovalsGridColumns.php`** — Grid column metadata with 5 columns:
+- `workflow_name`: string, sortable/searchable/filterable via `queryField: 'WorkflowDefinitions.name'`
+- `request`: virtual string (entity name resolved by controller), not sortable/filterable
+- `status_label`: string with dropdown filter, uses `queryField: 'WorkflowApprovals.status'` for filtering while displaying formatted labels ("Pending (2/3)" or "Approved")
+- `created` / `modified`: datetime, sortable, date-range filterable
+
+Two system views: `sys-approvals-pending` (status=pending) and `sys-approvals-decisions` (status IN approved/rejected/expired/cancelled). `showAllTab: false`.
+
+**Controller changes: `WorkflowsController`**
+- Added `DataverseGridTrait`
+- Simplified `approvals()` to page shell only (grid lazy-loads)
+- Added `approvalsGridData()` with:
+  - `queryCallback` that scopes data per system view: pending tab uses `getPendingApprovalsForMember()` to get eligible IDs then `WHERE id IN (...)` for trait pagination; decisions tab uses `innerJoinWith('WorkflowApprovalResponses')` filtered by current user
+  - Post-pagination enrichment loop sets `workflow_name`, `status_label`, and `request` virtual properties on each entity
+  - Turbo-Frame header detection for `approvals-grid-table` vs `approvals-grid` (inner/outer frame)
+  - `skipAuthorization()` since query is scoped to current user
+
+**Route: `config/routes.php`** — Added `/workflows/approvals-grid-data` route.
+
+#### Key Patterns
+- For grids backed by complex eligibility logic (not just SQL WHERE), get eligible IDs first, then pass `WHERE id IN (...)` to the grid query so DataverseGridTrait handles filtering/sorting/pagination normally
+- Virtual display fields (like `status_label`) can use `queryField` pointing to the actual DB column for filtering/sorting while showing computed display values
+- `lockedFilters` prevents users from removing system-view-defined filters
+- `showAllTab: false` restricts grid to system views only
+
+📌 Team update (2026-02-11): Built approvals grid backend — `ApprovalsGridColumns.php`, `approvalsGridData()` on WorkflowsController with DataverseGridTrait, queryCallback for pending eligibility + decisions scoping. 2 files changed, 1 created, 463 tests pass. — implemented by Kaylee
+📌 Team update (2026-02-11): Collapsible sidebar uses body class toggle pattern — decided by Wash
+📌 Team update (2026-02-11): Resizable config panel in workflow designer (300px–60vw, localStorage persistence) — decided by Wash

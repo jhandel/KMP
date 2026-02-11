@@ -131,3 +131,39 @@ Generalized the approval-specific `_requiredCountHTML()` prototype into a univer
 
 📌 Team update (2026-02-11): Universal value picker backend complete — Kaylee added `resolveParamValue()` to `DefaultWorkflowEngine`, handles fixed/context/app_setting. `resolveRequiredCount()` now delegates to it. Action and condition nodes resolve params through it. 463 tests pass. — decided by Kaylee
 📌 Team update (2026-02-11): Duplicate email fix — `activateApprovedRoster($sendNotifications=true)` added. Workflow passes `false`. No frontend changes needed. — decided by Kaylee
+
+### 2026-02-12: Resizable Config Panel in Workflow Designer
+
+Made the workflow designer config panel wider and user-resizable:
+
+- **Default width**: Increased from 320px to 400px to fit value picker dropdowns better.
+- **Resize handle**: Added a 5px invisible drag handle on the left edge of the config panel (`.config-panel-resize-handle`). Highlights with `var(--bs-primary)` on hover/drag.
+- **Drag logic**: `onResizeStart()` / `_onResizeMove()` / `_onResizeEnd()` in `workflow-designer-controller.js`. Uses mousedown/mousemove/mouseup pattern with bound listeners cleaned up on disconnect.
+- **Constraints**: min-width 300px, max-width 60vw.
+- **Persistence**: Saves width to `localStorage` key `wf-config-panel-width`, restored on `connect()`.
+- **Canvas auto-resize**: Canvas uses `flex: 1` so it automatically takes remaining space when panel width changes — no extra work needed.
+- **Files changed**: `workflow-designer.css`, `designer.php` (template), `workflow-designer-controller.js`.
+
+### 2026-02-12: Collapsible Navigation Sidebar
+
+Added desktop sidebar collapse/expand toggle to both `dashboard.php` and `view_record.php` layouts.
+
+#### Architecture
+- **Stimulus controller**: `sidebar-toggle-controller.js` — toggles `sidebar-collapsed` class on `document.body`, persists state in `localStorage` key `kmp-sidebar-collapsed`. Swaps icon between `bi-chevron-bar-left` / `bi-chevron-bar-right`.
+- **CSS**: Added to `dashboard.css` inside `@media (min-width: 768px)` block. Uses `transform: translateX(-100%)` on `.sidebar` and overrides Bootstrap grid classes on `main[role="main"]` to full width. `sidebar-no-transition` class suppresses animation on initial page load.
+- **Toggle button**: Placed inside `.navbar-brand` div, visible only on `d-md` and up (mobile already has Bootstrap collapse toggle). Uses `data-controller="sidebar-toggle"` directly on the button element.
+
+#### Key Pattern
+- Body class toggle (`sidebar-collapsed`) with CSS-only layout changes — no JS DOM manipulation of grid classes. The fixed-position sidebar slides out via `translateX(-100%)` and `visibility: hidden`; main content overrides Bootstrap's `col-lg-10` to `100%` width.
+- Double `requestAnimationFrame` trick to add `sidebar-no-transition` class, ensuring the collapsed state is applied without a visible animation when the page first loads.
+
+### 2026-02-12: Approvals Page — Converted to DataverseGrid
+
+Rewrote `app/templates/Workflows/approvals.php` from a hand-coded card+table layout to a lazy-loading DataverseGrid pattern, matching `WarrantRosters/index.php`.
+
+#### What changed
+- Removed ~130 lines of hand-coded cards (pending approvals) and table (recent decisions) with inline pagination
+- Replaced with a ~20-line template: extends dashboard layout, sets title block, renders `<h3>` header, and calls `$this->element('dv_grid', [...])` pointing at `approvalsGridData` endpoint
+- Grid lazy-loads via Turbo Frame (`approvals-grid`), server provides system views (Pending Approvals / Decisions) as tabs automatically
+- No asset changes needed — `dv_grid` element and `grid-view` controller already exist
+📌 Team update (2026-02-11): Approvals DataverseGrid backend architecture decided — Kaylee defined ID pre-filtering for pending tab, post-pagination virtual fields, skipAuthorization on scoped endpoint

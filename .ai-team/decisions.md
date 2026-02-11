@@ -2691,3 +2691,50 @@ Added to `WorkflowConfigPanel` — universal component rendering type-selector +
 **Pattern:** When a service method performs both action + notification, and a workflow wraps it with a dedicated notification step, the service must allow suppressing notifications. Default `true` preserves behavior for all callers except the explicit workflow override.
 
 **Files:** `WarrantManagerInterface.php` (signature), `DefaultWarrantManager.php` (conditional), `WarrantWorkflowActions.php` (passes `false`).
+
+---
+
+### Approvals DataverseGrid Backend Architecture
+
+**By:** Kaylee
+**Date:** 2026-02-11
+**Status:** Implemented (backend only — frontend template pending)
+
+**What:** Redesigned the My Approvals page (`/workflows/approvals`) backend to use DataverseGrid with two system views (Pending Approvals and Decisions).
+
+**Key Design Decisions:**
+
+1. **Pending tab uses ID pre-filtering:** The approval manager's `getPendingApprovalsForMember()` does complex eligibility checks (permissions, roles, policies, dynamic callbacks) that can't be expressed as SQL. Solution: call it first to get eligible IDs, then pass `WHERE id IN (...)` to the grid query so the DataverseGridTrait handles filtering/sorting/pagination normally.
+
+2. **Decisions tab uses innerJoinWith:** Joins `WorkflowApprovalResponses` filtered by current user's `member_id` to show only approvals this user has responded to. The unique constraint on `(workflow_approval_id, member_id)` prevents row duplication.
+
+3. **Virtual display fields via post-pagination enrichment:** `workflow_name`, `status_label`, and `request` are set as entity properties after pagination (not via subqueries or virtual columns). This keeps the SQL simple and avoids schema changes. The `status_label` column uses `queryField: 'WorkflowApprovals.status'` so filtering/sorting hits the real DB column.
+
+4. **Authorization: skipAuthorization():** The `approvalsGridData()` endpoint skips CakePHP authorization because the queryCallback already scopes all data to the current user — there's no entity-level policy to check.
+
+5. **showAllTab: false:** Users can only switch between Pending and Decisions — no "All" tab. The `lockedFilters: ['status_label']` prevents removing the status filter.
+
+**Impact:** Frontend template changes needed to wire up the grid. The `approvals()` action now renders a shell page (no data loading). Existing `recordApproval()` is untouched.
+
+**Files:** `ApprovalsGridColumns.php` (new), `WorkflowsController.php` (modified), `config/routes.php` (modified).
+
+---
+
+### 2026-02-12: Collapsible sidebar uses body class toggle pattern
+**By:** Wash
+**What:** The nav sidebar collapse/expand is driven by toggling `body.sidebar-collapsed` with CSS-only layout overrides (no JS DOM manipulation of grid classes). State persists via `localStorage` key `kmp-sidebar-collapsed`. Both `dashboard.php` and `view_record.php` layouts share the same toggle button markup and Stimulus controller.
+**Why:** Keeps the implementation simple and decoupled — the Stimulus controller only manages state (one class, one localStorage key), while all visual behavior is in CSS. This pattern is easy to extend if we later want an icon-only collapsed mode or different breakpoint behavior. The toggle button lives inside `.navbar-brand` to keep it accessible without adding new header layout elements.
+
+---
+
+### Resizable Config Panel in Workflow Designer
+**By:** Wash
+**What:** Config panel default width increased to 400px and made resizable via drag handle
+**Why:** Panel was too narrow for value picker dropdowns. Users can now drag the left edge to resize (300px–60vw), persisted in localStorage.
+
+**Implementation details:**
+- Drag handle is a 5px absolute-positioned div on left edge with `cursor: col-resize`
+- Mouse events handled in `workflow-designer-controller.js` (`onResizeStart`, `_onResizeMove`, `_onResizeEnd`)
+- Width stored in `localStorage` key `wf-config-panel-width`
+- Canvas auto-adjusts via CSS `flex: 1`
+- Listeners cleaned up in `disconnect()`
