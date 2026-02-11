@@ -105,6 +105,17 @@ export default class WorkflowVariablePicker {
         } else if (type === 'condition') {
             const nodeKey = node.data?.nodeKey || node.name
             vars.push({ path: `$.nodes.${nodeKey}.result`, label: `${node.name}: result`, type: 'boolean' })
+        } else if (type === 'delay') {
+            const nodeKey = node.data?.nodeKey || node.name
+            vars.push({ path: `$.nodes.${nodeKey}.result.delayConfig`, label: `${node.name}: delayConfig`, type: 'object' })
+        } else if (type === 'loop') {
+            const nodeKey = node.data?.nodeKey || node.name
+            vars.push({ path: `$.nodes.${nodeKey}.result.iteration`, label: `${node.name}: iteration`, type: 'integer' })
+            vars.push({ path: `$.nodes.${nodeKey}.result.maxIterations`, label: `${node.name}: maxIterations`, type: 'integer' })
+        } else if (type === 'subworkflow') {
+            const nodeKey = node.data?.nodeKey || node.name
+            vars.push({ path: `$.nodes.${nodeKey}.result.childInstanceId`, label: `${node.name}: childInstanceId`, type: 'integer' })
+            vars.push({ path: `$.nodes.${nodeKey}.result`, label: `${node.name}: result`, type: 'object' })
         }
 
         return vars

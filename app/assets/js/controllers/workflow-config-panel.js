@@ -63,6 +63,10 @@ export default class WorkflowConfigPanel {
             case 'approval': return this._approvalHTML(config)
             case 'delay': return this._delayHTML(config)
             case 'loop': return this._loopHTML(config)
+            case 'subworkflow': return this._subworkflowHTML(config)
+            case 'fork': return this._forkHTML(config)
+            case 'join': return this._joinHTML(config)
+            case 'end': return this._endHTML(config)
             default: return ''
         }
     }
@@ -73,10 +77,35 @@ export default class WorkflowConfigPanel {
             const selected = config.event === t.event ? 'selected' : ''
             options += `<option value="${t.event}" ${selected}>${t.label}</option>`
         })
-        return `<div class="mb-3">
+        let html = `<div class="mb-3">
             <label class="form-label">Trigger Event</label>
             <select class="form-select form-select-sm" name="event" data-action="change->workflow-designer#updateNodeConfig">${options}</select>
         </div>`
+
+        if (config.event) {
+            const trigger = this.registryData.triggers?.find(t => t.event === config.event)
+            if (trigger?.payloadSchema) {
+                html += '<h6 class="mt-3 mb-2 text-muted small">Input Mapping</h6>'
+                html += '<small class="form-text text-muted d-block mb-2">Map trigger event data to context variables</small>'
+                const mapping = config.inputMapping || {}
+                for (const [key, meta] of Object.entries(trigger.payloadSchema)) {
+                    const currentVal = mapping[key] || `$.event.${key}`
+                    const escapedVal = this._escapeAttr(currentVal)
+                    html += `<div class="mb-2">
+                        <label class="form-label form-label-sm mb-0">
+                            ${meta.label || key} <span class="text-muted small">(${meta.type})</span>
+                        </label>
+                        <input type="text" class="form-control form-control-sm"
+                            name="inputMapping.${key}" value="${escapedVal}"
+                            placeholder="$.event.${key}"
+                            data-action="change->workflow-designer#updateNodeConfig"
+                            data-variable-picker="true">
+                    </div>`
+                }
+            }
+        }
+
+        return html
     }
 
     _actionHTML(config) {
@@ -307,11 +336,15 @@ export default class WorkflowConfigPanel {
     _delayHTML(config) {
         return `<div class="mb-3">
             <label class="form-label">Duration</label>
-            <input type="text" class="form-control form-control-sm" name="duration" value="${config.duration || ''}" placeholder="e.g. 1h, 2d, 30m" data-action="change->workflow-designer#updateNodeConfig">
+            <input type="text" class="form-control form-control-sm" name="duration"
+                value="${config.duration || ''}" placeholder="e.g. 1h, 2d, 30m, or $.path"
+                data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>
         <div class="mb-3">
             <label class="form-label">Wait For Event (optional)</label>
-            <input type="text" class="form-control form-control-sm" name="waitEvent" value="${config.waitEvent || ''}" placeholder="Event to resume on" data-action="change->workflow-designer#updateNodeConfig">
+            <input type="text" class="form-control form-control-sm" name="waitEvent"
+                value="${config.waitEvent || ''}" placeholder="Event to resume on"
+                data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>`
     }
 
@@ -323,6 +356,50 @@ export default class WorkflowConfigPanel {
         <div class="mb-3">
             <label class="form-label">Exit Condition</label>
             <input type="text" class="form-control form-control-sm" name="exitCondition" value="${config.exitCondition || ''}" placeholder="Expression to evaluate" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+        </div>`
+    }
+
+    _subworkflowHTML(config) {
+        return `<div class="mb-3">
+            <label class="form-label">Workflow Slug</label>
+            <input type="text" class="form-control form-control-sm" name="workflowSlug"
+                value="${config.workflowSlug || ''}" placeholder="e.g. warrant-approval"
+                data-action="change->workflow-designer#updateNodeConfig">
+            <small class="form-text text-muted">The slug of the child workflow to execute</small>
+        </div>`
+    }
+
+    _forkHTML(config) {
+        return `<div class="mb-3">
+            <small class="form-text text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                Executes all connected output paths in parallel. No additional configuration needed.
+            </small>
+        </div>`
+    }
+
+    _joinHTML(config) {
+        return `<div class="mb-3">
+            <small class="form-text text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                Waits for all incoming paths to complete before advancing.
+            </small>
+        </div>`
+    }
+
+    _endHTML(config) {
+        let options = ''
+        const statuses = ['completed', 'cancelled', 'failed']
+        statuses.forEach(s => {
+            const selected = config.status === s ? 'selected' : ''
+            options += `<option value="${s}" ${selected}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
+        })
+        return `<div class="mb-3">
+            <label class="form-label">End Status</label>
+            <select class="form-select form-select-sm" name="status"
+                data-action="change->workflow-designer#updateNodeConfig">
+                ${options}
+            </select>
         </div>`
     }
 

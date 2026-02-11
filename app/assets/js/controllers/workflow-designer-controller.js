@@ -510,12 +510,18 @@ class WorkflowDesignerController extends Controller {
 
         const newParams = {}
         let hasParams = false
+        const newInputMapping = {}
+        let hasInputMapping = false
 
         for (const [key, value] of formData.entries()) {
             if (key.startsWith('params.')) {
                 const paramKey = key.substring(7)
                 newParams[paramKey] = value
                 hasParams = true
+            } else if (key.startsWith('inputMapping.')) {
+                const mapKey = key.substring(13)
+                newInputMapping[mapKey] = value
+                hasInputMapping = true
             } else {
                 nodeData.data.config[key] = value
             }
@@ -524,13 +530,16 @@ class WorkflowDesignerController extends Controller {
         if (hasParams) {
             nodeData.data.config.params = newParams
         }
+        if (hasInputMapping) {
+            nodeData.data.config.inputMapping = newInputMapping
+        }
 
         nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true
         this.editor.updateNodeDataFromId(nodeId, nodeData.data)
 
         // If action or condition changed, re-render config panel to show new inputSchema fields
         const changedField = event.target?.name
-        if (changedField === 'action' || changedField === 'condition') {
+        if (changedField === 'action' || changedField === 'condition' || changedField === 'event') {
             const updatedNode = this.editor.getNodeFromId(nodeId)
             if (this.hasNodeConfigTarget && this._configPanel) {
                 this.nodeConfigTarget.innerHTML = this._configPanel.renderConfigHTML(nodeId, updatedNode)
