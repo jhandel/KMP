@@ -1,3 +1,5 @@
+import { renderAutoComplete } from '../autocomplete-helper.js'
+
 /**
  * WorkflowConfigPanel
  *
@@ -119,12 +121,44 @@ export default class WorkflowConfigPanel {
     }
 
     _approvalHTML(config) {
-        const permInitAttr = config.approverType === 'permission' && config.approverValue
-            ? `data-ac-init-selection-value='${JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;')}'` : ''
-        const roleInitAttr = config.approverType === 'role' && config.approverValue
-            ? `data-ac-init-selection-value='${JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;')}'` : ''
-        const memberInitAttr = config.approverType === 'member' && config.approverValue
-            ? `data-ac-init-selection-value='${JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;')}'` : ''
+        // Build initSelection for whichever approver type is active
+        const acInitSelection = (type) =>
+            config.approverType === type && config.approverValue
+                ? { value: config.approverValue, text: config.approverValue } : null;
+
+        const acSharedOpts = {
+            size: 'sm',
+            name: 'approverValue',
+            minLength: 2,
+            hiddenAttrs: 'data-action="change->workflow-designer#updateNodeConfig"',
+        };
+
+        const permissionAC = renderAutoComplete({
+            ...acSharedOpts,
+            url: '/permissions/auto-complete',
+            allowOther: true,
+            value: config.approverType === 'permission' ? (config.approverValue || '') : '',
+            placeholder: 'Search permissions...',
+            initSelection: acInitSelection('permission'),
+        });
+
+        const roleAC = renderAutoComplete({
+            ...acSharedOpts,
+            url: '/roles/auto-complete',
+            allowOther: true,
+            value: config.approverType === 'role' ? (config.approverValue || '') : '',
+            placeholder: 'Search roles...',
+            initSelection: acInitSelection('role'),
+        });
+
+        const memberAC = renderAutoComplete({
+            ...acSharedOpts,
+            url: '/members/auto-complete',
+            allowOther: false,
+            value: config.approverType === 'member' ? (config.approverValue || '') : '',
+            placeholder: 'Search members...',
+            initSelection: acInitSelection('member'),
+        });
 
         return `<div class="mb-3">
             <label class="form-label">Approver Type</label>
@@ -139,73 +173,19 @@ export default class WorkflowConfigPanel {
         <div data-approver-section="permission" style="display:${config.approverType === 'permission' || !config.approverType ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Permission</label>
-            <div data-controller="ac"
-                 data-ac-url-value="/permissions/auto-complete"
-                 data-ac-min-length-value="2"
-                 data-ac-allow-other-value="true"
-                 ${permInitAttr}
-                 class="position-relative">
-              <input type="text" class="form-control form-control-sm"
-                     data-ac-target="input" placeholder="Search permissions...">
-              <input type="hidden" name="approverValue" value="${config.approverType === 'permission' ? (config.approverValue || '') : ''}"
-                     data-ac-target="hidden"
-                     data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-ac-target="hiddenText">
-              <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-ac-target="clearBtn" data-action="ac#clear"
-                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
-                <i class="bi bi-x-lg"></i>
-              </button>
-              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
-            </div>
+            ${permissionAC}
           </div>
         </div>
         <div data-approver-section="role" style="display:${config.approverType === 'role' ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Role</label>
-            <div data-controller="ac"
-                 data-ac-url-value="/roles/auto-complete"
-                 data-ac-min-length-value="2"
-                 data-ac-allow-other-value="true"
-                 ${roleInitAttr}
-                 class="position-relative">
-              <input type="text" class="form-control form-control-sm"
-                     data-ac-target="input" placeholder="Search roles...">
-              <input type="hidden" name="approverValue" value="${config.approverType === 'role' ? (config.approverValue || '') : ''}"
-                     data-ac-target="hidden"
-                     data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-ac-target="hiddenText">
-              <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-ac-target="clearBtn" data-action="ac#clear"
-                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
-                <i class="bi bi-x-lg"></i>
-              </button>
-              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
-            </div>
+            ${roleAC}
           </div>
         </div>
         <div data-approver-section="member" style="display:${config.approverType === 'member' ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Member</label>
-            <div data-controller="ac"
-                 data-ac-url-value="/members/auto-complete"
-                 data-ac-min-length-value="2"
-                 data-ac-allow-other-value="false"
-                 ${memberInitAttr}
-                 class="position-relative">
-              <input type="text" class="form-control form-control-sm"
-                     data-ac-target="input" placeholder="Search members...">
-              <input type="hidden" name="approverValue" value="${config.approverType === 'member' ? (config.approverValue || '') : ''}"
-                     data-ac-target="hidden"
-                     data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-ac-target="hiddenText">
-              <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-ac-target="clearBtn" data-action="ac#clear"
-                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
-                <i class="bi bi-x-lg"></i>
-              </button>
-              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
-            </div>
+            ${memberAC}
           </div>
         </div>
         <div data-approver-section="dynamic" style="display:${config.approverType === 'dynamic' ? 'block' : 'none'};">

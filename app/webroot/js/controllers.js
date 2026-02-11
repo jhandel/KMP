@@ -65,6 +65,76 @@ __webpack_require__.r(__webpack_exports__);
 
 /***/ }),
 
+/***/ "./assets/js/autocomplete-helper.js":
+/*!******************************************!*\
+  !*** ./assets/js/autocomplete-helper.js ***!
+  \******************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   renderAutoComplete: function() { return /* binding */ renderAutoComplete; }
+/* harmony export */ });
+/**
+ * Reusable autocomplete widget HTML generator.
+ *
+ * Produces markup matching the structure in templates/element/autoCompleteControl.php,
+ * for use in JavaScript-rendered UI (e.g. workflow config panels).
+ * All generated HTML is compatible with the "ac" Stimulus controller.
+ *
+ * @param {object} options
+ * @param {string} options.url - AJAX endpoint URL for search
+ * @param {string} [options.name] - name attribute for the hidden value input
+ * @param {string} [options.value] - initial value for the hidden input
+ * @param {string} [options.placeholder] - placeholder text for the text input
+ * @param {number} [options.minLength=1] - minimum characters before search triggers
+ * @param {boolean} [options.allowOther=false] - allow custom values not in results
+ * @param {object} [options.initSelection] - {value, text} to pre-populate the widget
+ * @param {string} [options.hiddenAttrs] - extra attribute string for the hidden value input
+ * @param {string} [options.size] - Bootstrap size suffix (e.g. 'sm')
+ * @param {string} [options.cssClass] - extra CSS classes on the wrapper div
+ * @returns {string} HTML string
+ */
+function renderAutoComplete(options) {
+  const url = options.url || '';
+  const name = options.name ? ` name="${options.name}"` : '';
+  const value = options.value || '';
+  const placeholder = options.placeholder ? ` placeholder="${options.placeholder}"` : '';
+  const minLength = options.minLength != null ? options.minLength : 1;
+  const allowOther = options.allowOther ? 'true' : 'false';
+  const hiddenAttrs = options.hiddenAttrs ? ' ' + options.hiddenAttrs : '';
+  const size = options.size || '';
+  const cssClass = options.cssClass ? ' ' + options.cssClass : '';
+  const inputGroupClass = size ? `input-group input-group-${size}` : 'input-group';
+  const inputClass = size ? `form-control form-control-${size}` : 'form-control';
+  let initAttr = '';
+  if (options.initSelection) {
+    const json = JSON.stringify(options.initSelection).replace(/'/g, '&#39;');
+    initAttr = `\n     data-ac-init-selection-value='${json}'`;
+  }
+  return `<div data-controller="ac"
+     data-ac-url-value="${url}"
+     data-ac-min-length-value="${minLength}"
+     data-ac-allow-other-value="${allowOther}"${initAttr}
+     role="combobox"
+     class="position-relative kmp_autoComplete${cssClass}">
+  <input type="hidden"${name} value="${value}"
+         data-ac-target="hidden"${hiddenAttrs}>
+  <input type="hidden" data-ac-target="hiddenText">
+  <div class="${inputGroupClass}">
+    <input type="text" class="${inputClass}"
+           data-ac-target="input"${placeholder}>
+    <button class="btn btn-outline-secondary" data-ac-target="clearBtn" data-action="ac#clear" disabled>Clear</button>
+  </div>
+  <ul data-ac-target="results"
+      class="list-group z-3 col-12 position-absolute auto-complete-list"
+      hidden="hidden"></ul>
+</div>`;
+}
+
+/***/ }),
+
 /***/ "./assets/js/controllers/activity-toggle-controller.js":
 /*!*************************************************************!*\
   !*** ./assets/js/controllers/activity-toggle-controller.js ***!
@@ -14214,6 +14284,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "default": function() { return /* binding */ WorkflowConfigPanel; }
 /* harmony export */ });
+/* harmony import */ var _babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @babel/runtime/helpers/objectSpread2 */ "./node_modules/@babel/runtime/helpers/esm/objectSpread2.js");
+/* harmony import */ var _autocomplete_helper_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../autocomplete-helper.js */ "./assets/js/autocomplete-helper.js");
+
+
+
 /**
  * WorkflowConfigPanel
  *
@@ -14343,18 +14418,38 @@ class WorkflowConfigPanel {
         </div>`;
   }
   _approvalHTML(config) {
-    const permInitAttr = config.approverType === 'permission' && config.approverValue ? `data-ac-init-selection-value='${JSON.stringify({
+    // Build initSelection for whichever approver type is active
+    const acInitSelection = type => config.approverType === type && config.approverValue ? {
       value: config.approverValue,
       text: config.approverValue
-    }).replace(/'/g, '&#39;')}'` : '';
-    const roleInitAttr = config.approverType === 'role' && config.approverValue ? `data-ac-init-selection-value='${JSON.stringify({
-      value: config.approverValue,
-      text: config.approverValue
-    }).replace(/'/g, '&#39;')}'` : '';
-    const memberInitAttr = config.approverType === 'member' && config.approverValue ? `data-ac-init-selection-value='${JSON.stringify({
-      value: config.approverValue,
-      text: config.approverValue
-    }).replace(/'/g, '&#39;')}'` : '';
+    } : null;
+    const acSharedOpts = {
+      size: 'sm',
+      name: 'approverValue',
+      minLength: 2,
+      hiddenAttrs: 'data-action="change->workflow-designer#updateNodeConfig"'
+    };
+    const permissionAC = (0,_autocomplete_helper_js__WEBPACK_IMPORTED_MODULE_1__.renderAutoComplete)((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, acSharedOpts), {}, {
+      url: '/permissions/auto-complete',
+      allowOther: true,
+      value: config.approverType === 'permission' ? config.approverValue || '' : '',
+      placeholder: 'Search permissions...',
+      initSelection: acInitSelection('permission')
+    }));
+    const roleAC = (0,_autocomplete_helper_js__WEBPACK_IMPORTED_MODULE_1__.renderAutoComplete)((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, acSharedOpts), {}, {
+      url: '/roles/auto-complete',
+      allowOther: true,
+      value: config.approverType === 'role' ? config.approverValue || '' : '',
+      placeholder: 'Search roles...',
+      initSelection: acInitSelection('role')
+    }));
+    const memberAC = (0,_autocomplete_helper_js__WEBPACK_IMPORTED_MODULE_1__.renderAutoComplete)((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, acSharedOpts), {}, {
+      url: '/members/auto-complete',
+      allowOther: false,
+      value: config.approverType === 'member' ? config.approverValue || '' : '',
+      placeholder: 'Search members...',
+      initSelection: acInitSelection('member')
+    }));
     return `<div class="mb-3">
             <label class="form-label">Approver Type</label>
             <select class="form-select form-select-sm" name="approverType" data-action="change->workflow-designer#onApproverTypeChange">
@@ -14368,73 +14463,19 @@ class WorkflowConfigPanel {
         <div data-approver-section="permission" style="display:${config.approverType === 'permission' || !config.approverType ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Permission</label>
-            <div data-controller="ac"
-                 data-ac-url-value="/permissions/auto-complete"
-                 data-ac-min-length-value="2"
-                 data-ac-allow-other-value="true"
-                 ${permInitAttr}
-                 class="position-relative">
-              <input type="text" class="form-control form-control-sm"
-                     data-ac-target="input" placeholder="Search permissions...">
-              <input type="hidden" name="approverValue" value="${config.approverType === 'permission' ? config.approverValue || '' : ''}"
-                     data-ac-target="hidden"
-                     data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-ac-target="hiddenText">
-              <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-ac-target="clearBtn" data-action="ac#clear"
-                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
-                <i class="bi bi-x-lg"></i>
-              </button>
-              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
-            </div>
+            ${permissionAC}
           </div>
         </div>
         <div data-approver-section="role" style="display:${config.approverType === 'role' ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Role</label>
-            <div data-controller="ac"
-                 data-ac-url-value="/roles/auto-complete"
-                 data-ac-min-length-value="2"
-                 data-ac-allow-other-value="true"
-                 ${roleInitAttr}
-                 class="position-relative">
-              <input type="text" class="form-control form-control-sm"
-                     data-ac-target="input" placeholder="Search roles...">
-              <input type="hidden" name="approverValue" value="${config.approverType === 'role' ? config.approverValue || '' : ''}"
-                     data-ac-target="hidden"
-                     data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-ac-target="hiddenText">
-              <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-ac-target="clearBtn" data-action="ac#clear"
-                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
-                <i class="bi bi-x-lg"></i>
-              </button>
-              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
-            </div>
+            ${roleAC}
           </div>
         </div>
         <div data-approver-section="member" style="display:${config.approverType === 'member' ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Member</label>
-            <div data-controller="ac"
-                 data-ac-url-value="/members/auto-complete"
-                 data-ac-min-length-value="2"
-                 data-ac-allow-other-value="false"
-                 ${memberInitAttr}
-                 class="position-relative">
-              <input type="text" class="form-control form-control-sm"
-                     data-ac-target="input" placeholder="Search members...">
-              <input type="hidden" name="approverValue" value="${config.approverType === 'member' ? config.approverValue || '' : ''}"
-                     data-ac-target="hidden"
-                     data-action="change->workflow-designer#updateNodeConfig">
-              <input type="hidden" data-ac-target="hiddenText">
-              <button type="button" class="btn btn-sm btn-link text-muted p-0"
-                      data-ac-target="clearBtn" data-action="ac#clear"
-                      style="display:none;position:absolute;right:8px;top:8px;" disabled>
-                <i class="bi bi-x-lg"></i>
-              </button>
-              <ul class="list-group shadow-sm" data-ac-target="results" style="position:absolute;z-index:1050;width:100%;" hidden="hidden"></ul>
-            </div>
+            ${memberAC}
           </div>
         </div>
         <div data-approver-section="dynamic" style="display:${config.approverType === 'dynamic' ? 'block' : 'none'};">
