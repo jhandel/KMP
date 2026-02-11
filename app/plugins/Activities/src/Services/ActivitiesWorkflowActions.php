@@ -8,6 +8,7 @@ use Activities\Services\AuthorizationManagerInterface;
 use App\KMP\StaticHelpers;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
 use Cake\Core\App;
+use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
 
@@ -105,6 +106,21 @@ class ActivitiesWorkflowActions
                 return ['activated' => false, 'memberRoleId' => null];
             }
 
+            // Sync workflow approval back to activities_authorization_approvals
+            $approvalsTable = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
+            $pendingApproval = $approvalsTable->find()
+                ->where([
+                    'authorization_id' => $authorizationId,
+                    'responded_on IS' => null,
+                ])
+                ->first();
+            if ($pendingApproval) {
+                $pendingApproval->responded_on = DateTime::now();
+                $pendingApproval->approved = true;
+                $pendingApproval->approver_id = $approverId;
+                $approvalsTable->save($pendingApproval);
+            }
+
             $data = $result->data ?? [];
 
             return [
@@ -120,14 +136,17 @@ class ActivitiesWorkflowActions
     /**
      * Process denial of an authorization request.
      *
+     * Looks up the pending approval record by authorizationId since the
+     * workflow definition passes authorizationId, not authorizationApprovalId.
+     *
      * @param array $context Current workflow context
-     * @param array $config Config with authorizationApprovalId, approverId, denyReason
+     * @param array $config Config with authorizationId, approverId, denyReason
      * @return array Output with denied boolean
      */
     public function handleDenial(array $context, array $config): array
     {
         try {
-            $authApprovalId = (int)$this->resolveValue($config['authorizationApprovalId'], $context);
+            $authorizationId = (int)$this->resolveValue($config['authorizationId'], $context);
             $approverId = $this->resolveValue($config['approverId'] ?? null, $context);
             if (!$approverId) {
                 $approverId = $context['resumeData']['approverId'] ?? $context['triggeredBy'] ?? 0;
@@ -139,7 +158,21 @@ class ActivitiesWorkflowActions
                 $denyReason = $context['resumeData']['comment'] ?? 'Denied via workflow';
             }
 
-            $result = $this->authManager->deny($authApprovalId, $approverId, $denyReason);
+            // Find the pending approval record by authorization_id
+            $approvalsTable = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
+            $pendingApproval = $approvalsTable->find()
+                ->where([
+                    'authorization_id' => $authorizationId,
+                    'responded_on IS' => null,
+                ])
+                ->first();
+
+            if (!$pendingApproval) {
+                Log::warning("Workflow HandleDenial: no pending approval for authorization {$authorizationId}");
+                return ['denied' => false];
+            }
+
+            $result = $this->authManager->deny($pendingApproval->id, $approverId, $denyReason);
 
             return ['denied' => $result->success];
         } catch (\Throwable $e) {

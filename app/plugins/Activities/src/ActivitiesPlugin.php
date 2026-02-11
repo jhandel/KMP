@@ -22,6 +22,7 @@ use Activities\Services\ActivitiesNavigationProvider;
 use Activities\Services\ActivitiesViewCellProvider;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\WorkflowEngine\TriggerDispatcher;
+use Activities\Services\ActivitiesWorkflowActions;
 use App\KMP\StaticHelpers;
 use Cake\I18n\DateTime;
 
