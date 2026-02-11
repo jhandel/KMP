@@ -2738,3 +2738,32 @@ Added to `WorkflowConfigPanel` — universal component rendering type-selector +
 - Width stored in `localStorage` key `wf-config-panel-width`
 - Canvas auto-adjusts via CSS `flex: 1`
 - Listeners cleaned up in `disconnect()`
+
+### 2026-02-11: Warrant roster migration strategy — Forward-Only (consolidated)
+
+**By:** Mal, Kaylee
+**Requested by:** Josh Handel
+**Status:** Decision recorded — no implementation needed
+
+**What:** Analyzed whether to migrate historical `warrant_roster_approvals` data into workflow tables. Kaylee mapped the full data model (field-level gaps, FK constraints, synthetic data requirements, draft migration SQL). Mal assessed 4 strategic options:
+
+- **(A) Full Migration** — Create synthetic workflow instances for all 31 historical rosters. HIGH complexity, MODERATE risk. Pollutes workflow instance list with fake history.
+- **(B) Forward-Only** ✅ — Don't migrate. New rosters already use workflows. Sync layer bridges the gap. LOW complexity, VERY LOW risk.
+- **(C) Unified View Layer** — SQL view or service unioning both tables. MODERATE complexity. Adds abstraction without removing tables.
+- **(D) Thin Adapter** — Template-level if/else to show workflow data when available. VERY LOW complexity. Nice-to-have, not urgent.
+
+**Decision:** Option B — Forward-Only. No migration. The sync layer (`syncWorkflowApprovalToRoster()`, 40 lines, 13 tests, idempotent) stays. Revisit in 6–12 months.
+
+**Why:**
+1. The workflow integration is already complete and tested. No urgent reason to touch it further.
+2. Data volume is tiny (34 rosters, 19 approval records) — not a scaling or reporting problem.
+3. Synthetic workflow instances are an antipattern — they look real but aren't.
+4. `warrants.warrant_roster_id` FK means roster tables cannot be dropped regardless.
+5. Entity/schema mismatch found: `WarrantRoster` entity docblock references non-existent columns (`description`, `planned_start_on`, `planned_expires_on`) — should be cleaned up separately.
+
+**Order of operations:**
+1. Now: Ship as-is.
+2. Optional next sprint: Option D (thin view adapter) if stakeholders want richer approval display.
+3. 6–12 months: Remove sync layer when all pending rosters have resolved via workflows.
+4. Eventually: Drop `warrant_roster_approvals` when historical data is no longer needed.
+

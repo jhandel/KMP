@@ -33,104 +33,19 @@
 📌 Team updates (2026-02-10): Architecture documented, backend patterns documented, test suite audited, workflow engine reviewed, roster sync implemented, docs modernized.
 📌 Team update (2026-02-11): All 5 action schema phases complete. 459 tests pass.
 
-### 2026-02-11: Flow Control Node Config Panels
+### 2026-02-11: Workflow Designer Frontend Features (summarized)
 
-Extended config panel and variable picker to all remaining node types (commit 5981a134):
+**Flow control config panels:** Extended config panel and variable picker to all 10 node types. Trigger gets `inputMapping` UI, delay/subworkflow/fork/join/end/loop get dedicated panels. `inputMapping.*` namespace mirrors `params.*` pattern. Variable picker now includes output schemas for delay, loop, subworkflow.
 
-#### Config Panel (`workflow-config-panel.js`)
-- **Trigger**: Added `inputMapping` UI — when a trigger is selected and has `payloadSchema`, renders mapping fields below dropdown with `name="inputMapping.{key}"` and `data-variable-picker="true"`. Default values are `$.event.{key}`.
-- **Delay**: Added `data-variable-picker="true"` to both `duration` and `waitEvent` inputs. Updated placeholder to hint at variable refs.
-- **Subworkflow**: New `_subworkflowHTML()` with `workflowSlug` text input.
-- **Fork**: New `_forkHTML()` — info-only panel explaining parallel fan-out.
-- **Join**: New `_joinHTML()` — info-only panel explaining wait-for-all behavior.
-- **End**: New `_endHTML()` with status dropdown (completed/cancelled/failed).
-- **Loop**: Verified `exitCondition` already had `data-variable-picker="true"` ✅.
-- Updated `getTypeSpecificHTML()` switch to route all 10 node types.
+**resumeData variables:** Added conditional `$.resumeData.*` variables to variable picker — only shown downstream of approval nodes. First use of upstream-type-dependent variable injection.
 
-#### Variable Picker (`workflow-variable-picker.js`)
-- Added output schemas for `delay` (delayConfig object), `loop` (iteration + maxIterations), and `subworkflow` (childInstanceId + result object).
-- Fork, join, end don't produce meaningful outputs — no schemas added.
+**RequiredCount smart selector:** Type dropdown (Fixed/App Setting/Context Path) with dynamic inputs. Form uses separate named inputs composed into final value in `updateNodeConfig()`. App settings fetched from `/app-settings/workflow-list.json`.
 
-#### Designer Controller (`workflow-designer-controller.js`)
-- `updateNodeConfig()` now handles `inputMapping.*` form field prefix — same nesting pattern as `params.*`.
-- Added `event` to the re-render trigger check alongside `action` and `condition`.
+**Universal value picker (`renderValuePicker()`):** Generalized requiredCount pattern into reusable method on WorkflowConfigPanel. All 5 config panels refactored to use it. Data attributes: `data-vp-type`, `data-vp-field`, `data-vp-settings-select`. Generic `onValuePickerTypeChange()` handler. Deleted `_requiredCountHTML()` prototype. **Pattern:** Fixed values stay as plain scalars (backward compatible), context becomes `{type: 'context', path}`, app_setting becomes `{type: 'app_setting', key}`.
 
-#### Key Pattern
-- `inputMapping.*` namespace mirrors `params.*` — both are collected from FormData, stripped of prefix, and stored as nested objects in `config`.
-- Selecting a trigger event now re-renders the config panel (like action/condition) to show the payload schema fields dynamically.
-
-### 2026-02-11: resumeData Variables in Variable Picker
-
-Added `$.resumeData.*` context variables to `workflow-variable-picker.js` `buildVariableList()`. These appear conditionally — only when a node being configured is downstream of an approval node, since `resumeData` is populated by `DefaultWorkflowEngine::resumeWorkflow()` when an approval gate resumes.
-
-#### What was done
-- After collecting upstream node variables, added an `upstream.some(n => n.data?.type === 'approval')` check
-- When true, pushes three variables: `$.resumeData.approverId` (integer), `$.resumeData.decision` (string), `$.resumeData.comment` (string)
-- Placed BEFORE builtins section so dropdown order is: trigger → upstream nodes → resumeData → builtins
-
-#### Key Pattern
-- Conditional variable injection based on upstream node types — first use of this pattern in the variable picker. Could be extended for other context-dependent variables (e.g., loop iteration data only downstream of loops).
-
-📌 Team update (2026-02-11): Three new designer decisions merged — resumeData conditional picker, condition field visibility, flow control config panels — decided by Wash
-📌 Team update (2026-02-11): Kaylee fixed approval node context in resumeWorkflow(); Jayne added 4 tests — decided by Kaylee, Jayne
-
-### 2026-02-11: Approval RequiredCount — Smart Config Selector
-
-Replaced the plain `<input type="number">` for `requiredCount` in the approval config panel with a type selector + dynamic value input.
-
-#### Problem
-The backend supports `requiredCount` as a plain integer OR an object (`{type: 'app_setting', key: '...'}`, `{type: 'context', path: '...'}`, `{type: 'fixed', value: N}`). The old number input showed blank when the value was an object, and saved incorrectly.
-
-#### Changes
-- **`workflow-config-panel.js`**: Extracted `_requiredCountHTML(config)` method. Parses existing `requiredCount` (detecting object vs integer), renders a type dropdown (Fixed Value / App Setting / Context Path) with three conditional `data-rc-section` divs — same visibility toggle pattern as `data-approver-section`. App Setting section uses a `<select>` populated via fetch. Context Path input has `data-variable-picker="true"`.
-- **`workflow-designer-controller.js`**:
-  - Added `onRequiredCountTypeChange(event)` — toggles `data-rc-section` visibility, triggers `_loadAppSettings()` when app_setting selected.
-  - Added `_loadAppSettings(formOrContainer, selectedKey)` — fetches `/app-settings/workflow-list.json`, populates settings dropdown. Graceful fallback shows "Settings unavailable" if endpoint not ready yet, while preserving existing key.
-  - Modified `updateNodeConfig()` — after FormData loop, composes `requiredCount` from `requiredCountType` + per-type value fields (`requiredCountFixedValue`, `requiredCountSettingKey`, `requiredCountContextPath`), then deletes the temporary fields. Fixed values save as plain integer (backward compatible).
-  - Modified `onNodeSelected()` — pre-populates app settings dropdown when loading an approval node with `requiredCount.type === 'app_setting'`.
-
-#### Key Pattern: Separate form fields → composed config value
-Form uses multiple named inputs (`requiredCountType`, `requiredCountFixedValue`, etc.) that are composed into the final `requiredCount` value in `updateNodeConfig()`, then temporary keys are deleted. This avoids multi-input name collision issues while keeping the FormData collection loop generic.
-
-### 2026-02-11: Universal Value Picker — renderValuePicker()
-
-Generalized the approval-specific `_requiredCountHTML()` prototype into a universal `renderValuePicker()` method on `WorkflowConfigPanel`, and refactored all config panels to use it.
-
-#### What was done
-
-**New method: `renderValuePicker(fieldName, fieldMeta, currentValue, options)`**
-- Added to `workflow-config-panel.js` as a public method on WorkflowConfigPanel
-- Parses `currentValue` to detect active type: plain scalar → fixed, `$.` prefix → context, object with `.type` → use that type, null/undefined → fixed empty
-- Renders a type dropdown (Fixed Value / Context Path / App Setting) + dynamic input in an `input-group input-group-sm` — consistent with sidebar's compact layout
-- Helper `_renderValuePickerInput()` produces the correct input element per type: number input for integer, text for string, checkbox for boolean, text with `data-variable-picker="true"` for context, select with `data-vp-settings-select` for app_setting
-- Uses `data-vp-type="{fieldName}"` and `data-vp-field="{fieldName}"` data attributes for the generic handler
-
-**Refactored config panels:**
-- `_approvalHTML()` — `requiredCount` now uses `renderValuePicker()` instead of `_requiredCountHTML()`
-- `_actionHTML()` — each `inputSchema` param uses `renderValuePicker('params.{key}', ...)` instead of plain text inputs
-- `_conditionHTML()` — `expectedValue` uses `renderValuePicker()`, plugin condition `params.*` also use it. `field` stays as a plain context-only input (it's always a path, not a resolvable value)
-- `_delayHTML()` — `duration` uses `renderValuePicker()`. `waitEvent` stays as plain text (not a value to resolve)
-- `_loopHTML()` — `maxIterations` uses `renderValuePicker()`. `exitCondition` stays as plain text with variable picker
-
-**Designer controller changes (`workflow-designer-controller.js`):**
-- Added `onValuePickerTypeChange(event)` — generic handler that swaps the input element when the type dropdown changes, fetches app settings for app_setting type, re-attaches variable pickers for context type
-- Replaced `_loadAppSettings()` with `_loadAppSettingsForPicker(selectEl, selectedKey)` — takes a direct select element reference instead of searching by `data-rc-settings-select`
-- Updated `updateNodeConfig()` — generic value picker composition loop (`form.querySelectorAll('[data-vp-type]')`) replaces the `requiredCountType`/`requiredCountFixedValue`/etc. special-case block. The FormData loop skips fields managed by value pickers (tracked in a `vpFields` Set)
-- Updated `onNodeSelected()` — pre-populates all `[data-vp-settings-select]` dropdowns generically instead of checking for `requiredCount.type === 'app_setting'` specifically
-
-**Deleted:**
-- `_requiredCountHTML()` method
-- `onRequiredCountTypeChange()` handler
-- `requiredCountType`/`requiredCountFixedValue`/`requiredCountSettingKey`/`requiredCountContextPath` special-case composition in `updateNodeConfig()`
-
-#### Key Patterns
-- **Value picker data attributes**: `data-vp-type="{field}"` on type select, `data-vp-field="{field}"` on container, `data-vp-settings-select="{field}"` on app settings select. All keyed by field name for generic lookup.
-- **Composition in updateNodeConfig**: Fixed values stay as plain scalars (backward compatible). Context values become `{type: 'context', path: '...'}`. App settings become `{type: 'app_setting', key: '...'}`. Empty values become empty string.
-- **Type switching in onValuePickerTypeChange**: Removes old input from input-group, inserts new HTML via `insertAdjacentHTML('beforeend')`, then re-attaches pickers and triggers config save.
-- **No separate form fields needed anymore**: The old pattern used hidden fields (`requiredCountType`, `requiredCountFixedValue`) that were composed and deleted. The new pattern reads the type from `data-vp-type` select and the value from the single `name="{fieldName}"` input — cleaner, no cleanup needed.
-
-📌 Team update (2026-02-11): Universal value picker backend complete — Kaylee added `resolveParamValue()` to `DefaultWorkflowEngine`, handles fixed/context/app_setting. `resolveRequiredCount()` now delegates to it. Action and condition nodes resolve params through it. 463 tests pass. — decided by Kaylee
-📌 Team update (2026-02-11): Duplicate email fix — `activateApprovedRoster($sendNotifications=true)` added. Workflow passes `false`. No frontend changes needed. — decided by Kaylee
+📌 Team updates (2026-02-11): Flow control panels, resumeData conditional picker, requiredCount smart selector, universal value picker. All 5 config panels use renderValuePicker().
+📌 Team update (2026-02-11): Universal value picker backend (Kaylee) + frontend (Wash) complete. 463 tests pass.
+📌 Team update (2026-02-11): Duplicate email fix — `activateApprovedRoster($sendNotifications=true)` added. — decided by Kaylee
 
 ### 2026-02-12: Resizable Config Panel in Workflow Designer
 
@@ -167,3 +82,5 @@ Rewrote `app/templates/Workflows/approvals.php` from a hand-coded card+table lay
 - Grid lazy-loads via Turbo Frame (`approvals-grid`), server provides system views (Pending Approvals / Decisions) as tabs automatically
 - No asset changes needed — `dv_grid` element and `grid-view` controller already exist
 📌 Team update (2026-02-11): Approvals DataverseGrid backend architecture decided — Kaylee defined ID pre-filtering for pending tab, post-pagination virtual fields, skipAuthorization on scoped endpoint
+
+📌 Team update (2026-02-11): Warrant roster migration → Forward-Only (Option B). No historical data migration. Sync layer stays. Workflow engine unaffected — no synthetic instances will be created. — decided by Mal, Kaylee

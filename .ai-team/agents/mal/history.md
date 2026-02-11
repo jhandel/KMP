@@ -82,3 +82,24 @@ Designed a centralized "value picker" pattern for all workflow node parameters. 
 
 📌 Team update (2026-02-11): Universal value picker fully implemented — Kaylee built `resolveParamValue()` backend, Wash built `renderValuePicker()` frontend. All 5 config panels refactored. 463 tests pass. Architecture executed as designed. — decided by Mal, Kaylee, Wash
 📌 Team update (2026-02-11): Duplicate email fix — `activateApprovedRoster($sendNotifications)` pattern established for services wrapped by workflow notification steps. — decided by Kaylee
+
+### 2026-02-11: Warrant Roster Migration Architecture Assessment
+
+#### Key Trade-offs
+- **Full Migration (Option A):** Would consolidate to one approval system but requires creating synthetic workflow instances for 31 historical rosters. Synthetic instances pollute the workflow instance list and "My Approvals" grid with fake data. 19 old approval records lack decision/comment fields — migration would invent values. High complexity, moderate risk, eventual cleanliness.
+- **Forward-Only (Option B, Recommended):** No migration. New rosters already flow through workflows. Sync layer (`syncWorkflowApprovalToRoster()`) bridges old UI — 40 lines, 13 tests, idempotent. Carries dual-table tech debt but at near-zero cost. Sync layer removable in 6-12 months when all historical rosters age out.
+- **Unified View (Option C):** Adds abstraction layer to present both tables in one UI. Adds code complexity without removing either table. Lossy normalization between schemas.
+- **Thin Adapter (Option D):** Simple if/else in view template — show workflow approval data for new rosters, old table for historical. Trivial change, optional.
+
+#### Data Facts
+- 34 rosters (29 Approved, 5 Pending), 19 old approval records, 3 workflow instances (rosters 437-439)
+- "Warrant Roster Approval" workflow definition exists (ID 1, active, `Warrants.RosterCreated` trigger)
+- No FK constraints reference `warrant_roster_approvals` from other tables
+- No reports or exports depend on the old approval table — only the view template and WarrantManager service
+
+#### Decision
+**Forward-Only (Option B).** No migration. The sync layer bridges the transition cleanly. Revisit removal of sync layer and old table in 6-12 months. Not worth doing now — team time better spent on workflow engine improvements and authorization test fixes.
+
+📌 Full analysis: `.ai-team/decisions/inbox/mal-warrant-migration-architecture.md`
+
+📌 Team update (2026-02-11): Warrant roster migration → Forward-Only (Option B). No historical data migration. Sync layer stays. Revisit in 6–12 months. — decided by Mal, Kaylee

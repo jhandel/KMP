@@ -35,134 +35,30 @@ Recursive graph traversal engine, 7 tables, 4 static registries, 9 node types. C
 📌 Team updates (2026-02-10): Architecture documented, frontend patterns cataloged, test suite audited, auth triage complete (370→463 tests pass), queue owned, docs reviewed, workflow engine reviewed, roster sync implemented.
 📌 Team update (2026-02-11): Action Schema complete across all 5 phases. 459 tests pass.
 
-### 2026-02-11: Fix Approval Node Context Population in resumeWorkflow()
+### 2026-02-11: Bug Fixes & Feature Work (summarized)
 
-**Bug:** `resumeWorkflow()` stored approval `additionalData` in `$context['resumeData']` but never in `$context['nodes'][$nodeId]`. This meant `$.nodes.<nodeId>.approverId` (and other APPROVAL_OUTPUT_SCHEMA fields) never resolved at runtime, even though the variable picker advertised them.
+**Approval node context fix:** `resumeWorkflow()` now populates `$context['nodes'][$nodeId]` with APPROVAL_OUTPUT_SCHEMA fields. All node types must write to `$context['nodes'][$nodeId]` for the variable picker to resolve `$.nodes.<nodeId>.*`.
 
-**Fix:** Added a block in `resumeWorkflow()` (after `resumeData` assignment, before `updateInstance`) that writes to `$context['nodes'][$nodeId]` with all 5 APPROVAL_OUTPUT_SCHEMA fields: `status`, `approverId`, `comment`, `rejectionComment`, `decision`. Follows the same pattern as action nodes (line ~641) and condition nodes (line ~693). Also moved `$instance->context = $context` to always execute (not only when `additionalData` is non-empty), ensuring the nodes write is persisted.
+**TriggerDispatcher DI fix:** `DefaultOfficerManager` was calling `TriggerDispatcher::dispatch()` statically — fatal error when officer-hire workflow active. Fixed by constructor DI injection matching `DefaultWarrantManager` pattern. **Rule:** TriggerDispatcher must always be injected via DI.
 
-**Note on Bug 2 (not fixed, by design):** `$.resumeData` is ephemeral — a second approval gate overwrites the first's data. This is harmless since downstream nodes from the first gate already executed. Left as-is per task instructions.
+**Grid date timezone fix:** `dataverse_table.php` `case 'date':` now uses `$this->Timezone->date()`. Date-range filters convert to UTC via `TzHelper::toUtc()`. Warrants system views use kingdom-timezone today. Expression tree date handling in `GridViewConfig.php` does NOT do timezone conversion (potential follow-up).
 
-#### Key Patterns
-- All node types must write to `$context['nodes'][$nodeId]` for the variable picker (`$.nodes.<nodeId>.*`) to resolve
-- Approval output schema fields are defined in `WorkflowActionRegistry::APPROVAL_OUTPUT_SCHEMA`
-- `$instance->context = $context` must be set after all context mutations, before `updateInstance()`
+**Duplicate email fix:** Added `bool $sendNotifications = true` to `activateApprovedRoster()`. Workflow action passes `false` since workflow has own notify step. **Pattern:** When a service sends notifications AND a workflow wraps it with its own notify step, service must allow suppressing notifications.
 
-📌 Team update (2026-02-11): Fixed approval node context bug — `resumeWorkflow()` now populates `$context['nodes'][$nodeId]` with APPROVAL_OUTPUT_SCHEMA fields so `$.nodes.<nodeId>.approverId` etc. resolve at runtime. 459 tests pass. — fixed by Kaylee
+**App settings endpoint:** `GET /workflows/app-settings` on `WorkflowsController`. JSON pattern: `setClassName('Json')` + `setOption('serialize', [...])`.
 
-📌 Team update (2026-02-11): Approval node context fix consolidated with Jayne's test coverage into single decision — decided by Scribe
+**Universal resolveParamValue():** 4 resolution paths: null→default, scalar→as-is, `$.path`→resolveContextValue, `{type}` object→fixed/context/app_setting. `resolveRequiredCount()` now delegates to it. Action and condition node params resolved through it. Uses `TableRegistry` for app_setting (no cache layer during execution).
 
-### 2026-02-11: Fix TriggerDispatcher Static Call Bug in DefaultOfficerManager
+**Approvals grid backend:** `ApprovalsGridColumns.php` + `approvalsGridData()` on WorkflowsController with DataverseGridTrait. Pending tab: get eligible IDs via `getPendingApprovalsForMember()` then `WHERE id IN (...)`. Decisions tab: `innerJoinWith('WorkflowApprovalResponses')`. **Pattern:** For eligibility-backed grids, pre-filter IDs then let DataverseGridTrait paginate.
 
-**Bug:** `DefaultOfficerManager` called `TriggerDispatcher::dispatch()` statically in two places (assign line 91, release line 606), but `dispatch()` is an instance method requiring `WorkflowEngineInterface` via constructor injection. This caused a fatal error when the officer-hire workflow was active.
-
-**Fix:** Injected `TriggerDispatcher` into `DefaultOfficerManager` via constructor DI, matching the existing pattern in `DefaultWarrantManager`. Updated `OfficersPlugin::services()` to pass `TriggerDispatcher::class` as a DI argument. Changed both static calls to instance calls (`$this->triggerDispatcher->dispatch(...)`).
-
-**Files changed:** `DefaultOfficerManager.php` (constructor + 2 call sites), `OfficersPlugin.php` (DI registration). No other static callers found in the codebase. All 463 tests pass.
-
-**Rule:** `TriggerDispatcher` must always be injected via DI and called on an instance. It cannot work statically because it depends on `WorkflowEngineInterface`.
-
-📌 Team update (2026-02-11): Fixed TriggerDispatcher static call bug — `DefaultOfficerManager` now injects TriggerDispatcher via DI instead of calling statically. 2 files changed, 463 tests pass. — fixed by Kaylee
-
-### 2026-02-11: Fix Grid Date Column Timezone Display & Filters
-
-**Bug:** The `case 'date':` block in `dataverse_table.php` displayed dates using raw `$value->format('F j, Y')` (UTC), while the `case 'datetime':` block correctly used `$this->Timezone->format($value)`. Warrant grid columns `start_on` and `expires_on` are type `date`, so they showed UTC dates to users.
-
-**Fixes (3 files):**
-
-1. **`dataverse_table.php`** — Changed `case 'date':` to use `$this->Timezone->date($value)` (the view helper's date-only method that converts to user/kingdom timezone before formatting). Matches the pattern already used by `case 'datetime':`.
-
-2. **`DataverseGridTrait.php`** — Added `TzHelper::toUtc()` conversion for date-only filter values (Y-m-d strings) before applying them to SQL queries. Start dates convert start-of-day (`00:00:00`) in kingdom timezone to UTC. End dates convert end-of-day (`23:59:59`) in kingdom timezone to UTC. Original values preserved for filter pill display. This affects all grids with `date-range` filter columns (Warrants, WarrantRosters, Gatherings, GatheringAttendances, WarrantPeriods, MemberRoles).
-
-3. **`WarrantsGridColumns.php`** — Changed system view boundary dates from `FrozenDate::today()` (UTC) to kingdom-timezone-aware today using `TzHelper::getAppTimezone()`. Ensures "Current", "Upcoming", "Previous" views use the kingdom's local date.
-
-#### Key Patterns Discovered
-- The `Timezone` view helper already had a `date()` method perfect for date-only display with timezone conversion — wraps `TzHelper::toUserTimezone()` + `TzHelper::formatDate()`.
-- `TzHelper::toUtc()` with `$member = null` falls back to the app's configured timezone (`KMP.DefaultTimezone`), which is the kingdom's timezone. This is the correct default for grid filters.
-- Expression tree date handling in `GridViewConfig.php` does NOT do timezone conversion — potential follow-up item for system views that use `expression` blocks with date operators (e.g., the "Previous" warrants view's OR expression).
-
-📌 Team update (2026-02-11): Fixed grid date timezone bug — `case 'date':` now uses `$this->Timezone->date()`, date-range filters convert to UTC via `TzHelper::toUtc()`, warrants system views use kingdom-timezone today. 3 files changed, 463 tests pass. — fixed by Kaylee
-
-### 2026-02-11: Fix Duplicate Warrant Notification Emails
-
-**Bug:** The warrant roster workflow sent duplicate notification emails — one set from `activateApprovedRoster()` inside `DefaultWarrantManager`, and a second set from the workflow's `notifyWarrantIssued` action. Both fire on the approved path: `action-activate → action-notify-approved`.
-
-**Root Cause:** `activateApprovedRoster()` always sent notification emails via `queueMail()` after activating each warrant. When called from the workflow's `activateWarrants()` action, the next workflow step `notifyWarrantIssued()` also sent emails for the same warrants. This doubled the emails for every warrant on the roster.
-
-**Fix:** Added `bool $sendNotifications = true` parameter to `activateApprovedRoster()` (interface + implementation). The workflow action `activateWarrants()` now passes `false` to suppress the internal emails, since the workflow has its own dedicated `notifyWarrantIssued` step. The direct approval path (`approve()`) continues to use the default `true`, preserving email behavior for non-workflow approvals.
-
-**Files changed:** `WarrantManagerInterface.php` (signature + docblock), `DefaultWarrantManager.php` (parameter + conditional), `WarrantWorkflowActions.php` (pass `false`). 463 tests pass.
-
-#### Key Patterns
-- When a service method both performs an action AND sends notifications, and a workflow wraps that service with its own notification step, the service must allow suppressing notifications to avoid duplicates.
-- `activateApprovedRoster()` is called from two paths: direct (`approve()` with notifications) and workflow (`activateWarrants()` without notifications). The `$sendNotifications` parameter gates which path sends email.
-
-📌 Team update (2026-02-11): Fixed duplicate warrant notification email bug — `activateApprovedRoster()` now accepts `$sendNotifications` parameter (default true). Workflow action passes false since workflow has its own notify step. 3 files changed, 463 tests pass. — fixed by Kaylee
-
-### 2026-02-11: API Endpoint for App Settings (Workflow Designer)
-
-Added `GET /workflows/app-settings` endpoint to `WorkflowsController` for the workflow designer's approval node configuration. Returns all app settings as JSON (`name`, `value`, `type`). Follows the same pattern as `policyClasses()` and `policyActions()` — `skipAuthorization()`, `Json` view class, explicit route in `/workflows` scope.
-
-Key patterns:
-- Workflow designer endpoints live on `WorkflowsController`, not `AppSettingsController`, to keep all designer APIs together.
-- JSON endpoints use `$this->viewBuilder()->setClassName('Json')` + `setOption('serialize', [...])` pattern.
-- `resolveRequiredCount()` in `DefaultWorkflowEngine` supports 4 input types: plain integer, `{type: 'fixed', value: N}`, `{type: 'app_setting', key: '...'}` (with optional `default`), and `{type: 'context', path: '$.field'}`.
-
-📌 Team update (2026-02-11): Added `GET /workflows/app-settings` endpoint — returns all app settings as JSON for workflow designer approval node requiredCount dropdown. 2 files changed, 463 tests pass. — implemented by Kaylee
-
-### 2026-02-11: Universal resolveParamValue() in DefaultWorkflowEngine
-
-Added `resolveParamValue()` as the universal value resolution method for workflow parameter values. This is the backend half of the universal value picker architecture (Mal's design).
-
-**Changes to `DefaultWorkflowEngine.php`:**
-
-1. **Added `resolveParamValue(mixed $value, array $context, mixed $default = null): mixed`** — Handles 4 resolution paths: null/empty → default, plain scalar → as-is, `$.path` string → `resolveContextValue()`, array with `type` key → dispatches to `fixed`/`context`/`app_setting` handlers. Unknown types log a warning and return default.
-
-2. **Refactored `resolveRequiredCount()`** — Now a thin wrapper: calls `resolveParamValue($value, $context, 1)` then returns `max(1, (int)$resolved)`. Preserves the int cast and min-1 guarantee for approval nodes.
-
-3. **Updated `executeActionNode()`** — Params are now resolved through `resolveParamValue()` before being merged into `$nodeConfig`. Each param in `config.params` is individually resolved, so action handlers receive already-resolved values.
-
-4. **Updated `executeConditionNode()`** — `expectedValue` is resolved via `resolveParamValue()` before passing to the evaluator. Params in `config.params` are individually resolved. `field` is NOT resolved — it's a context PATH reference that gets passed to `resolveFieldPath()` as-is.
-
-#### Key Patterns
-- `resolveParamValue()` is placed right before `resolveRequiredCount()` in the file, after `resolveContextValue()`. This groups all resolution methods together.
-- The `app_setting` resolution uses the same `TableRegistry::getTableLocator()->get('AppSettings')` pattern that the old `resolveRequiredCount()` used — no dependency on `StaticHelpers::getAppSetting()` which would add a cache layer we don't want during workflow execution.
-- Inline expression evaluation in condition nodes (the `else` branch) is untouched — `evaluateExpression()` handles its own field resolution.
-- Backward compatible: plain scalars pass through unchanged, `$.path` strings still work, existing `{type: "app_setting"}` objects still work.
-
-📌 Team update (2026-02-11): Universal `resolveParamValue()` added to DefaultWorkflowEngine — handles fixed/context/app_setting value descriptors and $.path shorthand. `resolveRequiredCount()` refactored to delegate. `executeActionNode()` and `executeConditionNode()` now resolve params through it. 1 file changed, 463 tests pass. — implemented by Kaylee
-
-📌 Team update (2026-02-11): Universal value picker frontend complete — Wash built `renderValuePicker()`, refactored all 5 config panels, deleted `_requiredCountHTML()` prototype. Data attributes: `data-vp-type`, `data-vp-field`, `data-vp-settings-select`. — decided by Wash
-
-### 2026-02-11: Approvals DataverseGrid Backend (approvalsGridData)
-
-Built the backend for the My Approvals page redesign using two DataverseGrid system views.
-
-**New file: `ApprovalsGridColumns.php`** — Grid column metadata with 5 columns:
-- `workflow_name`: string, sortable/searchable/filterable via `queryField: 'WorkflowDefinitions.name'`
-- `request`: virtual string (entity name resolved by controller), not sortable/filterable
-- `status_label`: string with dropdown filter, uses `queryField: 'WorkflowApprovals.status'` for filtering while displaying formatted labels ("Pending (2/3)" or "Approved")
-- `created` / `modified`: datetime, sortable, date-range filterable
-
-Two system views: `sys-approvals-pending` (status=pending) and `sys-approvals-decisions` (status IN approved/rejected/expired/cancelled). `showAllTab: false`.
-
-**Controller changes: `WorkflowsController`**
-- Added `DataverseGridTrait`
-- Simplified `approvals()` to page shell only (grid lazy-loads)
-- Added `approvalsGridData()` with:
-  - `queryCallback` that scopes data per system view: pending tab uses `getPendingApprovalsForMember()` to get eligible IDs then `WHERE id IN (...)` for trait pagination; decisions tab uses `innerJoinWith('WorkflowApprovalResponses')` filtered by current user
-  - Post-pagination enrichment loop sets `workflow_name`, `status_label`, and `request` virtual properties on each entity
-  - Turbo-Frame header detection for `approvals-grid-table` vs `approvals-grid` (inner/outer frame)
-  - `skipAuthorization()` since query is scoped to current user
-
-**Route: `config/routes.php`** — Added `/workflows/approvals-grid-data` route.
-
-#### Key Patterns
-- For grids backed by complex eligibility logic (not just SQL WHERE), get eligible IDs first, then pass `WHERE id IN (...)` to the grid query so DataverseGridTrait handles filtering/sorting/pagination normally
-- Virtual display fields (like `status_label`) can use `queryField` pointing to the actual DB column for filtering/sorting while showing computed display values
-- `lockedFilters` prevents users from removing system-view-defined filters
-- `showAllTab: false` restricts grid to system views only
-
-📌 Team update (2026-02-11): Built approvals grid backend — `ApprovalsGridColumns.php`, `approvalsGridData()` on WorkflowsController with DataverseGridTrait, queryCallback for pending eligibility + decisions scoping. 2 files changed, 1 created, 463 tests pass. — implemented by Kaylee
+📌 Team updates (2026-02-11): Approval context fix, TriggerDispatcher DI, grid timezone, duplicate emails, app-settings endpoint, universal resolveParamValue, approvals grid backend. 463 tests pass.
 📌 Team update (2026-02-11): Collapsible sidebar uses body class toggle pattern — decided by Wash
 📌 Team update (2026-02-11): Resizable config panel in workflow designer (300px–60vw, localStorage persistence) — decided by Wash
+
+### 2026-02-12: Warrant Roster Migration Research (summarized)
+
+Mapped `warrant_rosters`/`warrant_roster_approvals` → `workflow_instances`/`workflow_approvals`/`workflow_approval_responses`. 34 rosters (29 Approved, 5 Pending), 19 approvals. ~107 rows to migrate. Key blockers: no decline actor records, execution_log FK requirement, entity docblock mismatch (`description`/`planned_start_on`/`planned_expires_on` don't exist in DB). Cannot drop roster tables due to `warrants.warrant_roster_id` FK.
+
+📌 Team update (2026-02-12): Completed warrant roster → workflow migration research. 34 rosters, 19 approvals to port. Key blockers: no decline actor records, execution_log FK requirement, dual-path approval code. Full analysis in decisions/inbox/kaylee-warrant-migration-research.md. — researched by Kaylee
+
+📌 Team update (2026-02-11): Warrant roster migration → Forward-Only (Option B). No historical data migration. Sync layer stays. Revisit in 6–12 months. — decided by Mal, Kaylee
