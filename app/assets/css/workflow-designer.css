@@ -126,13 +126,32 @@
 
 /* ----- Config Panel ----- */
 .workflow-config-panel {
-    width: 320px;
-    min-width: 320px;
+    width: 400px;
+    min-width: 300px;
+    max-width: 60vw;
     border-left: 1px solid var(--bs-border-color);
     overflow-y: auto;
     background: #fff;
     display: flex;
     flex-direction: column;
+    position: relative;
+}
+
+/* ----- Config Panel Resize Handle ----- */
+.config-panel-resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 10;
+}
+.config-panel-resize-handle:hover,
+.config-panel-resize-handle.dragging {
+    background: var(--bs-primary);
+    opacity: 0.3;
 }
 
 .config-panel-header {

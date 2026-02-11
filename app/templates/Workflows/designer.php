@@ -118,6 +118,8 @@ $this->KMP->endBlock();
         <!-- Right: Config Panel -->
         <div class="workflow-config-panel wf-config-panel"
             data-workflow-designer-target="nodeConfig">
+            <div class="config-panel-resize-handle"
+                data-action="mousedown->workflow-designer#onResizeStart"></div>
             <div class="config-panel-header">
                 <h6><i class="bi bi-sliders me-1"></i><?= __('Configuration') ?></h6>
             </div>

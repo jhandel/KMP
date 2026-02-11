@@ -47,6 +47,7 @@ class WorkflowDesignerController extends Controller {
                 await this.loadWorkflow()
             }
             this._bindKeyboardShortcuts()
+            this._restoreConfigPanelWidth()
             this._lastSavedSnapshot = JSON.stringify(this.editor.export())
         } catch (error) {
             this._showError('Failed to initialize the workflow designer.')
@@ -1078,10 +1079,58 @@ class WorkflowDesignerController extends Controller {
         }
     }
 
+    // --- Config Panel Resize ---
+
+    _restoreConfigPanelWidth() {
+        const saved = localStorage.getItem('wf-config-panel-width')
+        if (saved && this.hasNodeConfigTarget) {
+            const width = parseInt(saved, 10)
+            if (width >= 300 && width <= window.innerWidth * 0.6) {
+                this.nodeConfigTarget.style.width = width + 'px'
+                this.nodeConfigTarget.style.minWidth = width + 'px'
+            }
+        }
+    }
+
+    onResizeStart(event) {
+        event.preventDefault()
+        this._resizeStartX = event.clientX
+        this._resizeStartWidth = this.nodeConfigTarget.getBoundingClientRect().width
+        const handle = event.currentTarget
+        handle.classList.add('dragging')
+
+        this._boundResizeMove = this._onResizeMove.bind(this)
+        this._boundResizeEnd = this._onResizeEnd.bind(this, handle)
+        document.addEventListener('mousemove', this._boundResizeMove)
+        document.addEventListener('mouseup', this._boundResizeEnd)
+    }
+
+    _onResizeMove(event) {
+        const delta = this._resizeStartX - event.clientX
+        const maxWidth = window.innerWidth * 0.6
+        let newWidth = Math.max(300, Math.min(maxWidth, this._resizeStartWidth + delta))
+        this.nodeConfigTarget.style.width = newWidth + 'px'
+        this.nodeConfigTarget.style.minWidth = newWidth + 'px'
+    }
+
+    _onResizeEnd(handle) {
+        handle.classList.remove('dragging')
+        document.removeEventListener('mousemove', this._boundResizeMove)
+        document.removeEventListener('mouseup', this._boundResizeEnd)
+        const currentWidth = Math.round(this.nodeConfigTarget.getBoundingClientRect().width)
+        localStorage.setItem('wf-config-panel-width', currentWidth)
+    }
+
     // --- Lifecycle ---
 
     disconnect() {
         this._unbindKeyboardShortcuts()
+        if (this._boundResizeMove) {
+            document.removeEventListener('mousemove', this._boundResizeMove)
+        }
+        if (this._boundResizeEnd) {
+            document.removeEventListener('mouseup', this._boundResizeEnd)
+        }
         if (this.editor) {
             this.editor.clear()
         }
