@@ -374,7 +374,7 @@ class CoreNavigationProvider
             ],
             [
                 'type' => 'link',
-                'mergePath' => ['Workflows'],
+                'mergePath' => ['Action Items'],
                 'label' => 'My Approvals',
                 'order' => 10,
                 'url' => [
@@ -382,6 +382,12 @@ class CoreNavigationProvider
                     'action' => 'approvals',
                 ],
                 'icon' => 'bi-check2-square',
+                'badgeClass' => 'bg-danger',
+                'badgeValue' => [
+                    'class' => "App\Model\Table\WorkflowApprovalsTable",
+                    'method' => 'getPendingApprovalCountForMember',
+                    'argument' => $user->id,
+                ],
             ],
             [
                 'type' => 'link',

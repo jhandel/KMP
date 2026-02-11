@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Model\Table;
 
 use App\Model\Entity\WorkflowApproval;
+use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
+use Cake\Log\Log;
 use Cake\ORM\RulesChecker;
 use Cake\Validation\Validator;
 
@@ -133,5 +135,22 @@ class WorkflowApprovalsTable extends BaseTable
         ]);
 
         return $rules;
+    }
+
+    /**
+     * Get the count of pending approvals for a specific member.
+     *
+     * @param int $memberId The member ID to check
+     * @return int Count of pending approvals
+     */
+    public static function getPendingApprovalCountForMember(int $memberId): int
+    {
+        try {
+            $manager = new DefaultWorkflowApprovalManager();
+            return count($manager->getPendingApprovalsForMember($memberId));
+        } catch (\Exception $e) {
+            Log::error("Error counting pending approvals for member {$memberId}: {$e->getMessage()}");
+            return 0;
+        }
     }
 }

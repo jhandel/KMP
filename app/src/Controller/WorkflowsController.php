@@ -26,6 +26,7 @@ use Cake\Http\ServerRequest;
  */
 class WorkflowsController extends AppController
 {
+    use DataverseGridTrait;
     protected ?string $defaultTable = 'WorkflowDefinitions';
 
     private WorkflowEngineInterface $engine;
@@ -300,35 +301,142 @@ class WorkflowsController extends AppController
     }
 
     /**
-     * Approval dashboard: pending approvals and recent decisions.
+     * Approval dashboard entry point.
+     *
+     * Renders the approvals page shell. The DataverseGrid lazy-loads
+     * actual data via approvalsGridData().
      *
      * @return \Cake\Http\Response|null|void
      */
     public function approvals()
     {
+        // Page shell only — grid lazy-loads via approvalsGridData
+    }
+
+    /**
+     * Grid data endpoint for the My Approvals DataverseGrid.
+     *
+     * Two system views:
+     *  - Pending: eligible approvals via approval manager eligibility logic
+     *  - Decisions: resolved approvals the current user responded to
+     *
+     * @return \Cake\Http\Response|null|void
+     */
+    public function approvalsGridData()
+    {
+        $this->Authorization->skipAuthorization();
+
         $currentUser = $this->request->getAttribute('identity');
         $approvalManager = $this->getApprovalManager();
-        $pendingApprovals = $approvalManager->getPendingApprovalsForMember($currentUser->id);
+        $approvalsTable = $this->fetchTable('WorkflowApprovals');
 
-        // Enrich pending approvals with entity context from the workflow instance
-        foreach ($pendingApprovals as $approval) {
-            $instance = $approval->workflow_instance ?? null;
+        // Base query with workflow context for the workflow_name column
+        $baseQuery = $approvalsTable->find()
+            ->contain(['WorkflowInstances' => ['WorkflowDefinitions']]);
+
+        // System views
+        $systemViews = \App\KMP\GridColumns\ApprovalsGridColumns::getSystemViews();
+
+        // Query callback scopes data to current user based on selected system view
+        $queryCallback = function ($query, $systemView) use ($currentUser, $approvalManager) {
+            if ($systemView === null) {
+                // No view selected — return empty result set
+                $query->where(['WorkflowApprovals.id' => -1]);
+                return $query;
+            }
+
+            if ($systemView['id'] === 'sys-approvals-pending') {
+                // Get eligible approval IDs via complex eligibility logic,
+                // then let the trait handle filtering/sorting/pagination
+                $eligible = $approvalManager->getPendingApprovalsForMember($currentUser->id);
+                $eligibleIds = array_map(fn($a) => $a->id, $eligible);
+
+                if (empty($eligibleIds)) {
+                    $query->where(['WorkflowApprovals.id' => -1]);
+                } else {
+                    $query->where(['WorkflowApprovals.id IN' => $eligibleIds]);
+                }
+            } elseif ($systemView['id'] === 'sys-approvals-decisions') {
+                // Approvals this user has responded to (unique constraint prevents duplicates)
+                $query->innerJoinWith('WorkflowApprovalResponses', function ($q) use ($currentUser) {
+                    return $q->where(['WorkflowApprovalResponses.member_id' => $currentUser->id]);
+                });
+            }
+
+            return $query;
+        };
+
+        $result = $this->processDataverseGrid([
+            'gridKey' => 'Workflows.approvals.main',
+            'gridColumnsClass' => \App\KMP\GridColumns\ApprovalsGridColumns::class,
+            'baseQuery' => $baseQuery,
+            'tableName' => 'WorkflowApprovals',
+            'defaultSort' => ['WorkflowApprovals.modified' => 'desc'],
+            'defaultPageSize' => 25,
+            'systemViews' => $systemViews,
+            'defaultSystemView' => 'sys-approvals-pending',
+            'queryCallback' => $queryCallback,
+            'showAllTab' => false,
+            'canAddViews' => false,
+            'canFilter' => true,
+            'canExportCsv' => false,
+            'lockedFilters' => ['status_label'],
+            'showFilterPills' => true,
+            'showSearchBox' => true,
+        ]);
+
+        // Enrich paginated rows with virtual fields
+        foreach ($result['data'] as $approval) {
+            // Workflow name (from contained relation)
+            $approval->workflow_name = $approval->workflow_instance?->workflow_definition?->name ?? __('Unknown');
+
+            // Status label: "Pending (X/Y)" for pending, ucfirst for resolved
+            if ($approval->status === \App\Model\Entity\WorkflowApproval::STATUS_PENDING) {
+                $approval->status_label = __('Pending ({0}/{1})', $approval->approved_count, $approval->required_count);
+            } else {
+                $approval->status_label = ucfirst($approval->status);
+            }
+
+            // Request: entity name from workflow instance context
+            $instance = $approval->workflow_instance;
             if ($instance) {
-                $context = $instance->context ?? [];
-                $approval->_entityContext = $this->resolveEntityContext($instance);
-                $approval->_triggerData = $context['trigger'] ?? [];
+                $entityContext = $this->resolveEntityContext($instance);
+                $approval->request = $entityContext['entityName'] ?? "#{$instance->entity_id}";
+            } else {
+                $approval->request = '—';
             }
         }
 
-        $recentApprovals = $this->paginate(
-            $this->fetchTable('WorkflowApprovals')->find()
-                ->contain(['WorkflowInstances' => ['WorkflowDefinitions'], 'WorkflowApprovalResponses'])
-                ->where(['WorkflowApprovals.status !=' => 'pending'])
-                ->orderBy(['WorkflowApprovals.modified' => 'DESC']),
-            ['limit' => 25, 'scope' => 'recent']
-        );
+        // Set view variables (following WarrantRostersController pattern)
+        $this->set([
+            'data' => $result['data'],
+            'gridState' => $result['gridState'],
+            'columns' => $result['columnsMetadata'],
+            'visibleColumns' => $result['visibleColumns'],
+            'searchableColumns' => \App\KMP\GridColumns\ApprovalsGridColumns::getSearchableColumns(),
+            'dropdownFilterColumns' => $result['dropdownFilterColumns'],
+            'filterOptions' => $result['filterOptions'],
+            'currentFilters' => $result['currentFilters'],
+            'currentSearch' => $result['currentSearch'],
+            'currentView' => $result['currentView'],
+            'availableViews' => $result['availableViews'],
+            'gridKey' => $result['gridKey'],
+            'currentSort' => $result['currentSort'],
+            'currentMember' => $result['currentMember'],
+        ]);
 
-        $this->set(compact('pendingApprovals', 'recentApprovals'));
+        // Determine template based on Turbo-Frame header
+        $turboFrame = $this->request->getHeaderLine('Turbo-Frame');
+
+        if ($turboFrame === 'approvals-grid-table') {
+            $this->set('tableFrameId', 'approvals-grid-table');
+            $this->viewBuilder()->disableAutoLayout();
+            $this->viewBuilder()->setTemplate('../element/dv_grid_table');
+        } else {
+            $this->set('frameId', 'approvals-grid');
+            $this->viewBuilder()->disableAutoLayout();
+            $this->viewBuilder()->setTemplate('../element/dv_grid_content');
+        }
     }
 
     /**
