@@ -165,18 +165,22 @@ export default class WorkflowConfigPanel {
             })
             options += '</optgroup>'
         }
+        const isCore = !config.condition || config.condition.startsWith('Core.')
         let html = `<div class="mb-3">
             <label class="form-label">Condition</label>
             <select class="form-select form-select-sm" name="condition" data-action="change->workflow-designer#updateNodeConfig">${options}</select>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Field Path</label>
-            <input type="text" class="form-control form-control-sm" name="field" value="${config.field || ''}" placeholder="$.entity.field_name" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Expected Value</label>
-            <input type="text" class="form-control form-control-sm" name="expectedValue" value="${config.expectedValue || ''}" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>`
+
+        if (isCore) {
+            html += `<div class="mb-3">
+                <label class="form-label">Field Path</label>
+                <input type="text" class="form-control form-control-sm" name="field" value="${config.field || ''}" placeholder="$.entity.field_name" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Expected Value</label>
+                <input type="text" class="form-control form-control-sm" name="expectedValue" value="${config.expectedValue || ''}" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+            </div>`
+        }
 
         if (config.condition && !config.condition.startsWith('Core.')) {
             const cond = this.registryData.conditions?.find(c => c.condition === config.condition)
