@@ -1,4 +1,0 @@
-### 2026-02-11: resumeData variables shown conditionally based on upstream approval nodes
-**By:** Wash
-**What:** `$.resumeData.*` variables (approverId, decision, comment) are now injected into the variable picker dropdown, but only when the node being configured has an upstream approval node. This mirrors the runtime behavior — `resumeData` only exists when an approval gate resumes the workflow.
-**Why:** Showing resumeData unconditionally would confuse users configuring nodes that will never have access to it. The upstream traversal already exists in the picker, so checking `upstream.some(n => n.data?.type === 'approval')` is a zero-cost addition. This establishes a pattern for conditional variable injection that could apply to other context-dependent data (e.g., loop iteration vars only downstream of loop nodes).

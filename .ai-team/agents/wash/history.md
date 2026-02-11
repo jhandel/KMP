@@ -232,3 +232,6 @@ Added `$.resumeData.*` context variables to `workflow-variable-picker.js` `build
 
 #### Key Pattern
 - Conditional variable injection based on upstream node types — first use of this pattern in the variable picker. Could be extended for other context-dependent variables (e.g., loop iteration data only downstream of loops).
+
+📌 Team update (2026-02-11): Three new designer decisions merged — resumeData conditional picker, condition field visibility, flow control config panels — decided by Wash
+📌 Team update (2026-02-11): Kaylee fixed approval node context in resumeWorkflow(); Jayne added 4 tests — decided by Kaylee, Jayne

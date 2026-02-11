@@ -168,3 +168,5 @@ Key finding: `WorkflowConditionRegistry::getCondition()` already existed — no 
 - `$instance->context = $context` must be set after all context mutations, before `updateInstance()`
 
 📌 Team update (2026-02-11): Fixed approval node context bug — `resumeWorkflow()` now populates `$context['nodes'][$nodeId]` with APPROVAL_OUTPUT_SCHEMA fields so `$.nodes.<nodeId>.approverId` etc. resolve at runtime. 459 tests pass. — fixed by Kaylee
+
+📌 Team update (2026-02-11): Approval node context fix consolidated with Jayne's test coverage into single decision — decided by Scribe

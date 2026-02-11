@@ -2535,3 +2535,55 @@ Any JavaScript code that needs to render autocomplete widgets must use `renderAu
 
 
 
+
+---
+
+### 2026-02-11: Approval node context population in resumeWorkflow() (consolidated)
+
+**By:** Kaylee, Jayne
+**Status:** Implemented
+
+**What:** Fixed `resumeWorkflow()` to store approval output data in `$context['nodes'][$nodeId]` with all 5 fields from `APPROVAL_OUTPUT_SCHEMA` (status, approverId, comment, rejectionComment, decision). Previously only `$context['resumeData']` was populated, making `$.nodes.<nodeId>.*` paths unresolvable at runtime. Every other node type (actions, conditions, subworkflows) already writes to `$context['nodes'][$nodeId]` — approval was the only one missing.
+
+**Why:** The variable picker (via `WorkflowActionRegistry::APPROVAL_OUTPUT_SCHEMA` and the `registry()` endpoint) advertises `$.nodes.<approvalNodeId>.approverId` etc. as available fields for downstream node configuration. Without writing to `$context['nodes']`, these paths silently resolve to null. This is a data-flow consistency fix, not a behavioral change.
+
+**Test coverage (Jayne):** 4 tests in `DefaultWorkflowEngineTest.php`:
+1. Approved path context population
+2. Rejected path context population
+3. Backward compatibility (`resumeData` still populated)
+4. Empty `additionalData` edge case (null defaults, no crash)
+
+**Test helper pattern:** `createAndStartApprovalWorkflow()` creates a trigger→approval→(end_ok|end_nope) graph, starts the workflow, and returns the paused instance. Reusable for any future `resumeWorkflow()` tests needing a WAITING instance with an approval gate.
+
+**Impact:** All 36 tests in `DefaultWorkflowEngineTest.php` pass. All 463 core-unit tests pass.
+
+
+---
+
+### 2026-02-11: resumeData variables shown conditionally based on upstream approval nodes
+**By:** Wash
+**What:** `$.resumeData.*` variables (approverId, decision, comment) are now injected into the variable picker dropdown, but only when the node being configured has an upstream approval node. This mirrors the runtime behavior — `resumeData` only exists when an approval gate resumes the workflow.
+**Why:** Showing resumeData unconditionally would confuse users configuring nodes that will never have access to it. The upstream traversal already exists in the picker, so checking `upstream.some(n => n.data?.type === 'approval')` is a zero-cost addition. This establishes a pattern for conditional variable injection that could apply to other context-dependent data (e.g., loop iteration vars only downstream of loop nodes).
+
+
+---
+
+### 2026-02-11: Condition config fields are context-dependent
+
+**By:** Wash
+**Scope:** workflow-config-panel.js `_conditionHTML()`
+
+**What:** The "Field Path" and "Expected Value" inputs in the condition config panel are only rendered when no condition is selected (empty/default state) or a `Core.*` condition is selected (`Core.FieldEquals`, `Core.FieldNotEmpty`, `Core.Expression`). Hidden when a plugin condition is selected (anything not starting with `Core.`), since plugin conditions use their own `inputSchema` fields rendered separately.
+
+**Why:** Plugin conditions like `Officers.OfficeRequiresWarrant` define their own parameters via `inputSchema`. The generic "Field Path" / "Expected Value" fields are meaningless for those conditions and create confusing clutter in the config panel. This follows the same pattern already established for action `inputSchema` fields — show only what's relevant to the selected item.
+
+
+---
+
+### 2026-02-11: Flow control node config panels
+**By:** Wash
+**Date:** 2026-02-11
+**What:** Extended config panel + variable picker coverage to ALL flow control node types (trigger inputMapping, delay, subworkflow, fork, join, end). Previously only action and condition had schema-driven fields.
+**Why:** Consistency — every node type now has a proper config panel. Trigger nodes can map payload fields via `inputMapping.*` namespace. Delay inputs support variable references. Subworkflow, fork, join, and end get appropriate UI. Variable picker outputs added for delay, loop, and subworkflow so downstream nodes can reference their results.
+**Pattern:** `inputMapping.*` form fields follow the same nesting pattern as `params.*` — collected in `updateNodeConfig()` and stored as `config.inputMapping = {}`. The `event` field now triggers config panel re-render like `action` and `condition`.
+

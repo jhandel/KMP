@@ -121,3 +121,5 @@ Added 4 tests to `app/tests/TestCase/Services/WorkflowEngine/DefaultWorkflowEngi
 - `createAndStartApprovalWorkflow()` helper — creates trigger→approval→(end_ok|end_nope) workflow, starts it, returns `[$instanceId, $nodeId]` with instance in WAITING state
 - Resume via `$this->engine->resumeWorkflow()` then re-fetch instance from DB and inspect `$instance->context`
 - Tests the fix at lines 217-228 of `DefaultWorkflowEngine.php` — nodes context population matching action/condition patterns
+
+📌 Team update (2026-02-11): Approval node context tests consolidated with Kaylee's fix into single decision — decided by Scribe
