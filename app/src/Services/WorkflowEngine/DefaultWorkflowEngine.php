@@ -212,8 +212,20 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $context = $instance->context ?? [];
             if (!empty($additionalData)) {
                 $context['resumeData'] = $additionalData;
-                $instance->context = $context;
             }
+
+            // Store approval output in nodes context so $.nodes.<nodeId>.* resolves
+            if (!isset($context['nodes'])) {
+                $context['nodes'] = [];
+            }
+            $context['nodes'][$nodeId] = [
+                'status' => $outputPort,
+                'approverId' => $additionalData['approverId'] ?? null,
+                'comment' => $additionalData['comment'] ?? null,
+                'rejectionComment' => $additionalData['comment'] ?? null,
+                'decision' => $additionalData['decision'] ?? $outputPort,
+            ];
+            $instance->context = $context;
 
             $instance->status = WorkflowInstance::STATUS_RUNNING;
             $this->updateInstance($instance, []);

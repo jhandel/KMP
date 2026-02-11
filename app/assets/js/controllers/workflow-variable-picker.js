@@ -143,6 +143,16 @@ export default class WorkflowVariablePicker {
             }
         })
 
+        // If any upstream node is an approval gate, resumeData is available at runtime
+        const hasUpstreamApproval = upstream.some(n => n.data?.type === 'approval')
+        if (hasUpstreamApproval) {
+            variables.push(
+                { path: '$.resumeData.approverId', label: 'Resume: Approver ID', type: 'integer' },
+                { path: '$.resumeData.decision', label: 'Resume: Decision', type: 'string' },
+                { path: '$.resumeData.comment', label: 'Resume: Comment', type: 'string' },
+            )
+        }
+
         const builtins = this.registryData?.builtinContext
         if (builtins && Array.isArray(builtins)) {
             variables.push(...builtins)

@@ -153,3 +153,18 @@ Key finding: `WorkflowConditionRegistry::getCondition()` already existed — no 
 📌 Team update (2026-02-10): Action Schema phases 3–5 implemented — approval output schema constant, builtinContext in registry endpoint, publish-time param validation, schema descriptions in 2 providers. All 20 ValidateDefinitionTest tests pass. — decided by Josh Handel, implemented by Kaylee
 
 📌 Team update (2026-02-11): Action Schema & Context Mapping — all 5 phases implemented and consolidated. Architecture (Mal), frontend fixes + field rendering (Wash commits 187032cf), backend schema + validation + enrichment (Kaylee commit 6c4528fb). 459 tests pass.
+
+### 2026-02-11: Fix Approval Node Context Population in resumeWorkflow()
+
+**Bug:** `resumeWorkflow()` stored approval `additionalData` in `$context['resumeData']` but never in `$context['nodes'][$nodeId]`. This meant `$.nodes.<nodeId>.approverId` (and other APPROVAL_OUTPUT_SCHEMA fields) never resolved at runtime, even though the variable picker advertised them.
+
+**Fix:** Added a block in `resumeWorkflow()` (after `resumeData` assignment, before `updateInstance`) that writes to `$context['nodes'][$nodeId]` with all 5 APPROVAL_OUTPUT_SCHEMA fields: `status`, `approverId`, `comment`, `rejectionComment`, `decision`. Follows the same pattern as action nodes (line ~641) and condition nodes (line ~693). Also moved `$instance->context = $context` to always execute (not only when `additionalData` is non-empty), ensuring the nodes write is persisted.
+
+**Note on Bug 2 (not fixed, by design):** `$.resumeData` is ephemeral — a second approval gate overwrites the first's data. This is harmless since downstream nodes from the first gate already executed. Left as-is per task instructions.
+
+#### Key Patterns
+- All node types must write to `$context['nodes'][$nodeId]` for the variable picker (`$.nodes.<nodeId>.*`) to resolve
+- Approval output schema fields are defined in `WorkflowActionRegistry::APPROVAL_OUTPUT_SCHEMA`
+- `$instance->context = $context` must be set after all context mutations, before `updateInstance()`
+
+📌 Team update (2026-02-11): Fixed approval node context bug — `resumeWorkflow()` now populates `$context['nodes'][$nodeId]` with APPROVAL_OUTPUT_SCHEMA fields so `$.nodes.<nodeId>.approverId` etc. resolve at runtime. 459 tests pass. — fixed by Kaylee

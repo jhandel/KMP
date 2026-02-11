@@ -106,3 +106,18 @@ Created `app/tests/TestCase/Services/WarrantManager/WarrantRosterSyncTest.php` �
 - `createWorkflowApprovalContext()` helper pattern (definition→version→instance→log→approval) reusable for any workflow action tests.
 
 📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee
+
+### 2026-02-10: Approval Node Context Tests — Complete
+
+Added 4 tests to `app/tests/TestCase/Services/WorkflowEngine/DefaultWorkflowEngineTest.php` verifying `resumeWorkflow()` populates `$context['nodes'][$nodeId]` for approval nodes.
+
+**Tests added:**
+1. `testResumeApprovedPopulatesNodesContext` — verifies `status`, `approverId`, `comment`, `decision` set correctly on 'approved' port
+2. `testResumeRejectedPopulatesNodesContext` — same for 'rejected' port, also checks `rejectionComment`
+3. `testResumeApprovalStillPopulatesResumeData` — backward compatibility: `resumeData` key still present alongside `nodes`
+4. `testResumeWithEmptyAdditionalDataPopulatesNullDefaults` — empty `additionalData` doesn't crash, nulls/defaults used
+
+**Testing patterns used:**
+- `createAndStartApprovalWorkflow()` helper — creates trigger→approval→(end_ok|end_nope) workflow, starts it, returns `[$instanceId, $nodeId]` with instance in WAITING state
+- Resume via `$this->engine->resumeWorkflow()` then re-fetch instance from DB and inspect `$instance->context`
+- Tests the fix at lines 217-228 of `DefaultWorkflowEngine.php` — nodes context population matching action/condition patterns

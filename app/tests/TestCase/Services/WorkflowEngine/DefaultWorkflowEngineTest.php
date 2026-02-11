@@ -836,4 +836,128 @@ class DefaultWorkflowEngineTest extends BaseTestCase
         $instance = $this->instancesTable->get($result->data['instanceId']);
         $this->assertSame(WorkflowInstance::STATUS_COMPLETED, $instance->status);
     }
+
+    // =====================================================
+    // resumeWorkflow() — approval node context population
+    // =====================================================
+
+    /**
+     * Helper: create an approval workflow, start it, and return the paused instance ID.
+     */
+    private function createAndStartApprovalWorkflow(): array
+    {
+        $slug = 'resume-ctx-' . uniqid();
+        $this->createWorkflow($slug, [
+            'nodes' => [
+                'trigger1' => ['type' => 'trigger', 'config' => [], 'outputs' => [['port' => 'default', 'target' => 'approve1']]],
+                'approve1' => [
+                    'type' => 'approval',
+                    'config' => ['approverType' => 'permission', 'requiredCount' => 1],
+                    'outputs' => [
+                        ['port' => 'approved', 'target' => 'end_ok'],
+                        ['port' => 'rejected', 'target' => 'end_nope'],
+                    ],
+                ],
+                'end_ok' => ['type' => 'end', 'config' => [], 'outputs' => []],
+                'end_nope' => ['type' => 'end', 'config' => [], 'outputs' => []],
+            ],
+        ]);
+
+        $result = $this->engine->startWorkflow($slug);
+        $this->assertTrue($result->isSuccess());
+        $instanceId = $result->data['instanceId'];
+
+        $instance = $this->instancesTable->get($instanceId);
+        $this->assertSame(WorkflowInstance::STATUS_WAITING, $instance->status);
+
+        return [$instanceId, 'approve1'];
+    }
+
+    public function testResumeApprovedPopulatesNodesContext(): void
+    {
+        [$instanceId, $nodeId] = $this->createAndStartApprovalWorkflow();
+
+        $additionalData = [
+            'approverId' => self::ADMIN_MEMBER_ID,
+            'comment' => 'Looks good to me',
+            'decision' => 'approved',
+        ];
+
+        $result = $this->engine->resumeWorkflow($instanceId, $nodeId, 'approved', $additionalData);
+        $this->assertTrue($result->isSuccess());
+
+        $instance = $this->instancesTable->get($instanceId);
+        $nodesCtx = $instance->context['nodes'][$nodeId] ?? null;
+
+        $this->assertNotNull($nodesCtx, 'nodes context must be populated for approval node');
+        $this->assertSame('approved', $nodesCtx['status']);
+        $this->assertSame(self::ADMIN_MEMBER_ID, $nodesCtx['approverId']);
+        $this->assertSame('Looks good to me', $nodesCtx['comment']);
+        $this->assertSame('approved', $nodesCtx['decision']);
+    }
+
+    public function testResumeRejectedPopulatesNodesContext(): void
+    {
+        [$instanceId, $nodeId] = $this->createAndStartApprovalWorkflow();
+
+        $additionalData = [
+            'approverId' => self::TEST_MEMBER_AGATHA_ID,
+            'comment' => 'Not acceptable',
+            'decision' => 'rejected',
+        ];
+
+        $result = $this->engine->resumeWorkflow($instanceId, $nodeId, 'rejected', $additionalData);
+        $this->assertTrue($result->isSuccess());
+
+        $instance = $this->instancesTable->get($instanceId);
+        $nodesCtx = $instance->context['nodes'][$nodeId] ?? null;
+
+        $this->assertNotNull($nodesCtx, 'nodes context must be populated for rejected approval');
+        $this->assertSame('rejected', $nodesCtx['status']);
+        $this->assertSame(self::TEST_MEMBER_AGATHA_ID, $nodesCtx['approverId']);
+        $this->assertSame('Not acceptable', $nodesCtx['comment']);
+        $this->assertSame('Not acceptable', $nodesCtx['rejectionComment']);
+        $this->assertSame('rejected', $nodesCtx['decision']);
+    }
+
+    public function testResumeApprovalStillPopulatesResumeData(): void
+    {
+        [$instanceId, $nodeId] = $this->createAndStartApprovalWorkflow();
+
+        $additionalData = [
+            'approverId' => self::ADMIN_MEMBER_ID,
+            'comment' => 'Backward compat check',
+            'decision' => 'approved',
+        ];
+
+        $result = $this->engine->resumeWorkflow($instanceId, $nodeId, 'approved', $additionalData);
+        $this->assertTrue($result->isSuccess());
+
+        $instance = $this->instancesTable->get($instanceId);
+
+        // resumeData must still be populated for backward compatibility
+        $this->assertArrayHasKey('resumeData', $instance->context);
+        $this->assertSame(self::ADMIN_MEMBER_ID, $instance->context['resumeData']['approverId']);
+        $this->assertSame('Backward compat check', $instance->context['resumeData']['comment']);
+    }
+
+    public function testResumeWithEmptyAdditionalDataPopulatesNullDefaults(): void
+    {
+        [$instanceId, $nodeId] = $this->createAndStartApprovalWorkflow();
+
+        // Empty additionalData — must not crash, should populate with null defaults
+        $result = $this->engine->resumeWorkflow($instanceId, $nodeId, 'approved', []);
+        $this->assertTrue($result->isSuccess());
+
+        $instance = $this->instancesTable->get($instanceId);
+        $nodesCtx = $instance->context['nodes'][$nodeId] ?? null;
+
+        $this->assertNotNull($nodesCtx, 'nodes context must exist even with empty additionalData');
+        $this->assertSame('approved', $nodesCtx['status']);
+        $this->assertNull($nodesCtx['approverId']);
+        $this->assertNull($nodesCtx['comment']);
+        $this->assertNull($nodesCtx['rejectionComment']);
+        // decision falls back to outputPort when not in additionalData
+        $this->assertSame('approved', $nodesCtx['decision']);
+    }
 }

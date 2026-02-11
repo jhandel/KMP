@@ -220,3 +220,15 @@ Extended config panel and variable picker to all remaining node types (commit 59
 #### Key Pattern
 - `inputMapping.*` namespace mirrors `params.*` — both are collected from FormData, stripped of prefix, and stored as nested objects in `config`.
 - Selecting a trigger event now re-renders the config panel (like action/condition) to show the payload schema fields dynamically.
+
+### 2026-02-11: resumeData Variables in Variable Picker
+
+Added `$.resumeData.*` context variables to `workflow-variable-picker.js` `buildVariableList()`. These appear conditionally — only when a node being configured is downstream of an approval node, since `resumeData` is populated by `DefaultWorkflowEngine::resumeWorkflow()` when an approval gate resumes.
+
+#### What was done
+- After collecting upstream node variables, added an `upstream.some(n => n.data?.type === 'approval')` check
+- When true, pushes three variables: `$.resumeData.approverId` (integer), `$.resumeData.decision` (string), `$.resumeData.comment` (string)
+- Placed BEFORE builtins section so dropdown order is: trigger → upstream nodes → resumeData → builtins
+
+#### Key Pattern
+- Conditional variable injection based on upstream node types — first use of this pattern in the variable picker. Could be extended for other context-dependent variables (e.g., loop iteration data only downstream of loops).
