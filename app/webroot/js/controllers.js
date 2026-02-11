@@ -14363,6 +14363,14 @@ class WorkflowConfigPanel {
         return this._delayHTML(config);
       case 'loop':
         return this._loopHTML(config);
+      case 'subworkflow':
+        return this._subworkflowHTML(config);
+      case 'fork':
+        return this._forkHTML(config);
+      case 'join':
+        return this._joinHTML(config);
+      case 'end':
+        return this._endHTML(config);
       default:
         return '';
     }
@@ -14373,10 +14381,33 @@ class WorkflowConfigPanel {
       const selected = config.event === t.event ? 'selected' : '';
       options += `<option value="${t.event}" ${selected}>${t.label}</option>`;
     });
-    return `<div class="mb-3">
+    let html = `<div class="mb-3">
             <label class="form-label">Trigger Event</label>
             <select class="form-select form-select-sm" name="event" data-action="change->workflow-designer#updateNodeConfig">${options}</select>
         </div>`;
+    if (config.event) {
+      const trigger = this.registryData.triggers?.find(t => t.event === config.event);
+      if (trigger?.payloadSchema) {
+        html += '<h6 class="mt-3 mb-2 text-muted small">Input Mapping</h6>';
+        html += '<small class="form-text text-muted d-block mb-2">Map trigger event data to context variables</small>';
+        const mapping = config.inputMapping || {};
+        for (const [key, meta] of Object.entries(trigger.payloadSchema)) {
+          const currentVal = mapping[key] || `$.event.${key}`;
+          const escapedVal = this._escapeAttr(currentVal);
+          html += `<div class="mb-2">
+                        <label class="form-label form-label-sm mb-0">
+                            ${meta.label || key} <span class="text-muted small">(${meta.type})</span>
+                        </label>
+                        <input type="text" class="form-control form-control-sm"
+                            name="inputMapping.${key}" value="${escapedVal}"
+                            placeholder="$.event.${key}"
+                            data-action="change->workflow-designer#updateNodeConfig"
+                            data-variable-picker="true">
+                    </div>`;
+        }
+      }
+    }
+    return html;
   }
   _actionHTML(config) {
     let options = '<option value="">Select an action...</option>';
@@ -14449,7 +14480,7 @@ class WorkflowConfigPanel {
         html += '<h6 class="mt-3 mb-2 text-muted small">Condition Parameters</h6>';
         const params = config.params || {};
         for (const [key, meta] of Object.entries(cond.inputSchema)) {
-          const currentVal = params[key] || '';
+          const currentVal = params[key] || config[key] || '';
           const escapedVal = this._escapeAttr(currentVal);
           const required = meta.required ? '<span class="text-danger">*</span>' : '';
           html += `<div class="mb-2">
@@ -14589,11 +14620,15 @@ class WorkflowConfigPanel {
   _delayHTML(config) {
     return `<div class="mb-3">
             <label class="form-label">Duration</label>
-            <input type="text" class="form-control form-control-sm" name="duration" value="${config.duration || ''}" placeholder="e.g. 1h, 2d, 30m" data-action="change->workflow-designer#updateNodeConfig">
+            <input type="text" class="form-control form-control-sm" name="duration"
+                value="${config.duration || ''}" placeholder="e.g. 1h, 2d, 30m, or $.path"
+                data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>
         <div class="mb-3">
             <label class="form-label">Wait For Event (optional)</label>
-            <input type="text" class="form-control form-control-sm" name="waitEvent" value="${config.waitEvent || ''}" placeholder="Event to resume on" data-action="change->workflow-designer#updateNodeConfig">
+            <input type="text" class="form-control form-control-sm" name="waitEvent"
+                value="${config.waitEvent || ''}" placeholder="Event to resume on"
+                data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>`;
   }
   _loopHTML(config) {
@@ -14604,6 +14639,46 @@ class WorkflowConfigPanel {
         <div class="mb-3">
             <label class="form-label">Exit Condition</label>
             <input type="text" class="form-control form-control-sm" name="exitCondition" value="${config.exitCondition || ''}" placeholder="Expression to evaluate" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+        </div>`;
+  }
+  _subworkflowHTML(config) {
+    return `<div class="mb-3">
+            <label class="form-label">Workflow Slug</label>
+            <input type="text" class="form-control form-control-sm" name="workflowSlug"
+                value="${config.workflowSlug || ''}" placeholder="e.g. warrant-approval"
+                data-action="change->workflow-designer#updateNodeConfig">
+            <small class="form-text text-muted">The slug of the child workflow to execute</small>
+        </div>`;
+  }
+  _forkHTML(config) {
+    return `<div class="mb-3">
+            <small class="form-text text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                Executes all connected output paths in parallel. No additional configuration needed.
+            </small>
+        </div>`;
+  }
+  _joinHTML(config) {
+    return `<div class="mb-3">
+            <small class="form-text text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                Waits for all incoming paths to complete before advancing.
+            </small>
+        </div>`;
+  }
+  _endHTML(config) {
+    let options = '';
+    const statuses = ['completed', 'cancelled', 'failed'];
+    statuses.forEach(s => {
+      const selected = config.status === s ? 'selected' : '';
+      options += `<option value="${s}" ${selected}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`;
+    });
+    return `<div class="mb-3">
+            <label class="form-label">End Status</label>
+            <select class="form-select form-select-sm" name="status"
+                data-action="change->workflow-designer#updateNodeConfig">
+                ${options}
+            </select>
         </div>`;
   }
   _escapeAttr(str) {
@@ -15170,11 +15245,17 @@ class WorkflowDesignerController extends _hotwired_stimulus__WEBPACK_IMPORTED_MO
     if (!nodeData.data.config) nodeData.data.config = {};
     const newParams = {};
     let hasParams = false;
+    const newInputMapping = {};
+    let hasInputMapping = false;
     for (const [key, value] of formData.entries()) {
       if (key.startsWith('params.')) {
         const paramKey = key.substring(7);
         newParams[paramKey] = value;
         hasParams = true;
+      } else if (key.startsWith('inputMapping.')) {
+        const mapKey = key.substring(13);
+        newInputMapping[mapKey] = value;
+        hasInputMapping = true;
       } else {
         nodeData.data.config[key] = value;
       }
@@ -15182,12 +15263,15 @@ class WorkflowDesignerController extends _hotwired_stimulus__WEBPACK_IMPORTED_MO
     if (hasParams) {
       nodeData.data.config.params = newParams;
     }
+    if (hasInputMapping) {
+      nodeData.data.config.inputMapping = newInputMapping;
+    }
     nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true;
     this.editor.updateNodeDataFromId(nodeId, nodeData.data);
 
     // If action or condition changed, re-render config panel to show new inputSchema fields
     const changedField = event.target?.name;
-    if (changedField === 'action' || changedField === 'condition') {
+    if (changedField === 'action' || changedField === 'condition' || changedField === 'event') {
       const updatedNode = this.editor.getNodeFromId(nodeId);
       if (this.hasNodeConfigTarget && this._configPanel) {
         this.nodeConfigTarget.innerHTML = this._configPanel.renderConfigHTML(nodeId, updatedNode);
@@ -16018,6 +16102,37 @@ class WorkflowVariablePicker {
         path: `$.nodes.${nodeKey}.result`,
         label: `${node.name}: result`,
         type: 'boolean'
+      });
+    } else if (type === 'delay') {
+      const nodeKey = node.data?.nodeKey || node.name;
+      vars.push({
+        path: `$.nodes.${nodeKey}.result.delayConfig`,
+        label: `${node.name}: delayConfig`,
+        type: 'object'
+      });
+    } else if (type === 'loop') {
+      const nodeKey = node.data?.nodeKey || node.name;
+      vars.push({
+        path: `$.nodes.${nodeKey}.result.iteration`,
+        label: `${node.name}: iteration`,
+        type: 'integer'
+      });
+      vars.push({
+        path: `$.nodes.${nodeKey}.result.maxIterations`,
+        label: `${node.name}: maxIterations`,
+        type: 'integer'
+      });
+    } else if (type === 'subworkflow') {
+      const nodeKey = node.data?.nodeKey || node.name;
+      vars.push({
+        path: `$.nodes.${nodeKey}.result.childInstanceId`,
+        label: `${node.name}: childInstanceId`,
+        type: 'integer'
+      });
+      vars.push({
+        path: `$.nodes.${nodeKey}.result`,
+        label: `${node.name}: result`,
+        type: 'object'
       });
     }
     return vars;

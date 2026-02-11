@@ -184,7 +184,7 @@ export default class WorkflowConfigPanel {
                 html += '<h6 class="mt-3 mb-2 text-muted small">Condition Parameters</h6>'
                 const params = config.params || {}
                 for (const [key, meta] of Object.entries(cond.inputSchema)) {
-                    const currentVal = params[key] || ''
+                    const currentVal = params[key] || config[key] || ''
                     const escapedVal = this._escapeAttr(currentVal)
                     const required = meta.required ? '<span class="text-danger">*</span>' : ''
                     html += `<div class="mb-2">

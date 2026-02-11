@@ -673,7 +673,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 $evaluator = $this->container->has($evaluatorClass)
                     ? $this->container->get($evaluatorClass)
                     : new $evaluatorClass();
-                $result = (bool)$evaluator->{$evaluatorMethod}($context, $node['config']);
+                // Merge config.params into top-level config so evaluators can read params directly
+                $nodeConfig = $node['config'] ?? [];
+                if (!empty($nodeConfig['params']) && is_array($nodeConfig['params'])) {
+                    $nodeConfig = array_merge($nodeConfig, $nodeConfig['params']);
+                }
+                $result = (bool)$evaluator->{$evaluatorMethod}($context, $nodeConfig);
             } else {
                 throw new \RuntimeException("Condition '{$conditionName}' not found in registry.");
             }
