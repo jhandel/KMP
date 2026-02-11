@@ -7,7 +7,9 @@ namespace Activities\Services;
 use Activities\Model\Entity\Authorization;
 use App\KMP\StaticHelpers;
 use Activities\Services\AuthorizationManagerInterface;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\I18n\DateTime;
+use Cake\Log\Log;
 use Cake\Mailer\MailerAwareTrait;
 use Cake\ORM\TableRegistry;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
@@ -124,11 +126,14 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
     #region
     use MailerAwareTrait;
 
+    private TriggerDispatcher $triggerDispatcher;
+
     #endregion
 
-    public function __construct(ActiveWindowManagerInterface $activeWindowManager)
+    public function __construct(ActiveWindowManagerInterface $activeWindowManager, TriggerDispatcher $triggerDispatcher)
     {
         $this->activeWindowManager = $activeWindowManager;
+        $this->triggerDispatcher = $triggerDispatcher;
     }
 
     #region public methods
@@ -233,6 +238,27 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
             return new ServiceResult(false, "Failed to send approval request notification");
         }
         $table->getConnection()->commit();
+
+        // Dispatch workflow trigger after successful request
+        try {
+            $activity = TableRegistry::getTableLocator()->get('Activities.Activities')
+                ->find()->where(['id' => $activityId])->first();
+            $requiredApprovals = $isRenewal
+                ? ($activity->num_required_renewers ?? 1)
+                : ($activity->num_required_authorizors ?? 1);
+
+            $this->triggerDispatcher->dispatch('Activities.AuthorizationRequested', [
+                'authorizationId' => $auth->id,
+                'memberId' => $requesterId,
+                'activityId' => $activityId,
+                'activityName' => $activity->name ?? '',
+                'approverId' => $approverId,
+                'isRenewal' => $isRenewal,
+                'requiredApprovals' => $requiredApprovals,
+            ], $requesterId);
+        } catch (\Throwable $e) {
+            Log::error('Failed to dispatch Activities.AuthorizationRequested trigger: ' . $e->getMessage());
+        }
 
         return new ServiceResult(true);
     }
@@ -521,6 +547,65 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
         $table->getConnection()->commit();
 
         return new ServiceResult(true);
+    }
+
+    /**
+     * Activate a fully-approved authorization.
+     *
+     * Sets status to APPROVED, starts ActiveWindow, assigns role.
+     * Does not send notifications (workflow handles those separately).
+     *
+     * @param int $authorizationId Authorization ID to activate
+     * @param int $approverId Member ID of the final approver
+     * @return ServiceResult Success with activated and memberRoleId data
+     */
+    public function activate(
+        int $authorizationId,
+        int $approverId,
+    ): ServiceResult {
+        $table = TableRegistry::getTableLocator()->get("Activities.Authorizations");
+        $authorization = $table->get($authorizationId, contain: ['Activities']);
+
+        if (!$authorization) {
+            return new ServiceResult(false, "Authorization not found");
+        }
+
+        $activity = $authorization->activity;
+        if (!$activity) {
+            return new ServiceResult(false, "Activity not found for authorization");
+        }
+
+        $table->getConnection()->begin();
+
+        $authorization->status = Authorization::APPROVED_STATUS;
+        if (!$table->save($authorization)) {
+            $table->getConnection()->rollback();
+            return new ServiceResult(false, "Failed to save authorization");
+        }
+
+        $awResult = $this->activeWindowManager->start(
+            "Activities.Authorizations",
+            $authorization->id,
+            $approverId,
+            DateTime::now(),
+            null,
+            $activity->term_length,
+            $activity->grants_role_id,
+        );
+
+        if (!$awResult->success) {
+            $table->getConnection()->rollback();
+            return new ServiceResult(false, "Failed to start active window");
+        }
+
+        $table->getConnection()->commit();
+
+        $memberRoleId = $awResult->data['memberRoleId'] ?? ($awResult->data ?? null);
+
+        return new ServiceResult(true, null, [
+            'activated' => true,
+            'memberRoleId' => $memberRoleId,
+        ]);
     }
     #endregion
 
@@ -1041,6 +1126,17 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
 
         // Commit transaction
         $table->getConnection()->commit();
+
+        // Dispatch workflow trigger after successful retraction
+        try {
+            $this->triggerDispatcher->dispatch('Activities.AuthorizationRetracted', [
+                'authorizationId' => $authorizationId,
+                'memberId' => $requesterId,
+                'activityId' => $authorization->activity_id,
+            ], $requesterId);
+        } catch (\Throwable $e) {
+            Log::error('Failed to dispatch Activities.AuthorizationRetracted trigger: ' . $e->getMessage());
+        }
 
         return new ServiceResult(true, null, ['authorization' => $authorization]);
     }

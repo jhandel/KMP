@@ -194,6 +194,49 @@ return function (RouteBuilder $routes): void {
         ]);
 
         /**
+         * Workflow Engine Routes
+         */
+        $builder->scope('/workflows', function (RouteBuilder $builder) {
+            $builder->connect('/', ['controller' => 'Workflows', 'action' => 'index']);
+            $builder->connect('/add', ['controller' => 'Workflows', 'action' => 'add']);
+            $builder->connect('/designer/{id}', ['controller' => 'Workflows', 'action' => 'designer'])
+                ->setPatterns(['id' => '\d+'])
+                ->setPass(['id']);
+            $builder->connect('/designer', ['controller' => 'Workflows', 'action' => 'designer']);
+            $builder->connect('/save', ['controller' => 'Workflows', 'action' => 'save']);
+            $builder->connect('/publish', ['controller' => 'Workflows', 'action' => 'publish']);
+            $builder->connect('/registry', ['controller' => 'Workflows', 'action' => 'registry']);
+            $builder->connect('/load-version/{versionId}', ['controller' => 'Workflows', 'action' => 'loadVersion'])
+                ->setPatterns(['versionId' => '\d+'])
+                ->setPass(['versionId']);
+            $builder->connect('/instances', ['controller' => 'Workflows', 'action' => 'instances']);
+            $builder->connect('/instances/{definitionId}', ['controller' => 'Workflows', 'action' => 'instances'])
+                ->setPatterns(['definitionId' => '\d+'])
+                ->setPass(['definitionId']);
+            $builder->connect('/instance/{id}', ['controller' => 'Workflows', 'action' => 'viewInstance'])
+                ->setPatterns(['id' => '\d+'])
+                ->setPass(['id']);
+            $builder->connect('/approvals', ['controller' => 'Workflows', 'action' => 'approvals']);
+            $builder->connect('/approvals-grid-data', ['controller' => 'Workflows', 'action' => 'approvalsGridData']);
+            $builder->connect('/record-approval', ['controller' => 'Workflows', 'action' => 'recordApproval']);
+            $builder->connect('/eligible-approvers/{approvalId}', ['controller' => 'Workflows', 'action' => 'eligibleApprovers'])
+                ->setPatterns(['approvalId' => '\d+'])
+                ->setPass(['approvalId']);
+            $builder->connect('/versions/{definitionId}', ['controller' => 'Workflows', 'action' => 'versions'])
+                ->setPatterns(['definitionId' => '\d+'])
+                ->setPass(['definitionId']);
+            $builder->connect('/compare-versions', ['controller' => 'Workflows', 'action' => 'compareVersions']);
+            $builder->connect('/toggle-active/{id}', ['controller' => 'Workflows', 'action' => 'toggleActive'])
+                ->setPatterns(['id' => '\d+'])
+                ->setPass(['id']);
+            $builder->connect('/create-draft', ['controller' => 'Workflows', 'action' => 'createDraft']);
+            $builder->connect('/migrate-instances', ['controller' => 'Workflows', 'action' => 'migrateInstances']);
+            $builder->connect('/policy-classes', ['controller' => 'Workflows', 'action' => 'policyClasses']);
+            $builder->connect('/policy-actions', ['controller' => 'Workflows', 'action' => 'policyActions']);
+            $builder->connect('/app-settings', ['controller' => 'Workflows', 'action' => 'appSettings']);
+        });
+
+        /**
          * RESTful Fallback Routes
          * 
          * Provides automatic routing for all controllers using RESTful conventions.

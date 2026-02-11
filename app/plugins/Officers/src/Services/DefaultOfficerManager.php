@@ -12,6 +12,7 @@ use App\Services\WarrantManager\WarrantManagerInterface;
 use Cake\ORM\TableRegistry;
 use Officers\Model\Entity\Officer;
 use App\Services\ServiceResult;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\Mailer\MailerAwareTrait;
 use App\Services\WarrantManager\WarrantRequest;
 use App\Mailer\QueuedMailerAwareTrait;
@@ -37,14 +38,19 @@ class DefaultOfficerManager implements OfficerManagerInterface
     /** @var WarrantManagerInterface */
     private WarrantManagerInterface $warrantManager;
 
+    /** @var TriggerDispatcher */
+    private TriggerDispatcher $triggerDispatcher;
+
     /**
      * @param ActiveWindowManagerInterface $activeWindowManager Temporal assignment management
      * @param WarrantManagerInterface $warrantManager Warrant lifecycle coordination
+     * @param TriggerDispatcher $triggerDispatcher Workflow trigger dispatcher
      */
-    public function __construct(ActiveWindowManagerInterface $activeWindowManager, WarrantManagerInterface $warrantManager)
+    public function __construct(ActiveWindowManagerInterface $activeWindowManager, WarrantManagerInterface $warrantManager, TriggerDispatcher $triggerDispatcher)
     {
         $this->activeWindowManager = $activeWindowManager;
         $this->warrantManager = $warrantManager;
+        $this->triggerDispatcher = $triggerDispatcher;
     }
     /**
      * Assign a member to an office within a branch, persisting the Officer record,
@@ -71,6 +77,43 @@ class DefaultOfficerManager implements OfficerManagerInterface
         int $approverId,
         ?string $emailAddress
     ): ServiceResult {
+        // Check if officer-hire workflow is active — if so, let the workflow handle everything
+        $workflowActive = false;
+        try {
+            $wfTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
+            $wfDef = $wfTable->find()
+                ->where(['slug' => 'officer-hire', 'is_active' => true])
+                ->first();
+            $workflowActive = ($wfDef !== null);
+        } catch (\Exception $e) {
+            // If workflow table doesn't exist yet, fall through to hardcoded path
+        }
+
+        if ($workflowActive) {
+            // Workflow mode: just dispatch the trigger and let the workflow handle creation
+            $member = TableRegistry::getTableLocator()->get('Members')->get($memberId);
+            try {
+                $this->triggerDispatcher->dispatch('Officers.HireRequested', [
+                    'memberId' => $memberId,
+                    'officeId' => $officeId,
+                    'branchId' => $branchId,
+                    'startOn' => $startOn,
+                    'expiresOn' => $endOn,
+                    'deputyToId' => null,
+                    'officerId' => null,
+                    'emailAddress' => $member->email_address ?? $emailAddress ?? '',
+                    'deputyDescription' => $deputyDescription,
+                ], $approverId);
+            } catch (\Exception $e) {
+                \Cake\Log\Log::error('Workflow trigger dispatch failed for Officers.HireRequested: ' . $e->getMessage());
+
+                return new ServiceResult(false, 'Workflow dispatch failed: ' . $e->getMessage());
+            }
+
+            return new ServiceResult(true);
+        }
+
+        // Hardcoded path (workflow not active)
         //get officer table
         $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
         $newOfficer = $officerTable->newEmptyEntity();
@@ -165,6 +208,7 @@ class DefaultOfficerManager implements OfficerManagerInterface
             "requiresWarrant" => $office->requires_warrant
         ];
         $this->queueMail("Officers.Officers", "notifyOfHire", $member->email_address, $vars);
+
         return new ServiceResult(true);
     }
 
@@ -562,6 +606,18 @@ class DefaultOfficerManager implements OfficerManagerInterface
             "releaseDate" => TimezoneHelper::formatDate($revokedOn),
         ];
         $this->queueMail("Officers.Officers", "notifyOfRelease", $member->email_address, $vars);
+
+        try {
+            $this->triggerDispatcher->dispatch('Officers.Released', [
+                'officerId' => $officer->id,
+                'memberId' => $officer->member_id,
+                'officeId' => $officer->office_id,
+                'reason' => $revokedReason ?? 'Released',
+            ]);
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Workflow trigger dispatch failed for Officers.Released: ' . $e->getMessage());
+        }
+
         return new ServiceResult(true);
     }
 }

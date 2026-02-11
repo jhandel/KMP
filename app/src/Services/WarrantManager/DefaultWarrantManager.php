@@ -9,10 +9,14 @@ use App\KMP\TimezoneHelper;
 use App\Mailer\QueuedMailerAwareTrait;
 use App\Model\Entity\MemberRole;
 use App\Model\Entity\Warrant;
+use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WarrantPeriod;
 use App\Model\Entity\WarrantRoster;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\ServiceResult;
+use App\Services\WorkflowEngine\TriggerDispatcher;
+use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use Cake\I18n\Date;
 use Cake\I18n\DateTime;
 use Cake\Mailer\MailerAwareTrait;
@@ -25,10 +29,20 @@ class DefaultWarrantManager implements WarrantManagerInterface
     use MailerAwareTrait;
 
     private ActiveWindowManagerInterface $activeWindowManager;
+    private TriggerDispatcher $triggerDispatcher;
+    private WorkflowApprovalManagerInterface $approvalManager;
+    private WorkflowEngineInterface $workflowEngine;
 
-    public function __construct(ActiveWindowManagerInterface $activeWindowManager)
-    {
+    public function __construct(
+        ActiveWindowManagerInterface $activeWindowManager,
+        TriggerDispatcher $triggerDispatcher,
+        WorkflowApprovalManagerInterface $approvalManager,
+        WorkflowEngineInterface $workflowEngine,
+    ) {
         $this->activeWindowManager = $activeWindowManager;
+        $this->triggerDispatcher = $triggerDispatcher;
+        $this->approvalManager = $approvalManager;
+        $this->workflowEngine = $workflowEngine;
         //Datetime tomorrow
         $yesterday = new DateTime();
         $yesterday->modify('-1 day');
@@ -116,6 +130,16 @@ class DefaultWarrantManager implements WarrantManagerInterface
         //commit transaction
         $warrantRosterTable->getConnection()->commit();
 
+        try {
+            $this->triggerDispatcher->dispatch('Warrants.RosterCreated', [
+                'rosterId' => $warrantRoster->id,
+                'rosterName' => $warrantRoster->name,
+                'approvalsRequired' => $warrantRoster->approvals_required,
+            ]);
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.RosterCreated: ' . $e->getMessage());
+        }
+
         return new ServiceResult(true, '', $warrantRoster->id);
     }
 
@@ -133,7 +157,13 @@ class DefaultWarrantManager implements WarrantManagerInterface
             return new ServiceResult(false, 'Warrant approval set is already approved');
         }
 
-        //record approval
+        // Route through workflow if one is active for this roster
+        $workflowApproval = $this->findWorkflowApprovalForRoster($warrant_roster_id);
+        if ($workflowApproval) {
+            return $this->approveViaWorkflow($workflowApproval, $approver_id);
+        }
+
+        // Direct path (no workflow configured)
         $warrantRosterApprovalTable = TableRegistry::getTableLocator()->get('WarrantRosterApprovals');
         $warrantRosterApproval = $warrantRosterApprovalTable->newEmptyEntity();
         $warrantRosterApproval->warrant_roster_id = $warrant_roster_id;
@@ -152,56 +182,6 @@ class DefaultWarrantManager implements WarrantManagerInterface
         $warrantRoster->approval_count++;
         if ($warrantRoster->hasRequiredApprovals()) {
             $warrantRoster->status = WarrantRoster::STATUS_APPROVED;
-            //get all warrants in the set that are pending and make them active
-            $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
-            $warrants = $warrantTable->find()
-                ->contain(['Members' => function ($q) {
-                    return $q->select(['id', 'email_address', 'sca_name']);
-                }])
-                ->where([
-                    'warrant_roster_id' => $warrant_roster_id,
-                    'Warrants.status' => Warrant::PENDING_STATUS,
-                ])
-                ->all();
-            foreach ($warrants as $warrant) {
-                $warrant->status = Warrant::CURRENT_STATUS;
-                $warrant->approved_date = new DateTime();
-                $now = new DateTime();
-                $warrantStart = $warrant->start_on;
-                if ($warrant->start_on == null || $warrantStart < $now) {
-                    $warrant->start_on = $now;
-                }
-                if (!$warrantTable->save($warrant)) {
-                    //rollback transaction
-                    $warrantRosterTable->getConnection()->rollback();
-
-                    return new ServiceResult(false, 'Failed to acivate warrants in Roster');
-                }
-                //expire current warrants for the same entity_type entity_id member_id
-                $warrantTable->updateAll(
-                    [
-                        'expires_on' => $warrant->start_on,
-                        'revoked_reason' => 'New Warrant Approved',
-                        'revoker_id' => $approver_id,
-                    ],
-                    [
-                        'entity_type' => $warrant->entity_type,
-                        'entity_id' => $warrant->entity_id,
-                        'member_id' => $warrant->member_id,
-                        'status' => Warrant::CURRENT_STATUS,
-                        'expires_on >=' => $warrant->start_on,
-                        'start_on <=' => $warrant->start_on,
-                        'id !=' => $warrant->id,
-                    ],
-                );
-                $vars = [
-                    'memberScaName' => $warrant->member->sca_name,
-                    'warrantName' => $warrant->name,
-                    'warrantStart' => TimezoneHelper::formatDate($warrant->start_on),
-                    'warrantExpires' => TimezoneHelper::formatDate($warrant->expires_on),
-                ];
-                $this->queueMail('KMP', 'notifyOfWarrant', $warrant->member->email_address, $vars);
-            }
         }
         if (!$warrantRosterTable->save($warrantRoster)) {
             //rollback transaction
@@ -210,6 +190,136 @@ class DefaultWarrantManager implements WarrantManagerInterface
             return new ServiceResult(false, 'Failed to approve Roster');
         }
         //commit transaction
+        $warrantRosterTable->getConnection()->commit();
+
+        if ($warrantRoster->status === WarrantRoster::STATUS_APPROVED) {
+            // Activate warrants via extracted method
+            $activationResult = $this->activateApprovedRoster($warrant_roster_id, $approver_id);
+            if (!$activationResult->success) {
+                return $activationResult;
+            }
+
+            try {
+                $this->triggerDispatcher->dispatch('Warrants.Approved', [
+                    'rosterId' => $warrantRoster->id,
+                ]);
+            } catch (\Exception $e) {
+                \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Approved: ' . $e->getMessage());
+            }
+        }
+
+        return new ServiceResult(true);
+    }
+
+    public function activateApprovedRoster(int $rosterId, int $approverId, bool $sendNotifications = true): ServiceResult
+    {
+        $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
+        $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
+
+        $warrants = $warrantTable->find()
+            ->contain(['Members' => function ($q) {
+                return $q->select(['id', 'email_address', 'sca_name']);
+            }])
+            ->where([
+                'warrant_roster_id' => $rosterId,
+                'Warrants.status' => Warrant::PENDING_STATUS,
+            ])
+            ->all();
+
+        // Idempotent: no pending warrants to activate
+        if ($warrants->isEmpty()) {
+            return new ServiceResult(true);
+        }
+
+        $warrantRosterTable->getConnection()->begin();
+        foreach ($warrants as $warrant) {
+            $warrant->status = Warrant::CURRENT_STATUS;
+            $warrant->approved_date = new DateTime();
+            $now = new DateTime();
+            $warrantStart = $warrant->start_on;
+            if ($warrant->start_on == null || $warrantStart < $now) {
+                $warrant->start_on = $now;
+            }
+            if (!$warrantTable->save($warrant)) {
+                $warrantRosterTable->getConnection()->rollback();
+
+                return new ServiceResult(false, 'Failed to activate warrants in Roster');
+            }
+            //expire current warrants for the same entity_type entity_id member_id
+            $warrantTable->updateAll(
+                [
+                    'expires_on' => $warrant->start_on,
+                    'revoked_reason' => 'New Warrant Approved',
+                    'revoker_id' => $approverId,
+                ],
+                [
+                    'entity_type' => $warrant->entity_type,
+                    'entity_id' => $warrant->entity_id,
+                    'member_id' => $warrant->member_id,
+                    'status' => Warrant::CURRENT_STATUS,
+                    'expires_on >=' => $warrant->start_on,
+                    'start_on <=' => $warrant->start_on,
+                    'id !=' => $warrant->id,
+                ],
+            );
+            $vars = [
+                'memberScaName' => $warrant->member->sca_name,
+                'warrantName' => $warrant->name,
+                'warrantStart' => TimezoneHelper::formatDate($warrant->start_on),
+                'warrantExpires' => TimezoneHelper::formatDate($warrant->expires_on),
+            ];
+            if ($sendNotifications) {
+                $this->queueMail('KMP', 'notifyOfWarrant', $warrant->member->email_address, $vars);
+            }
+        }
+        $warrantRosterTable->getConnection()->commit();
+
+        return new ServiceResult(true);
+    }
+
+    public function syncWorkflowApprovalToRoster(
+        int $rosterId,
+        int $approverId,
+        ?string $notes = null,
+        ?\DateTimeInterface $approvedOn = null,
+    ): ServiceResult {
+        $warrantRosterApprovalTable = TableRegistry::getTableLocator()->get('WarrantRosterApprovals');
+        $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
+
+        // Dedup guard: check for existing (roster_id, approver_id) pair
+        $existing = $warrantRosterApprovalTable->find()
+            ->where([
+                'warrant_roster_id' => $rosterId,
+                'approver_id' => $approverId,
+            ])
+            ->first();
+
+        if ($existing) {
+            return new ServiceResult(true, 'Approval already recorded');
+        }
+
+        $approval = $warrantRosterApprovalTable->newEmptyEntity();
+        $approval->warrant_roster_id = $rosterId;
+        $approval->approver_id = $approverId;
+        $approval->approved_on = $approvedOn !== null
+            ? new DateTime($approvedOn->format('Y-m-d H:i:s'))
+            : new DateTime();
+
+        $warrantRosterTable->getConnection()->begin();
+
+        if (!$warrantRosterApprovalTable->save($approval)) {
+            $warrantRosterTable->getConnection()->rollback();
+
+            return new ServiceResult(false, 'Failed to sync approval record');
+        }
+
+        // Increment approval_count atomically
+        $warrantRosterTable->getConnection()->execute(
+            'UPDATE warrant_rosters SET approval_count = COALESCE(approval_count, 0) + 1 WHERE id = ?',
+            [$rosterId],
+            ['integer'],
+        );
+
         $warrantRosterTable->getConnection()->commit();
 
         return new ServiceResult(true);
@@ -228,7 +338,14 @@ class DefaultWarrantManager implements WarrantManagerInterface
         if ($warrantRoster->hasRequiredApprovals()) {
             return new ServiceResult(false, 'Warrant approval set is already approved');
         }
-        //get all of the warrants in the set
+
+        // Route through workflow if one is active for this roster
+        $workflowApproval = $this->findWorkflowApprovalForRoster($warrant_roster_id);
+        if ($workflowApproval) {
+            return $this->declineViaWorkflow($workflowApproval, $rejecter_id, $reason);
+        }
+
+        // Direct path (no workflow configured)
         $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
         $warrants = $warrantTable->find()
             ->where([
@@ -274,6 +391,15 @@ class DefaultWarrantManager implements WarrantManagerInterface
         }
         //commit transaction
         $warrantRosterTable->getConnection()->commit();
+
+        try {
+            $this->triggerDispatcher->dispatch('Warrants.Declined', [
+                'rosterId' => $warrantRoster->id,
+                'reason' => $reason,
+            ]);
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Declined: ' . $e->getMessage());
+        }
 
         return new ServiceResult(true);
     }
@@ -399,6 +525,112 @@ class DefaultWarrantManager implements WarrantManagerInterface
         }
 
         return $warrantPeriod;
+    }
+
+    /**
+     * Find a pending workflow approval for a roster with a waiting workflow instance.
+     */
+    protected function findWorkflowApprovalForRoster(int $rosterId): ?WorkflowApproval
+    {
+        try {
+            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+            $instances = $instancesTable->find()
+                ->where(['status' => 'waiting'])
+                ->all();
+
+            foreach ($instances as $instance) {
+                $context = $instance->context ?? [];
+                $triggerRosterId = $context['trigger']['rosterId'] ?? null;
+                if ((int)$triggerRosterId !== $rosterId) {
+                    continue;
+                }
+
+                $approval = $approvalsTable->find()
+                    ->where([
+                        'workflow_instance_id' => $instance->id,
+                        'status' => WorkflowApproval::STATUS_PENDING,
+                    ])
+                    ->first();
+
+                if ($approval) {
+                    return $approval;
+                }
+            }
+        } catch (\Exception $e) {
+            \Cake\Log\Log::warning('Failed to find workflow approval for roster ' . $rosterId . ': ' . $e->getMessage());
+        }
+
+        return null;
+    }
+
+    /**
+     * Record an approval response through the workflow engine.
+     */
+    protected function approveViaWorkflow(WorkflowApproval $approval, int $approverId): ServiceResult
+    {
+        $result = $this->approvalManager->recordResponse(
+            $approval->id,
+            $approverId,
+            'approve',
+            'Approved via warrant roster',
+        );
+
+        if (!$result->isSuccess()) {
+            return new ServiceResult(false, $result->getError() ?? 'Failed to record workflow approval');
+        }
+
+        $data = $result->getData();
+        if ($data && ($data['approvalStatus'] ?? '') === 'approved') {
+            $this->workflowEngine->resumeWorkflow(
+                $data['instanceId'],
+                $data['nodeId'],
+                'approved',
+                [
+                    'approval' => $data,
+                    'approverId' => $approverId,
+                    'decision' => 'approve',
+                    'comment' => 'Approved via warrant roster',
+                ],
+            );
+        }
+
+        return new ServiceResult(true);
+    }
+
+    /**
+     * Record a decline response through the workflow engine.
+     */
+    protected function declineViaWorkflow(WorkflowApproval $approval, int $rejecterId, string $reason): ServiceResult
+    {
+        $result = $this->approvalManager->recordResponse(
+            $approval->id,
+            $rejecterId,
+            'deny',
+            $reason,
+        );
+
+        if (!$result->isSuccess()) {
+            return new ServiceResult(false, $result->getError() ?? 'Failed to record workflow decline');
+        }
+
+        $data = $result->getData();
+        if ($data && ($data['approvalStatus'] ?? '') === 'rejected') {
+            $this->workflowEngine->resumeWorkflow(
+                $data['instanceId'],
+                $data['nodeId'],
+                'rejected',
+                [
+                    'approval' => $data,
+                    'approverId' => $rejecterId,
+                    'decision' => 'deny',
+                    'comment' => $reason,
+                ],
+            );
+        }
+
+        return new ServiceResult(true);
     }
 
     protected function cancelWarrant($warrantTable, $warrant, $expiresOn, $rejecter_id, $reason): ServiceResult

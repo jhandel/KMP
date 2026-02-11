@@ -106,6 +106,13 @@ $url = $fullBaseUrl . "/keepalive";
     data-session-extender-url-value="<?= $url ?>">
     <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
         <div class="navbar-brand col-md-3 col-lg-2 me-0 px-3">
+            <button class="sidebar-toggle-btn d-none d-md-inline-block me-1" type="button"
+                data-controller="sidebar-toggle"
+                data-action="click->sidebar-toggle#toggle"
+                title="Toggle sidebar"
+                aria-label="Toggle sidebar">
+                <i class="bi bi-chevron-bar-left" data-sidebar-toggle-target="icon"></i>
+            </button>
             <?= $this->Html->image($this->KMP->getAppSetting("KMP.BannerLogo"), [
                 "alt" => "Logo",
                 "height" => "24",

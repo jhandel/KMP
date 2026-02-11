@@ -66,6 +66,15 @@ use App\Services\ImpersonationService;
 use App\Services\ICalendarService;
 use App\Services\WarrantManager\DefaultWarrantManager;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
+use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\TriggerDispatcher;
+use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
+use App\Services\WorkflowEngine\WorkflowEngineInterface;
+use App\Services\WorkflowEngine\DefaultWorkflowVersionManager;
+use App\Services\WorkflowEngine\Providers\WarrantWorkflowActions;
+use App\Services\WorkflowEngine\WorkflowVersionManagerInterface;
+use App\Controller\WorkflowsController;
 use Authentication\AuthenticationService;
 use Authentication\AuthenticationServiceInterface;
 use Authentication\AuthenticationServiceProviderInterface;
@@ -223,6 +232,9 @@ class Application extends BaseApplication implements
             [],
             [CoreViewCellProvider::class, 'getViewCells']
         );
+
+        // Load workflow providers from plugins and core
+        \App\Services\WorkflowRegistry\WorkflowPluginLoader::loadFromPlugins($this->getPlugins());
 
         // Version-based application configuration management
         // This system allows automatic updates to application settings when KMP is upgraded
@@ -525,11 +537,16 @@ class Application extends BaseApplication implements
         );
 
         // Register WarrantManager for warrant lifecycle management
-        // Depends on ActiveWindowManager for handling warrant validity periods
+        // Depends on ActiveWindowManager, TriggerDispatcher, ApprovalManager, and WorkflowEngine
         $container->add(
             WarrantManagerInterface::class,        // Interface for dependency injection
             DefaultWarrantManager::class,          // Concrete implementation
-        )->addArgument(ActiveWindowManagerInterface::class);  // Inject ActiveWindowManager dependency
+        )->addArguments([
+            ActiveWindowManagerInterface::class,
+            TriggerDispatcher::class,
+            WorkflowApprovalManagerInterface::class,
+            WorkflowEngineInterface::class,
+        ]);
 
         // Register CSV export service for data export functionality
         // No dependencies required - provides standalone export capabilities
@@ -542,6 +559,43 @@ class Application extends BaseApplication implements
         $container->add(
             ImpersonationService::class,
         );
+
+        // Register WorkflowApprovalManager for approval gate lifecycle management
+        $container->add(
+            WorkflowApprovalManagerInterface::class,
+            DefaultWorkflowApprovalManager::class,
+        );
+
+        // Register WorkflowVersionManager for workflow version lifecycle management
+        $container->add(
+            WorkflowVersionManagerInterface::class,
+            DefaultWorkflowVersionManager::class,
+        );
+
+        // Workflow Engine — depends on ContainerInterface for dynamic service resolution
+        $container->add(
+            WorkflowEngineInterface::class,
+            DefaultWorkflowEngine::class,
+        )->addArgument(ContainerInterface::class);
+
+        // TriggerDispatcher — depends on WorkflowEngineInterface
+        $container->add(
+            TriggerDispatcher::class,
+        )->addArgument(WorkflowEngineInterface::class);
+
+        // WarrantWorkflowActions — workflow actions delegating to WarrantManager
+        $container->add(WarrantWorkflowActions::class)
+            ->addArgument(WarrantManagerInterface::class);
+
+        // Register WorkflowsController for constructor injection
+        $container->add(WorkflowsController::class)
+            ->addArguments([
+                \Cake\Http\ServerRequest::class,
+                WorkflowEngineInterface::class,
+                WorkflowVersionManagerInterface::class,
+                WorkflowApprovalManagerInterface::class,
+                \Cake\Controller\ComponentRegistry::class,
+            ]);
     }
 
     /**

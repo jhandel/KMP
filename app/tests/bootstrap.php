@@ -66,6 +66,10 @@ if (session_status() === PHP_SESSION_NONE) {
 // Ensure the test schema is seeded with the shared dev dataset
 SeedManager::bootstrap('test');
 
+// Run any pending migrations on the test connection to create tables
+// not yet included in dev_seed_clean.sql (e.g., workflow engine tables).
+(new \Migrations\Migrations(['connection' => 'test']))->migrate();
+
 // Fix stale seed data dates: extend expired test member roles to far-future dates
 // so time-sensitive tests remain stable across environments.
 $conn = ConnectionManager::get('test');

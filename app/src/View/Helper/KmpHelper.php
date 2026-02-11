@@ -342,6 +342,33 @@ class KmpHelper extends Helper
     }
 
     /**
+     * Render a Bootstrap status badge for workflow statuses.
+     *
+     * @param string $status Status string (e.g., 'running', 'approved', 'draft')
+     * @return string HTML badge markup
+     */
+    public function workflowStatusBadge(string $status): string
+    {
+        $map = [
+            'draft' => 'secondary',
+            'published' => 'success',
+            'archived' => 'dark',
+            'running' => 'primary',
+            'completed' => 'success',
+            'failed' => 'danger',
+            'cancelled' => 'secondary',
+            'waiting' => 'warning',
+            'pending' => 'warning',
+            'approved' => 'success',
+            'rejected' => 'danger',
+            'expired' => 'dark',
+        ];
+        $color = $map[$status] ?? 'light';
+
+        return '<span class="badge bg-' . $color . '">' . h(ucfirst($status)) . '</span>';
+    }
+
+    /**
      * Return the possessive form of a name.
      *
      * Trims input and appends an apostrophe or apostrophe-s depending

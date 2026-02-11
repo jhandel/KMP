@@ -85,25 +85,6 @@ class WarrantRostersTable extends BaseTable
             ->requirePresence('name', 'create')
             ->notEmptyString('name');
 
-        // Warrant roster description validation - detailed purpose explanation
-        $validator
-            ->scalar('description')
-            ->maxLength('description', 255)
-            ->requirePresence('description', 'create')
-            ->notEmptyString('description');
-
-        // Planned expiration date validation - warrant lifecycle end planning
-        $validator
-            ->dateTime('planned_expires_on')
-            ->requirePresence('planned_expires_on', 'create')
-            ->notEmptyDateTime('planned_expires_on');
-
-        // Planned start date validation - warrant lifecycle begin planning
-        $validator
-            ->dateTime('planned_start_on')
-            ->requirePresence('planned_start_on', 'create')
-            ->notEmptyDateTime('planned_start_on');
-
         // Approval requirements validation - workflow configuration
         $validator
             ->integer('approvals_required')

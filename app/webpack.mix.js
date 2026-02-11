@@ -80,6 +80,8 @@ mix.setPublicPath('./webroot')
     .css('assets/css/dashboard.css', 'webroot/css')
     .css('plugins/Waivers/assets/css/waivers.css', 'webroot/css/waivers.css')
     .css('plugins/Waivers/assets/css/waiver-upload.css', 'webroot/css/waiver-upload.css')
+    .css('assets/css/workflow-designer.css', 'webroot/css/workflow-designer.css')
+    .css('node_modules/drawflow/dist/drawflow.min.css', 'webroot/css/drawflow.css')
     .copyDirectory('node_modules/@fortawesome/fontawesome-free/webfonts', 'webroot/fonts')
     .version()
     .sourceMaps();

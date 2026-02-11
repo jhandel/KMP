@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\KMP\GridViewConfig;
+use App\KMP\TimezoneHelper as TzHelper;
 use App\Model\Entity\Member;
 use App\Services\GridViewService;
 use Cake\Log\Log;
@@ -429,27 +430,43 @@ trait DataverseGridTrait
 
                     if ($startDate !== null && $startDate !== '') {
                         if (!in_array($columnKey, $skipFilterColumns, true)) {
+                            // Convert date-only strings from kingdom/user timezone to UTC for querying
+                            $startDateSql = $startDate;
+                            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+                                $startDateUtc = TzHelper::toUtc($startDate . ' 00:00:00');
+                                if ($startDateUtc !== null) {
+                                    $startDateSql = $startDateUtc->format('Y-m-d H:i:s');
+                                }
+                            }
                             // For lower bound (start >= value), check nullMeansActive flag
                             // If true, NULL means "never expires" so include it in results
                             if ($nullMeansActive) {
-                                $baseQuery->where(function ($exp) use ($qualifiedField, $startDate) {
+                                $baseQuery->where(function ($exp) use ($qualifiedField, $startDateSql) {
                                     return $exp->or([
-                                        $qualifiedField . ' >=' => $startDate,
+                                        $qualifiedField . ' >=' => $startDateSql,
                                         $qualifiedField . ' IS' => null,
                                     ]);
                                 });
                             } else {
-                                $baseQuery->where([$qualifiedField . ' >=' => $startDate]);
+                                $baseQuery->where([$qualifiedField . ' >=' => $startDateSql]);
                             }
                         }
-                        // Add to current filters for display as pill
+                        // Keep original value for display in filter pills
                         $currentFilters[$startParam] = $startDate;
                     }
                     if ($endDate !== null && $endDate !== '') {
                         if (!in_array($columnKey, $skipFilterColumns, true)) {
-                            $baseQuery->where([$qualifiedField . ' <=' => $endDate]);
+                            // Convert date-only strings from kingdom/user timezone to UTC for querying
+                            $endDateSql = $endDate;
+                            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+                                $endDateUtc = TzHelper::toUtc($endDate . ' 23:59:59');
+                                if ($endDateUtc !== null) {
+                                    $endDateSql = $endDateUtc->format('Y-m-d H:i:s');
+                                }
+                            }
+                            $baseQuery->where([$qualifiedField . ' <=' => $endDateSql]);
                         }
-                        // Add to current filters for display as pill
+                        // Keep original value for display in filter pills
                         $currentFilters[$endParam] = $endDate;
                     }
                 }
