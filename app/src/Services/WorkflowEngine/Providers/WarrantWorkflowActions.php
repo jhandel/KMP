@@ -90,18 +90,15 @@ class WarrantWorkflowActions
      * activation to WarrantManagerInterface::activateApprovedRoster().
      *
      * @param array $context Current workflow context
-     * @param array $config Config with rosterId, approverId
+     * @param array $config Config with rosterId
      * @return array Output with activated boolean and count
      */
     public function activateWarrants(array $context, array $config): array
     {
         try {
             $rosterId = (int)$this->resolveValue($config['rosterId'], $context);
-            $approverId = $this->resolveValue($config['approverId'] ?? null, $context);
-            if (!$approverId) {
-                $approverId = $context['resumeData']['approverId'] ?? $context['triggeredBy'] ?? null;
-            }
-            $approverId = (int)$approverId;
+            // Derive approver from workflow context — whoever responded to the approval gate
+            $approverId = (int)($context['resumeData']['approverId'] ?? $context['triggeredBy'] ?? 0);
 
             $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
             $rosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');

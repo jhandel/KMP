@@ -322,10 +322,10 @@ class WarrantRosterSyncTest extends BaseTestCase
         $context = [
             'instanceId' => $instanceId,
             'triggeredBy' => self::ADMIN_MEMBER_ID,
+            'resumeData' => ['approverId' => self::ADMIN_MEMBER_ID],
         ];
         $config = [
             'rosterId' => $rosterId,
-            'approverId' => self::ADMIN_MEMBER_ID,
         ];
 
         $actions->activateWarrants($context, $config);
@@ -347,10 +347,10 @@ class WarrantRosterSyncTest extends BaseTestCase
         $context = [
             'instanceId' => $instanceId,
             'triggeredBy' => self::ADMIN_MEMBER_ID,
+            'resumeData' => ['approverId' => self::ADMIN_MEMBER_ID],
         ];
         $config = [
             'rosterId' => $rosterId,
-            'approverId' => self::ADMIN_MEMBER_ID,
         ];
 
         $actions->activateWarrants($context, $config);
@@ -372,10 +372,10 @@ class WarrantRosterSyncTest extends BaseTestCase
         $context = [
             'instanceId' => $instanceId,
             'triggeredBy' => self::ADMIN_MEMBER_ID,
+            'resumeData' => ['approverId' => self::ADMIN_MEMBER_ID],
         ];
         $config = [
             'rosterId' => $rosterId,
-            'approverId' => self::ADMIN_MEMBER_ID,
         ];
 
         $actions->activateWarrants($context, $config);
@@ -395,10 +395,10 @@ class WarrantRosterSyncTest extends BaseTestCase
         $context = [
             'instanceId' => $instanceId,
             'triggeredBy' => self::ADMIN_MEMBER_ID,
+            'resumeData' => ['approverId' => self::ADMIN_MEMBER_ID],
         ];
         $config = [
             'rosterId' => $rosterId,
-            'approverId' => self::ADMIN_MEMBER_ID,
         ];
 
         $output = $actions->activateWarrants($context, $config);
@@ -509,10 +509,10 @@ class WarrantRosterSyncTest extends BaseTestCase
         $context = [
             'instanceId' => $instanceId,
             'triggeredBy' => self::ADMIN_MEMBER_ID,
+            'resumeData' => ['approverId' => self::ADMIN_MEMBER_ID],
         ];
         $config = [
             'rosterId' => $rosterId,
-            'approverId' => self::ADMIN_MEMBER_ID,
         ];
 
         // Should not crash — roster gets marked approved but with 0 synced responses
@@ -541,10 +541,10 @@ class WarrantRosterSyncTest extends BaseTestCase
         $context = [
             'instanceId' => $instanceId,
             'triggeredBy' => self::ADMIN_MEMBER_ID,
+            'resumeData' => ['approverId' => self::ADMIN_MEMBER_ID],
         ];
         $config = [
             'rosterId' => $rosterId,
-            'approverId' => self::ADMIN_MEMBER_ID,
         ];
 
         $actions->activateWarrants($context, $config);

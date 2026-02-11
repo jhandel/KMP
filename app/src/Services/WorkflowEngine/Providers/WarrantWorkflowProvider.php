@@ -96,7 +96,6 @@ class WarrantWorkflowProvider
                 'description' => 'Activate all warrants in an approved roster',
                 'inputSchema' => [
                     'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true, 'description' => 'The ID of the warrant roster to activate'],
-                    'approverId' => ['type' => 'integer', 'label' => 'Approver ID', 'required' => true, 'description' => 'Member ID of the approver'],
                 ],
                 'outputSchema' => [
                     'activated' => ['type' => 'boolean', 'label' => 'Activation Successful'],
@@ -133,7 +132,7 @@ class WarrantWorkflowProvider
                 'inputSchema' => [
                     'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true, 'description' => 'The ID of the warrant roster to decline'],
                     'reason' => ['type' => 'string', 'label' => 'Decline Reason', 'required' => true, 'description' => 'Reason for declining the warrant roster'],
-                    'rejecterId' => ['type' => 'integer', 'label' => 'Rejecter ID', 'required' => true, 'description' => 'Member ID of the person declining'],
+                    'rejecterId' => ['type' => 'integer', 'label' => 'Rejecter ID', 'required' => true, 'description' => 'Member ID of the person who declined (use $.resumeData.approverId)'],
                 ],
                 'outputSchema' => [
                     'declined' => ['type' => 'boolean', 'label' => 'Decline Successful'],
