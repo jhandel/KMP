@@ -2587,69 +2587,107 @@ Any JavaScript code that needs to render autocomplete widgets must use `renderAu
 **Why:** Consistency — every node type now has a proper config panel. Trigger nodes can map payload fields via `inputMapping.*` namespace. Delay inputs support variable references. Subworkflow, fork, join, and end get appropriate UI. Variable picker outputs added for delay, loop, and subworkflow so downstream nodes can reference their results.
 **Pattern:** `inputMapping.*` form fields follow the same nesting pattern as `params.*` — collected in `updateNodeConfig()` and stored as `config.inputMapping = {}`. The `event` field now triggers config panel re-render like `action` and `condition`.
 
-# Decision: TriggerDispatcher Must Be Injected via DI, Never Called Statically
-
-**Date:** 2026-02-11
-**Author:** Kaylee (Backend Dev)
-**Status:** Implemented
-
-## Context
-
-`TriggerDispatcher::dispatch()` is an instance method that depends on `WorkflowEngineInterface` injected via constructor. `DefaultOfficerManager` was calling it statically (`TriggerDispatcher::dispatch(...)`) in two places, causing a fatal error when the officer-hire workflow was active.
-
-## Decision
-
-`TriggerDispatcher` must always be injected via the DI container and called on an instance (`$this->triggerDispatcher->dispatch(...)`), never statically. This matches the existing pattern in `DefaultWarrantManager`.
-
-## Changes Made
-
-1. **`DefaultOfficerManager.php`** — Added `TriggerDispatcher` as a third constructor parameter. Changed both static calls (lines 91, 606) to instance calls.
-2. **`OfficersPlugin.php`** — Added `TriggerDispatcher::class` as a DI argument for `OfficerManagerInterface` registration.
-
-## Rule for Future Development
-
-Any service that needs to dispatch workflow triggers must inject `TriggerDispatcher` via constructor DI. Do not call `TriggerDispatcher::dispatch()` statically — it will always fail at runtime.
-# Decision: Grid Date Columns Use Timezone Conversion
-
-**Date:** 2026-02-11
-**Author:** Kaylee
-**Status:** Implemented
-**Requested by:** Josh Handel
-
-## Context
-
-The `dataverse_table.php` template had two date rendering paths:
-- `case 'datetime':` — correctly used `$this->Timezone->format($value)` for timezone conversion
-- `case 'date':` — used raw `$value->format('F j, Y')` with no timezone conversion
-
-Warrant grid columns `start_on` and `expires_on` are type `date`, so they displayed in UTC.
-
-## Decision
-
-1. **All `date` type grid columns now use timezone conversion** via `$this->Timezone->date($value)`. This affects every grid that has `type: 'date'` columns, not just warrants.
-
-2. **Date-range filter values are converted from kingdom timezone to UTC** before being applied to SQL queries. `TzHelper::toUtc()` handles the conversion using the kingdom's configured timezone (`KMP.DefaultTimezone` app setting). Original values are preserved for filter pill display.
-
-3. **System view boundary dates use kingdom-timezone "today"** instead of UTC today. `WarrantsGridColumns::getSystemViews()` now uses `TzHelper::getAppTimezone()` to determine the current date in the kingdom's timezone.
-
-## Impact
-
-- All grids with `date` type columns will now display in user/kingdom timezone
-- All grids with `date-range` filter columns will convert filter boundaries to UTC (Warrants, WarrantRosters, Gatherings, GatheringAttendances, WarrantPeriods, MemberRoles)
-- System view dates for warrants are now kingdom-timezone-aware
-
-## Known Limitation
-
-`GridViewConfig.php`'s expression tree (`extractExpression`) does NOT perform timezone conversion for `dateRange`, `lt`, `gt`, etc. operators. System views using `expression` blocks with date values (e.g., the "Previous" warrants view's OR expression) may have ±1 day boundary inaccuracy near timezone midnight boundaries. This is mitigated by the fact that status filters (EXPIRED, DEACTIVATED) handle most cases in the OR condition.
-
-## Files Changed
-
-- `app/templates/element/dataverse_table.php` — display fix
-- `app/src/Controller/DataverseGridTrait.php` — filter UTC conversion
-- `app/src/KMP/GridColumns/WarrantsGridColumns.php` — kingdom-timezone today
-
-
----
 ---
 
+### 2026-02-11: TriggerDispatcher must be injected via DI
 
+**By:** Kaylee
+**Status:** Implemented
+
+**What:** `TriggerDispatcher` must always be injected via DI and called on an instance, never statically. Fixed `DefaultOfficerManager` which was calling `TriggerDispatcher::dispatch()` statically, causing fatal errors.
+
+**Rule:** Any service dispatching workflow triggers must inject `TriggerDispatcher` via constructor DI. Static calls will always fail because `dispatch()` depends on `WorkflowEngineInterface`.
+
+**Files:** `DefaultOfficerManager.php` (constructor + 2 call sites), `OfficersPlugin.php` (DI registration).
+
+---
+
+### 2026-02-11: Grid date columns use timezone conversion
+
+**By:** Kaylee
+**Status:** Implemented
+
+**What:** All `date` type grid columns now use `$this->Timezone->date($value)` for timezone conversion (was using raw UTC `format()`). Date-range filter values converted from kingdom timezone to UTC before SQL queries. System view boundary dates use kingdom-timezone "today".
+
+**Impact:** Affects all grids with `date` type or `date-range` filter columns. Known limitation: `GridViewConfig.php` expression tree does NOT do timezone conversion for `dateRange`/`lt`/`gt` operators.
+
+**Files:** `dataverse_table.php`, `DataverseGridTrait.php`, `WarrantsGridColumns.php`.
+
+
+### 2026-02-11: Universal Value Picker Architecture (consolidated)
+
+**By:** Mal, Kaylee, Wash
+**Date:** 2026-02-11
+**Status:** Implemented
+
+**What:** Unified how all workflow parameters support dynamic values — from 4 separate patterns (plain input, `$.path` text, approval-specific type selector, text placeholder hints) to one reusable system with a single backend resolver and a single frontend component.
+
+#### Backend: `resolveParamValue()` (Kaylee)
+
+Added `resolveParamValue(mixed $value, array $context, mixed $default = null): mixed` to `DefaultWorkflowEngine` as the universal value resolution method.
+
+**Resolution logic:**
+1. `null`/empty → return `$default`
+2. Plain scalar (not `$.` prefixed) → return as-is
+3. String starting with `$.` → resolve via `resolveContextValue()`
+4. Array with `type` key: `fixed` → return `value`; `context` → resolve `path`; `app_setting` → lookup from AppSettings table; unknown → log warning, return `$default`
+
+**Wired into:**
+- `resolveRequiredCount()` — refactored to thin wrapper: `max(1, (int)resolveParamValue(...))`
+- `executeActionNode()` — each `params.*` resolved before merge into nodeConfig
+- `executeConditionNode()` — `expectedValue` and `params.*` resolved; `field` left untouched (it's a path reference)
+
+#### Frontend: `renderValuePicker()` (Wash)
+
+Added to `WorkflowConfigPanel` — universal component rendering type-selector + dynamic input.
+
+**Data attributes:** `data-vp-type="{field}"` (type select), `data-vp-field="{field}"` (container), `data-vp-settings-select="{field}"` (app settings select).
+
+**Value composition:** Fixed → plain scalar (backward compatible). Context → `{type: 'context', path: '...'}`. App Setting → `{type: 'app_setting', key: '...'}`. Empty → `''`.
+
+**Panels refactored:**
+| Panel | Fields using renderValuePicker |
+|-------|-------------------------------|
+| `_approvalHTML()` | `requiredCount` (integer) |
+| `_actionHTML()` | All `params.*` from inputSchema |
+| `_conditionHTML()` | `expectedValue`, plugin `params.*` |
+| `_delayHTML()` | `duration` |
+| `_loopHTML()` | `maxIterations` (integer) |
+
+**Deleted:** `_requiredCountHTML()`, `onRequiredCountTypeChange()`, `requiredCountType`/`requiredCountFixedValue`/`requiredCountSettingKey`/`requiredCountContextPath` special-case code.
+
+#### App Settings API Endpoint (Kaylee)
+
+`GET /workflows/app-settings` on `WorkflowsController` — returns all app settings as JSON (`name`, `value`, `type`). Uses `skipAuthorization()` (workflow designer is admin-only by page access).
+
+#### Architecture Principles (Mal)
+
+1. **Three resolution types now, extensible later** — `fixed`, `context`, `app_setting` implemented. `entity_field` and `computed` reserved but not built.
+2. **Backward compatible by design** — plain scalars pass through unchanged, `$.path` strings auto-detected, no workflow definition migration required.
+3. **No new files, no DB changes** — `renderValuePicker()` lives on existing `WorkflowConfigPanel`, `resolveParamValue()` added to existing `DefaultWorkflowEngine`.
+4. **`field` in conditions is a PATH reference** — do NOT resolve it. Only `expectedValue` and `params.*` get value resolution.
+
+#### Key Files
+
+| File | Change |
+|------|--------|
+| `DefaultWorkflowEngine.php` | `resolveParamValue()`, refactored `resolveRequiredCount()`, updated action/condition execution |
+| `WorkflowsController.php` | `appSettings()` endpoint |
+| `workflow-config-panel.js` | `renderValuePicker()`, refactored all 5 panels |
+| `workflow-designer-controller.js` | `onValuePickerTypeChange()`, generic value composition in `updateNodeConfig()` |
+
+---
+
+### 2026-02-11: Suppress duplicate emails when workflow handles notifications
+
+**By:** Kaylee
+**Date:** 2026-02-11
+**Status:** Implemented
+
+**What:** Added `bool $sendNotifications = true` parameter to `WarrantManagerInterface::activateApprovedRoster()`. Workflow action passes `false`; direct approval path uses default `true`.
+
+**Why:** The warrant roster workflow had both `ActivateWarrants` (which internally sends emails) and `NotifyWarrantIssued` (which also sends emails) on the approved path, causing duplicate notifications.
+
+**Pattern:** When a service method performs both action + notification, and a workflow wraps it with a dedicated notification step, the service must allow suppressing notifications. Default `true` preserves behavior for all callers except the explicit workflow override.
+
+**Files:** `WarrantManagerInterface.php` (signature), `DefaultWarrantManager.php` (conditional), `WarrantWorkflowActions.php` (passes `false`).

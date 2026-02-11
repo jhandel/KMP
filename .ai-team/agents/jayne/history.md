@@ -123,3 +123,6 @@ Added 4 tests to `app/tests/TestCase/Services/WorkflowEngine/DefaultWorkflowEngi
 - Tests the fix at lines 217-228 of `DefaultWorkflowEngine.php` — nodes context population matching action/condition patterns
 
 📌 Team update (2026-02-11): Approval node context tests consolidated with Kaylee's fix into single decision — decided by Scribe
+
+📌 Team update (2026-02-11): Universal value picker implemented — `resolveParamValue()` backend (Kaylee) + `renderValuePicker()` frontend (Wash) replace all ad-hoc parameter input patterns. All 5 config panels refactored. Jayne should add unit tests for `resolveParamValue()` covering fixed/context/app_setting/unknown type paths. — decided by Mal, Kaylee, Wash
+📌 Team update (2026-02-11): Duplicate email fix — `activateApprovedRoster()` now accepts `$sendNotifications` param. Workflow action passes `false`. Consider workflow integration test tracing email sends through activate→notify flow. — decided by Kaylee
