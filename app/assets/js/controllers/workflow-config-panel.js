@@ -118,6 +118,7 @@ export default class WorkflowConfigPanel {
     }
 
     _approvalHTML(config) {
+        const isPolicy = config.approverType === 'policy'
         return `<div class="mb-3">
             <label class="form-label">Approver Type</label>
             <select class="form-select form-select-sm" name="approverType" data-action="change->workflow-designer#updateNodeConfig">
@@ -125,11 +126,32 @@ export default class WorkflowConfigPanel {
                 <option value="role" ${config.approverType === 'role' ? 'selected' : ''}>By Role</option>
                 <option value="member" ${config.approverType === 'member' ? 'selected' : ''}>Specific Member</option>
                 <option value="dynamic" ${config.approverType === 'dynamic' ? 'selected' : ''}>Dynamic (from context)</option>
+                <option value="policy" ${isPolicy ? 'selected' : ''}>By Policy</option>
             </select>
         </div>
-        <div class="mb-3">
+        <div class="mb-3" style="display:${isPolicy ? 'none' : 'block'};">
             <label class="form-label">Permission/Role</label>
             <input type="text" class="form-control form-control-sm" name="approverValue" value="${config.approverValue || ''}" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+        </div>
+        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <label class="form-label">Policy Class</label>
+            <input type="text" class="form-control form-control-sm" name="policyClass" value="${config.policyClass || ''}" placeholder="e.g. App\\Policy\\WarrantRosterPolicy" data-action="change->workflow-designer#updateNodeConfig">
+        </div>
+        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <label class="form-label">Policy Action</label>
+            <input type="text" class="form-control form-control-sm" name="policyAction" value="${config.policyAction || ''}" placeholder="e.g. canApprove" data-action="change->workflow-designer#updateNodeConfig">
+        </div>
+        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <label class="form-label">Entity Table</label>
+            <input type="text" class="form-control form-control-sm" name="entityTable" value="${config.entityTable || ''}" placeholder="e.g. WarrantRosters" data-action="change->workflow-designer#updateNodeConfig">
+        </div>
+        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <label class="form-label">Entity ID Key</label>
+            <input type="text" class="form-control form-control-sm" name="entityIdKey" value="${config.entityIdKey || ''}" placeholder="e.g. trigger.rosterId" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+        </div>
+        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <label class="form-label">Permission Label</label>
+            <input type="text" class="form-control form-control-sm" name="permission" value="${config.permission || ''}" placeholder="e.g. Can Approve Warrant Rosters" data-action="change->workflow-designer#updateNodeConfig">
         </div>
         <div class="mb-3">
             <label class="form-label">Required Approvals</label>
