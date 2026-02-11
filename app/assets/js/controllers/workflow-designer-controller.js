@@ -724,20 +724,23 @@ class WorkflowDesignerController extends Controller {
                 }),
             })
 
-            if (response.ok) {
-                const result = await response.json()
+            const result = await response.json()
+            if (response.ok && result.success) {
                 if (result.workflowId) this.workflowIdValue = result.workflowId
                 if (result.versionId) this.versionIdValue = result.versionId
                 this._lastSavedSnapshot = JSON.stringify(this.editor.export())
                 this._isDirty = false
                 this._updateDirtyState()
                 this.showFlash('Workflow saved successfully', 'success')
+                return true
             } else {
-                this.showFlash('Failed to save workflow', 'danger')
+                this.showFlash(result.reason || 'Failed to save workflow', 'danger')
+                return false
             }
         } catch (error) {
             console.error('Save failed:', error)
             this.showFlash('Error saving workflow', 'danger')
+            return false
         } finally {
             this._setBtnLoading(this.hasSaveBtnTarget ? this.saveBtnTarget : null, false)
         }
@@ -747,7 +750,8 @@ class WorkflowDesignerController extends Controller {
         if (event) event.preventDefault()
         if (!confirm('Publish this workflow version? Running instances will continue on their current version.')) return
 
-        await this.save()
+        const saved = await this.save()
+        if (!saved) return
 
         this._setBtnLoading(this.hasPublishBtnTarget ? this.publishBtnTarget : null, true)
 
@@ -761,13 +765,17 @@ class WorkflowDesignerController extends Controller {
                 body: JSON.stringify({ versionId: this.versionIdValue }),
             })
 
-            if (response.ok) {
-                this.showFlash('Workflow published successfully', 'success')
+            const result = await response.json()
+            if (response.ok && result.success) {
+                this.showFlash('Workflow published as v' + (result.versionNumber || ''), 'success')
+                // Reload to get fresh state — PHP controller creates a new draft automatically
+                setTimeout(() => window.location.reload(), 1000)
             } else {
-                this.showFlash('Failed to publish workflow', 'danger')
+                this.showFlash(result.reason || 'Failed to publish workflow', 'danger')
             }
         } catch (error) {
             console.error('Publish failed:', error)
+            this.showFlash('Error publishing workflow', 'danger')
         } finally {
             this._setBtnLoading(this.hasPublishBtnTarget ? this.publishBtnTarget : null, false)
         }

@@ -220,10 +220,7 @@ class WorkflowsController extends AppController
             }
         }
 
-        $this->set('result', $result);
-        $this->viewBuilder()->setOption('serialize', 'result');
-        $this->response = $this->response->withType('application/json');
-        $this->viewBuilder()->setClassName('Json');
+        return $this->buildServiceResultResponse($result);
     }
 
     /**
@@ -240,10 +237,7 @@ class WorkflowsController extends AppController
         $versionManager = $this->getVersionManager();
         $result = $versionManager->publish($versionId, $currentUser->id);
 
-        $this->set('result', $result);
-        $this->viewBuilder()->setOption('serialize', 'result');
-        $this->response = $this->response->withType('application/json');
-        $this->viewBuilder()->setClassName('Json');
+        return $this->buildServiceResultResponse($result);
     }
 
     /**
@@ -508,10 +502,7 @@ class WorkflowsController extends AppController
             'Cloned from v' . ($workflow->current_version->version_number ?? '0')
         );
 
-        $this->set('result', $result);
-        $this->viewBuilder()->setOption('serialize', 'result');
-        $this->response = $this->response->withType('application/json');
-        $this->viewBuilder()->setClassName('Json');
+        return $this->buildServiceResultResponse($result);
     }
 
     /**
@@ -561,6 +552,30 @@ class WorkflowsController extends AppController
         $this->viewBuilder()->setOption('serialize', 'result');
         $this->response = $this->response->withType('application/json');
         $this->viewBuilder()->setClassName('Json');
+    }
+
+    /**
+     * Build a flat JSON response from a ServiceResult.
+     *
+     * Returns flat keys (success, reason, plus any data fields) instead of
+     * nested {result: {data: {}}} so the frontend can read them directly.
+     */
+    private function buildServiceResultResponse(ServiceResult $result): \Cake\Http\Response
+    {
+        $responseData = ['success' => $result->success];
+        if ($result->reason) {
+            $responseData['reason'] = $result->reason;
+        }
+        if ($result->data) {
+            $responseData = array_merge($responseData, (array)$result->data);
+        }
+        $response = $this->response->withType('application/json')
+            ->withStringBody(json_encode($responseData));
+        if (!$result->success) {
+            $response = $response->withStatus(422);
+        }
+
+        return $response;
     }
 
     private function getWorkflowEngine(): WorkflowEngineInterface
