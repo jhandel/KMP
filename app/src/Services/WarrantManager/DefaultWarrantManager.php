@@ -157,7 +157,13 @@ class DefaultWarrantManager implements WarrantManagerInterface
             return new ServiceResult(false, 'Warrant approval set is already approved');
         }
 
-        //record approval
+        // Route through workflow if one is active for this roster
+        $workflowApproval = $this->findWorkflowApprovalForRoster($warrant_roster_id);
+        if ($workflowApproval) {
+            return $this->approveViaWorkflow($workflowApproval, $approver_id);
+        }
+
+        // Direct path (no workflow configured)
         $warrantRosterApprovalTable = TableRegistry::getTableLocator()->get('WarrantRosterApprovals');
         $warrantRosterApproval = $warrantRosterApprovalTable->newEmptyEntity();
         $warrantRosterApproval->warrant_roster_id = $warrant_roster_id;
@@ -200,9 +206,6 @@ class DefaultWarrantManager implements WarrantManagerInterface
             } catch (\Exception $e) {
                 \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Approved: ' . $e->getMessage());
             }
-
-            // Advance the corresponding workflow instance if one exists
-            $this->advanceWorkflowForRoster($warrantRoster->id, $approver_id);
         }
 
         return new ServiceResult(true);
@@ -335,7 +338,14 @@ class DefaultWarrantManager implements WarrantManagerInterface
         if ($warrantRoster->hasRequiredApprovals()) {
             return new ServiceResult(false, 'Warrant approval set is already approved');
         }
-        //get all of the warrants in the set
+
+        // Route through workflow if one is active for this roster
+        $workflowApproval = $this->findWorkflowApprovalForRoster($warrant_roster_id);
+        if ($workflowApproval) {
+            return $this->declineViaWorkflow($workflowApproval, $rejecter_id, $reason);
+        }
+
+        // Direct path (no workflow configured)
         $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
         $warrants = $warrantTable->find()
             ->where([
@@ -390,9 +400,6 @@ class DefaultWarrantManager implements WarrantManagerInterface
         } catch (\Exception $e) {
             \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Declined: ' . $e->getMessage());
         }
-
-        // Advance the corresponding workflow instance if one exists
-        $this->declineWorkflowForRoster($warrantRoster->id, $rejecter_id, $reason);
 
         return new ServiceResult(true);
     }
@@ -521,19 +528,14 @@ class DefaultWarrantManager implements WarrantManagerInterface
     }
 
     /**
-     * Advance the pending workflow approval for a roster so the workflow completes.
-     *
-     * When a roster is approved via the direct path, any associated workflow instance
-     * stays stuck in WAITING state. This method finds and resolves the pending workflow
-     * approval, allowing the workflow to proceed to warrant activation and notification.
+     * Find a pending workflow approval for a roster with a waiting workflow instance.
      */
-    protected function advanceWorkflowForRoster(int $rosterId, int $approverId): void
+    protected function findWorkflowApprovalForRoster(int $rosterId): ?WorkflowApproval
     {
         try {
             $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
             $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
 
-            // Find a waiting workflow instance for this roster
             $instances = $instancesTable->find()
                 ->where(['status' => 'waiting'])
                 ->all();
@@ -545,7 +547,6 @@ class DefaultWarrantManager implements WarrantManagerInterface
                     continue;
                 }
 
-                // Find the pending approval for this instance
                 $approval = $approvalsTable->find()
                     ->where([
                         'workflow_instance_id' => $instance->id,
@@ -553,135 +554,83 @@ class DefaultWarrantManager implements WarrantManagerInterface
                     ])
                     ->first();
 
-                if (!$approval) {
-                    continue;
+                if ($approval) {
+                    return $approval;
                 }
-
-                // Record the approval response and resume the workflow
-                $result = $this->approvalManager->recordResponse(
-                    $approval->id,
-                    $approverId,
-                    'approve',
-                    'Approved via warrant roster direct approval',
-                );
-
-                if ($result->isSuccess() && $result->getData()) {
-                    $data = $result->getData();
-                    if (($data['approvalStatus'] ?? '') === 'approved') {
-                        $this->workflowEngine->resumeWorkflow(
-                            $data['instanceId'],
-                            $data['nodeId'],
-                            'approved',
-                            [
-                                'approval' => $data,
-                                'approverId' => $approverId,
-                                'decision' => 'approve',
-                                'comment' => 'Approved via warrant roster direct approval',
-                            ],
-                        );
-                    }
-                } else {
-                    // Fallback: directly resolve the approval and resume workflow
-                    // This handles cases where eligibility check fails for the direct approver
-                    $approval->approved_count = $approval->required_count;
-                    $approval->status = WorkflowApproval::STATUS_APPROVED;
-                    if ($approvalsTable->save($approval)) {
-                        $this->workflowEngine->resumeWorkflow(
-                            $approval->workflow_instance_id,
-                            $approval->node_id,
-                            'approved',
-                            [
-                                'approverId' => $approverId,
-                                'decision' => 'approve',
-                                'comment' => 'Approved via warrant roster direct approval (fallback)',
-                            ],
-                        );
-                    }
-                }
-
-                break; // Only advance the first matching workflow
             }
         } catch (\Exception $e) {
-            \Cake\Log\Log::warning('Failed to advance workflow for roster ' . $rosterId . ': ' . $e->getMessage());
+            \Cake\Log\Log::warning('Failed to find workflow approval for roster ' . $rosterId . ': ' . $e->getMessage());
         }
+
+        return null;
     }
 
     /**
-     * Decline the pending workflow approval for a roster so the workflow completes via the decline path.
+     * Record an approval response through the workflow engine.
      */
-    protected function declineWorkflowForRoster(int $rosterId, int $rejecterId, string $reason): void
+    protected function approveViaWorkflow(WorkflowApproval $approval, int $approverId): ServiceResult
     {
-        try {
-            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
-            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+        $result = $this->approvalManager->recordResponse(
+            $approval->id,
+            $approverId,
+            'approve',
+            'Approved via warrant roster',
+        );
 
-            $instances = $instancesTable->find()
-                ->where(['status' => 'waiting'])
-                ->all();
-
-            foreach ($instances as $instance) {
-                $context = $instance->context ?? [];
-                $triggerRosterId = $context['trigger']['rosterId'] ?? null;
-                if ((int)$triggerRosterId !== $rosterId) {
-                    continue;
-                }
-
-                $approval = $approvalsTable->find()
-                    ->where([
-                        'workflow_instance_id' => $instance->id,
-                        'status' => WorkflowApproval::STATUS_PENDING,
-                    ])
-                    ->first();
-
-                if (!$approval) {
-                    continue;
-                }
-
-                $result = $this->approvalManager->recordResponse(
-                    $approval->id,
-                    $rejecterId,
-                    'deny',
-                    $reason,
-                );
-
-                if ($result->isSuccess() && $result->getData()) {
-                    $data = $result->getData();
-                    if (($data['approvalStatus'] ?? '') === 'denied') {
-                        $this->workflowEngine->resumeWorkflow(
-                            $data['instanceId'],
-                            $data['nodeId'],
-                            'denied',
-                            [
-                                'approval' => $data,
-                                'approverId' => $rejecterId,
-                                'decision' => 'deny',
-                                'comment' => $reason,
-                            ],
-                        );
-                    }
-                } else {
-                    // Fallback: directly resolve the approval and resume workflow
-                    $approval->rejected_count = 1;
-                    $approval->status = WorkflowApproval::STATUS_REJECTED;
-                    if ($approvalsTable->save($approval)) {
-                        $this->workflowEngine->resumeWorkflow(
-                            $approval->workflow_instance_id,
-                            $approval->node_id,
-                            'denied',
-                            [
-                                'approverId' => $rejecterId,
-                                'decision' => 'deny',
-                                'comment' => $reason . ' (fallback)',
-                            ],
-                        );
-                    }
-                }
-
-                break;
-            }
-        } catch (\Exception $e) {
-            \Cake\Log\Log::warning('Failed to decline workflow for roster ' . $rosterId . ': ' . $e->getMessage());
+        if (!$result->isSuccess()) {
+            return new ServiceResult(false, $result->getError() ?? 'Failed to record workflow approval');
         }
+
+        $data = $result->getData();
+        if ($data && ($data['approvalStatus'] ?? '') === 'approved') {
+            $this->workflowEngine->resumeWorkflow(
+                $data['instanceId'],
+                $data['nodeId'],
+                'approved',
+                [
+                    'approval' => $data,
+                    'approverId' => $approverId,
+                    'decision' => 'approve',
+                    'comment' => 'Approved via warrant roster',
+                ],
+            );
+        }
+
+        return new ServiceResult(true);
+    }
+
+    /**
+     * Record a decline response through the workflow engine.
+     */
+    protected function declineViaWorkflow(WorkflowApproval $approval, int $rejecterId, string $reason): ServiceResult
+    {
+        $result = $this->approvalManager->recordResponse(
+            $approval->id,
+            $rejecterId,
+            'deny',
+            $reason,
+        );
+
+        if (!$result->isSuccess()) {
+            return new ServiceResult(false, $result->getError() ?? 'Failed to record workflow decline');
+        }
+
+        $data = $result->getData();
+        if ($data && ($data['approvalStatus'] ?? '') === 'rejected') {
+            $this->workflowEngine->resumeWorkflow(
+                $data['instanceId'],
+                $data['nodeId'],
+                'rejected',
+                [
+                    'approval' => $data,
+                    'approverId' => $rejecterId,
+                    'decision' => 'deny',
+                    'comment' => $reason,
+                ],
+            );
+        }
+
+        return new ServiceResult(true);
     }
 
     protected function cancelWarrant($warrantTable, $warrant, $expiresOn, $rejecter_id, $reason): ServiceResult
