@@ -25,20 +25,20 @@ class SeedWorkflowDefinitions extends AbstractMigration
 
         $this->execute(
             "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
-            "VALUES ('{$name}', '{$slug}', '{$desc}', 'event', '{$triggerConfig}', '{$entityType}', 1, NULL, 1, 1, '{$now}', '{$now}')"
+                "VALUES ('{$name}', '{$slug}', '{$desc}', 'event', '{$triggerConfig}', '{$entityType}', 1, NULL, 1, 1, '{$now}', '{$now}')"
         );
 
         $this->execute(
             "INSERT INTO workflow_versions (workflow_definition_id, version_number, definition, canvas_layout, status, published_at, published_by, created_by, created, modified) " .
-            "VALUES ((SELECT id FROM workflow_definitions WHERE slug = '{$slug}'), 1, '{$definition}', '{}', 'published', '{$now}', 1, 1, '{$now}', '{$now}')"
+                "VALUES ((SELECT id FROM workflow_definitions WHERE slug = '{$slug}'), 1, '{$definition}', '{}', 'published', '{$now}', 1, 1, '{$now}', '{$now}')"
         );
 
         $this->execute(
             "UPDATE workflow_definitions SET current_version_id = (" .
-            "SELECT wv.id FROM workflow_versions wv " .
-            "INNER JOIN workflow_definitions wd ON wv.workflow_definition_id = wd.id " .
-            "WHERE wd.slug = '{$slug}' AND wv.version_number = 1" .
-            ") WHERE slug = '{$slug}'"
+                "SELECT wv.id FROM workflow_versions wv " .
+                "INNER JOIN workflow_definitions wd ON wv.workflow_definition_id = wd.id " .
+                "WHERE wd.slug = '{$slug}' AND wv.version_number = 1" .
+                ") WHERE slug = '{$slug}'"
         );
 
         // Officer Hire workflow
@@ -51,20 +51,20 @@ class SeedWorkflowDefinitions extends AbstractMigration
 
         $this->execute(
             "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
-            "VALUES ('{$name2}', '{$slug2}', '{$desc2}', 'event', '{$triggerConfig2}', '{$entityType2}', 0, NULL, 1, 1, '{$now}', '{$now}')"
+                "VALUES ('{$name2}', '{$slug2}', '{$desc2}', 'event', '{$triggerConfig2}', '{$entityType2}', 0, NULL, 1, 1, '{$now}', '{$now}')"
         );
 
         $this->execute(
             "INSERT INTO workflow_versions (workflow_definition_id, version_number, definition, canvas_layout, status, published_at, published_by, created_by, created, modified) " .
-            "VALUES ((SELECT id FROM workflow_definitions WHERE slug = '{$slug2}'), 1, '{$definition2}', '{}', 'published', '{$now}', 1, 1, '{$now}', '{$now}')"
+                "VALUES ((SELECT id FROM workflow_definitions WHERE slug = '{$slug2}'), 1, '{$definition2}', '{}', 'published', '{$now}', 1, 1, '{$now}', '{$now}')"
         );
 
         $this->execute(
             "UPDATE workflow_definitions SET current_version_id = (" .
-            "SELECT wv.id FROM workflow_versions wv " .
-            "INNER JOIN workflow_definitions wd ON wv.workflow_definition_id = wd.id " .
-            "WHERE wd.slug = '{$slug2}' AND wv.version_number = 1" .
-            ") WHERE slug = '{$slug2}'"
+                "SELECT wv.id FROM workflow_versions wv " .
+                "INNER JOIN workflow_definitions wd ON wv.workflow_definition_id = wd.id " .
+                "WHERE wd.slug = '{$slug2}' AND wv.version_number = 1" .
+                ") WHERE slug = '{$slug2}'"
         );
     }
 
@@ -152,7 +152,7 @@ class SeedWorkflowDefinitions extends AbstractMigration
                         'action' => 'Warrants.DeclineRoster',
                         'params' => [
                             'rosterId' => '$.trigger.rosterId',
-                            'reason' => '$.approval-1.rejectionComment',
+                            'reason' => '$.nodes.approval-1.comment',
                             'rejecterId' => '$.nodes.approval-1.approverId',
                         ],
                     ],

@@ -1181,6 +1181,13 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         if ($a === $b) {
             return true;
         }
+        // Normalize output-N ports (legacy designer naming) to 'default'
+        if (preg_match('/^output-\d+$/', $a)) {
+            $a = 'default';
+        }
+        if (preg_match('/^output-\d+$/', $b)) {
+            $b = 'default';
+        }
         $defaultAliases = ['default', 'next'];
         return in_array($a, $defaultAliases) && in_array($b, $defaultAliases);
     }

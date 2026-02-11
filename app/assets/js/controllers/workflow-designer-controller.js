@@ -598,12 +598,19 @@ class WorkflowDesignerController extends Controller {
 
     getPortLabel(type, portIndex) {
         const portLabels = {
+            trigger: ['default'],
+            action: ['default'],
             condition: ['true', 'false'],
             approval: ['approved', 'rejected'],
             loop: ['continue', 'exit'],
             fork: ['path-1', 'path-2', 'path-3', 'path-4'],
+            delay: ['default'],
+            join: ['default'],
+            subworkflow: ['default'],
         }
-        return portLabels[type]?.[portIndex] || `output-${portIndex + 1}`
+        // Drawflow ports are 1-based (output_1, output_2) but arrays are 0-based
+        const zeroBasedIndex = portIndex - 1
+        return portLabels[type]?.[zeroBasedIndex] || `output-${portIndex}`
     }
 
     importWorkflow(definition, canvasLayout) {
