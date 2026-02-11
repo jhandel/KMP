@@ -194,3 +194,29 @@ This mirrors how PHP templates use `$this->element('autoCompleteControl', [...])
 - Approval output schema, builtin context variables, and inputSchema fields all check registry data first. If the backend hasn't provided it yet, hardcoded defaults keep things working. As the backend rolls out schema data, the frontend automatically picks it up.
 
 📌 Team update (2026-02-11): Action Schema & Context Mapping — all 5 phases implemented and consolidated. Architecture (Mal), frontend fixes + field rendering (Wash commits 187032cf), backend schema + validation + enrichment (Kaylee commit 6c4528fb). 459 tests pass.
+
+### 2026-02-11: Flow Control Node Config Panels
+
+Extended config panel and variable picker to all remaining node types (commit 5981a134):
+
+#### Config Panel (`workflow-config-panel.js`)
+- **Trigger**: Added `inputMapping` UI — when a trigger is selected and has `payloadSchema`, renders mapping fields below dropdown with `name="inputMapping.{key}"` and `data-variable-picker="true"`. Default values are `$.event.{key}`.
+- **Delay**: Added `data-variable-picker="true"` to both `duration` and `waitEvent` inputs. Updated placeholder to hint at variable refs.
+- **Subworkflow**: New `_subworkflowHTML()` with `workflowSlug` text input.
+- **Fork**: New `_forkHTML()` — info-only panel explaining parallel fan-out.
+- **Join**: New `_joinHTML()` — info-only panel explaining wait-for-all behavior.
+- **End**: New `_endHTML()` with status dropdown (completed/cancelled/failed).
+- **Loop**: Verified `exitCondition` already had `data-variable-picker="true"` ✅.
+- Updated `getTypeSpecificHTML()` switch to route all 10 node types.
+
+#### Variable Picker (`workflow-variable-picker.js`)
+- Added output schemas for `delay` (delayConfig object), `loop` (iteration + maxIterations), and `subworkflow` (childInstanceId + result object).
+- Fork, join, end don't produce meaningful outputs — no schemas added.
+
+#### Designer Controller (`workflow-designer-controller.js`)
+- `updateNodeConfig()` now handles `inputMapping.*` form field prefix — same nesting pattern as `params.*`.
+- Added `event` to the re-render trigger check alongside `action` and `condition`.
+
+#### Key Pattern
+- `inputMapping.*` namespace mirrors `params.*` — both are collected from FormData, stripped of prefix, and stored as nested objects in `config`.
+- Selecting a trigger event now re-renders the config panel (like action/condition) to show the payload schema fields dynamically.
