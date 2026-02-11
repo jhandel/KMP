@@ -33,6 +33,7 @@ use Officers\Services\Api\ReadOnlyOfficerRosterServiceInterface;
 use Officers\Services\Api\DefaultReadOnlyDepartmentService;
 use Officers\Services\Api\DefaultReadOnlyOfficeService;
 use Officers\Services\Api\DefaultReadOnlyOfficerRosterService;
+use Officers\Services\OfficerWorkflowActions;
 
 /**
  * Officers Plugin - Officer assignment management and hierarchical organization
