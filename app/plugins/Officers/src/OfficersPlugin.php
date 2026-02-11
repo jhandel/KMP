@@ -26,6 +26,7 @@ use App\KMP\StaticHelpers;
 use Cake\I18n\DateTime;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Officers\Services\Api\ReadOnlyDepartmentServiceInterface;
 use Officers\Services\Api\ReadOnlyOfficeServiceInterface;
 use Officers\Services\Api\ReadOnlyOfficerRosterServiceInterface;
@@ -206,7 +207,8 @@ class OfficersPlugin extends BasePlugin implements KMPPluginInterface, KMPApiPlu
             DefaultOfficerManager::class,
         )
             ->addArgument(ActiveWindowManagerInterface::class)
-            ->addArgument(WarrantManagerInterface::class);
+            ->addArgument(WarrantManagerInterface::class)
+            ->addArgument(TriggerDispatcher::class);
 
         // OfficerWorkflowActions — workflow actions using injected managers
         $container->add(OfficerWorkflowActions::class)

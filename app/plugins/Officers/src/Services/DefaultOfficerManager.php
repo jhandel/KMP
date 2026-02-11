@@ -38,14 +38,19 @@ class DefaultOfficerManager implements OfficerManagerInterface
     /** @var WarrantManagerInterface */
     private WarrantManagerInterface $warrantManager;
 
+    /** @var TriggerDispatcher */
+    private TriggerDispatcher $triggerDispatcher;
+
     /**
      * @param ActiveWindowManagerInterface $activeWindowManager Temporal assignment management
      * @param WarrantManagerInterface $warrantManager Warrant lifecycle coordination
+     * @param TriggerDispatcher $triggerDispatcher Workflow trigger dispatcher
      */
-    public function __construct(ActiveWindowManagerInterface $activeWindowManager, WarrantManagerInterface $warrantManager)
+    public function __construct(ActiveWindowManagerInterface $activeWindowManager, WarrantManagerInterface $warrantManager, TriggerDispatcher $triggerDispatcher)
     {
         $this->activeWindowManager = $activeWindowManager;
         $this->warrantManager = $warrantManager;
+        $this->triggerDispatcher = $triggerDispatcher;
     }
     /**
      * Assign a member to an office within a branch, persisting the Officer record,
@@ -88,7 +93,7 @@ class DefaultOfficerManager implements OfficerManagerInterface
             // Workflow mode: just dispatch the trigger and let the workflow handle creation
             $member = TableRegistry::getTableLocator()->get('Members')->get($memberId);
             try {
-                TriggerDispatcher::dispatch('Officers.HireRequested', [
+                $this->triggerDispatcher->dispatch('Officers.HireRequested', [
                     'memberId' => $memberId,
                     'officeId' => $officeId,
                     'branchId' => $branchId,
@@ -603,7 +608,7 @@ class DefaultOfficerManager implements OfficerManagerInterface
         $this->queueMail("Officers.Officers", "notifyOfRelease", $member->email_address, $vars);
 
         try {
-            TriggerDispatcher::dispatch('Officers.Released', [
+            $this->triggerDispatcher->dispatch('Officers.Released', [
                 'officerId' => $officer->id,
                 'memberId' => $officer->member_id,
                 'officeId' => $officer->office_id,
