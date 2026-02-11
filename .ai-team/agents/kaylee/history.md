@@ -105,3 +105,24 @@ Fixed 13 docs across 12 files. Key corrections: DI container (removed phantom re
 📌 Team update (2026-02-10): Workflow engine backend deep-dive complete — 12 improvement items identified (3 P0/P1 critical: no transaction on recordResponse, no duplicate instance prevention, updateEntity has no allowlist). Full analysis in decisions/inbox/kaylee-workflow-backend-review.md. — decided by Kaylee
 
 📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Kaylee's DI bypass recs consolidated with Jayne's controller DI rec. Kaylee's approval transaction rec consolidated with Jayne's concurrency guard rec (P0). — decided by Mal, Kaylee, Wash, Jayne
+
+### 2026-02-10: Warrant Roster ↔ Workflow Approval Sync
+
+Implemented Mal's design for syncing workflow approval data to roster tables. Key changes:
+
+- **Extracted `activateApprovedRoster()`** from `approve()` — handles warrant activation (status→CURRENT, expire overlaps, email notifications) independently of approval bookkeeping. Idempotent: skips if no pending warrants.
+- **Added `syncWorkflowApprovalToRoster()`** — creates `warrant_roster_approval` records with dedup guard on (roster_id, approver_id). Increments `approval_count` atomically via raw SQL.
+- **Refactored `approve()`** — transaction now only covers approval record + roster status. Activation runs post-commit via `activateApprovedRoster()`. Direct path still fully functional.
+- **Modified `activateWarrants()` workflow action** — syncs `approvals_required` from workflow gate's `required_count`, syncs each approve response to roster, sets APPROVED, then calls `activateApprovedRoster()` instead of `approve()`.
+- **Modified `declineRoster()` workflow action** — syncs any approve responses that occurred before the decline for audit trail.
+- **Fixed `WarrantRosterApprovalsTable` validation** — removed ghost columns (`authorization_token`, `requested_on`, etc.) that don't exist in DB schema. Actual columns: `id`, `warrant_roster_id`, `approver_id`, `approved_on`.
+- **Fixed `WarrantApproval` entity `$_accessible`** — matched to actual DB schema.
+
+#### Key Design Decisions
+- Transaction boundary change in `approve()`: roster status committed before activation. If activation fails, roster shows APPROVED but warrants stay PENDING. Acceptable because `activateApprovedRoster()` is idempotent.
+- `syncWorkflowApprovalToRoster()` uses raw SQL for atomic increment (`COALESCE(approval_count, 0) + 1`) rather than get-and-save pattern.
+- `declineRoster()` still calls `WarrantManager::decline()` which internally calls `declineWorkflowForRoster()` — harmless no-op on already-resolved workflow (caught by try-catch).
+
+📌 Team update (2026-02-10): Warrant roster ↔ workflow sync implemented — 5 files changed, 2 new WarrantManager methods, workflow actions now sync approval data to roster tables before activating/declining. Backwards compatible with direct approval path. — decided by Mal, Kaylee
+
+📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee

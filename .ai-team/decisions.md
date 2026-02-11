@@ -2364,3 +2364,67 @@ The project uses `BaseTestCase` with transaction wrapping and seed data (NOT Cak
 **Category:** security-testing
 **Priority:** P1 (important)
 **Rationale:** `WorkflowsController::migrateInstances()` uses `updateAll()` which bypasses entity events, validation, and audit logging. It updates `workflow_version_id` without remapping `active_nodes` or creating migration audit records. This is inconsistent with `DefaultWorkflowVersionManager::migrateInstance()` which does proper remapping. Either the controller method should delegate to the version manager, or tests should document the current behavior as intentional.
+
+
+---
+
+### 2026-02-10: Warrant roster ↔ workflow approval sync (consolidated)
+
+**By:** Mal, Kaylee
+**Status:** Implemented
+**Requested by:** Josh Handel
+
+#### Problem
+
+Two parallel approval tracking systems (roster tables and workflow tables) don't sync. When users approve via the workflow engine, roster tables don't reflect those approvals until `activateWarrants` calls `WarrantManager::approve()` — which creates only one approval record regardless of how many workflow responses exist.
+
+#### Decision
+
+Workflow engine is source of truth for approval tracking. Roster tables stay updated for display/audit. Sync happens at action execution time (when the approval gate resolves), not per-response.
+
+#### Design & Implementation
+
+**New methods on `WarrantManagerInterface` / `DefaultWarrantManager`:**
+
+1. **`activateApprovedRoster(int $rosterId, int $approverId): ServiceResult`**
+   - Extracted from `approve()` — activates pending warrants, expires overlapping, sends notifications
+   - Manages its own transaction; idempotent
+
+2. **`syncWorkflowApprovalToRoster(int $rosterId, int $approverId, ?string $notes, ?\DateTimeInterface $approvedOn): ServiceResult`**
+   - Creates `warrant_roster_approval` record with dedup on (roster_id, approver_id)
+   - Atomic `approval_count` increment via raw SQL; idempotent
+
+**`approve()` refactored:** Approval record + roster status in one transaction, then `activateApprovedRoster()` called post-commit.
+
+**`WarrantWorkflowActions` changes:**
+- `activateWarrants()`: Syncs workflow approvals to roster before activating. Calls `activateApprovedRoster()` instead of `approve()`.
+- `declineRoster()`: Syncs approve responses to roster audit trail before declining.
+
+**Schema fixes:**
+- `WarrantRosterApprovalsTable`: Removed validation for non-existent columns
+- `WarrantApproval` entity: `$_accessible` trimmed to actual columns
+
+#### Deduplication
+
+Three-level dedup: `syncWorkflowApprovalToRoster()` checks (roster_id, approver_id), `recordResponse()` checks (approval_id, member_id), direct path stays isolated.
+
+#### Data Flow
+
+- **Workflow path:** User approves → workflow records response → gate resolves → `activateWarrants()` syncs responses to roster → activates warrants
+- **Direct path (backwards compatible):** User clicks Approve → `WarrantManager::approve()` → creates roster approval → activates if threshold met → advances workflow
+
+#### Risks & Watchpoints
+
+1. Transaction boundary shift: if activation fails after approval, roster shows APPROVED but warrants stay PENDING. Acceptable — `activateApprovedRoster()` is idempotent.
+2. Harmless double-decline on already-resolved workflows (caught by try-catch). Low-priority cleanup.
+3. `approval_count` raw SQL increment means stale in-memory entity within same request. Acceptable — workflow action fetches fresh roster after syncing.
+
+#### Files Changed
+
+| File | Change |
+|------|--------|
+| `WarrantManagerInterface.php` | Add `activateApprovedRoster()`, `syncWorkflowApprovalToRoster()` |
+| `DefaultWarrantManager.php` | Extract activation, add sync, refactor `approve()` |
+| `WarrantWorkflowActions.php` | Sync before activating/declining |
+| `WarrantRosterApprovalsTable.php` | Fix validation to match DB schema |
+| `WarrantApproval.php` | Fix `$_accessible` to match DB schema |

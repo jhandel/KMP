@@ -123,3 +123,5 @@ Completed 9 documentation tasks (8 modified, 1 no-change-needed):
 - Approval cards are well-structured with responsive grid (col-md-6 col-lg-4)
 
 📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Wash's frontend review merged to decisions.md. P0 save bug confirmed. Backend agents found P0 issues in DI bypass and approval transactions that affect frontend integration. — decided by Mal, Kaylee, Wash, Jayne
+
+📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee

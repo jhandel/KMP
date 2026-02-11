@@ -124,3 +124,5 @@ Completed 8 documentation tasks fixing cross-references, data models, interface 
 📌 Full review: `.ai-team/decisions/inbox/mal-workflow-architecture-review.md`
 
 📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Key consolidated decisions: DI bypass fix (P1, Kaylee+Jayne), approval atomicity+concurrency (P0, Kaylee+Jayne). Mal's architecture review merged to decisions.md. — decided by Mal, Kaylee, Wash, Jayne
+
+📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee

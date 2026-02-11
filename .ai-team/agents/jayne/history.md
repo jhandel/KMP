@@ -92,3 +92,17 @@ Fixed 13 docs across 12 files. Key: deleted duplicate `8-development-workflow.md
 Full report: `.ai-team/decisions/inbox/jayne-workflow-testing-review.md`
 
 📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Jayne's DI controller rec consolidated with Kaylee's DI recs. Jayne's concurrency guard rec consolidated with Kaylee's transaction rec (P0). 0% coverage finding confirmed by all agents. — decided by Mal, Kaylee, Wash, Jayne
+
+### 2026-02-10: Warrant Roster ↔ Workflow Sync Tests — Complete
+
+Created `app/tests/TestCase/Services/WarrantManager/WarrantRosterSyncTest.php` — 16 tests, 25 assertions, all passing.
+
+**Coverage:** `syncWorkflowApprovalToRoster()` (5 tests: record creation, approval_count increment, dedup guard, idempotent success on dup, null notes/approvedOn handling), `activateApprovedRoster()` (4 tests: status→CURRENT, approved_date set, idempotency when already active, ServiceResult return), `activateWarrants` workflow action integration (4 tests: syncs approvals_required from workflow config, syncs all approval responses, sets roster APPROVED, activates warrants after sync), `declineRoster` integration (1 test: syncs approve responses before decline for audit trail), edge cases (2 tests: 0 workflow responses, mixed approve/reject only syncs approves).
+
+**Key testing patterns discovered:**
+- `DefaultWarrantManager` uses `QueuedMailerAwareTrait` which calls `queueMail()` — this blows up in test env (no Queue.Mailer job type, no email transport). Fix: partial mock with `onlyMethods(['queueMail'])` and `willReturnCallback(function () {})`. Cannot use `willReturn(null)` because return type is `void`.
+- `WorkflowApprovals.approver_type` is validated against enum `['permission','role','member','dynamic','policy']` — must use valid value in test data.
+- Integration tests for `WarrantWorkflowActions` work well by using the real `WarrantWorkflowActions` class with a partially-mocked `DefaultWarrantManager` (stubbed email only). This tests the full sync flow without mocking away the sync logic itself.
+- `createWorkflowApprovalContext()` helper pattern (definition→version→instance→log→approval) reusable for any workflow action tests.
+
+📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee
