@@ -137,3 +137,60 @@ Changes:
 - All new fields use the same `data-action="change->workflow-designer#updateNodeConfig"` pattern
 - entityIdKey field has `data-variable-picker="true"` since it references context variables (e.g. `trigger.rosterId`)
 - Note: The config panel is statically rendered — visibility toggles are baked into the HTML at render time. When the user changes the dropdown, `updateNodeConfig` fires which re-renders the entire config panel with the new approverType, so the toggle works correctly without JS event listeners.
+
+### 2026-02-10: Workflow Config Panel — Autocomplete Pattern Alignment
+
+Updated all three autocomplete widgets (permission, role, member) in `workflow-config-panel.js` `_approvalHTML()` to match the existing `autoCompleteControl.php` pattern used app-wide.
+
+#### Changes per autocomplete widget:
+- Added `role="combobox"` and `class="position-relative kmp_autoComplete"` to the `data-controller="ac"` wrapper div
+- Wrapped text input + clear button in `<div class="input-group input-group-sm">` (Bootstrap input group)
+- Changed clear button from floating icon (`btn btn-sm btn-link` with absolute positioning + `<i class="bi bi-x-lg">`) to proper Bootstrap `btn btn-outline-secondary` with text "Clear"
+- Moved hidden inputs before the input-group to match template element ordering
+- Changed results `<ul>` from `class="list-group shadow-sm"` with inline z-index styles to `class="list-group z-3 col-12 position-absolute auto-complete-list"` matching app convention
+- Kept `form-control-sm` and `input-group-sm` since this is a sidebar config panel
+
+#### Key pattern: Autocomplete HTML structure
+The canonical autocomplete structure from `autoCompleteControl.php` (line 157-179) is:
+1. Wrapper: `data-controller="ac"` + `role="combobox"` + `position-relative kmp_autoComplete`
+2. Hidden inputs: `data-ac-target="hidden"` then `data-ac-target="hiddenText"`
+3. Input group: `div.input-group` containing text input (`data-ac-target="input"`) + clear button (`btn btn-outline-secondary`, `data-ac-target="clearBtn"`, `data-action="ac#clear"`, starts `disabled`, text "Clear")
+4. Results list: `ul` with `data-ac-target="results"`, `class="list-group z-3 col-12 position-absolute auto-complete-list"`, `hidden="hidden"`
+
+### 2026-02-10: Autocomplete Helper — JS Reuse Module
+
+Created `app/assets/js/autocomplete-helper.js` — a standalone JS module that generates autocomplete widget HTML matching `autoCompleteControl.php`. This is the JavaScript equivalent of the PHP element, for use when markup is rendered client-side (e.g. workflow config panels, dynamic forms).
+
+#### What was done
+- **New file:** `assets/js/autocomplete-helper.js` exports `renderAutoComplete(options)` which returns an HTML string with the canonical autocomplete structure (wrapper div with `data-controller="ac"`, hidden inputs, input-group with Clear button, results list).
+- **Refactored:** `workflow-config-panel.js` `_approvalHTML()` now imports and calls `renderAutoComplete()` three times (permission, role, member) instead of having three copy-pasted blocks of identical markup.
+- Shared options (`size: 'sm'`, `name: 'approverValue'`, `minLength: 2`, `hiddenAttrs`) are factored into `acSharedOpts` and spread into each call.
+
+#### Reuse pattern established
+When JS needs to render autocomplete widgets dynamically:
+```js
+import { renderAutoComplete } from '../autocomplete-helper.js'
+const html = renderAutoComplete({ url: '/endpoint/auto-complete', name: 'field_id', ... })
+```
+This mirrors how PHP templates use `$this->element('autoCompleteControl', [...])`. Any future JS-rendered autocomplete should use this helper rather than duplicating markup.
+
+### 2026-02-10: Action Schema & Context Mapping — Phase 1+2
+
+#### Variable Picker Fixes (workflow-variable-picker.js)
+- **Bug 1 fixed:** Trigger schema lookup changed from `outputSchema` to `payloadSchema` to match registry data. Added `config.inputMapping` awareness — if inputMapping exists, only mapped keys appear as trigger variables.
+- **Bug 2 fixed:** Action output paths now include `.result.` segment (`$.nodes.{key}.result.{field}`) matching engine's actual context structure.
+- **Bug 3 fixed:** Approval outputs now check `registryData.approvalOutputSchema` first, with hardcoded fallback. Same pattern for `builtinContext`.
+
+#### Config Panel Input Fields (workflow-config-panel.js)
+- `_actionHTML()` now renders inputSchema fields below the action dropdown when an action is selected. Fields use `name="params.{key}"` namespace and have `data-variable-picker="true"`.
+- `_conditionHTML()` renders inputSchema fields for plugin conditions (non-`Core.` prefix). Built-in condition fields (field, expectedValue) remain for all conditions.
+- Added `_escapeAttr()` helper for safe HTML attribute escaping in template literals.
+
+#### Designer Controller (workflow-designer-controller.js)
+- `updateNodeConfig()` now handles `params.*` form fields — collects them into `config.params = {}` instead of storing `params.key` flat in config.
+- After saving, if the changed field is `action` or `condition`, re-renders the entire config panel to show new inputSchema fields and re-attaches variable pickers.
+
+#### Key Pattern: Registry-first, hardcoded-fallback
+- Approval output schema, builtin context variables, and inputSchema fields all check registry data first. If the backend hasn't provided it yet, hardcoded defaults keep things working. As the backend rolls out schema data, the frontend automatically picks it up.
+
+📌 Team update (2026-02-11): Action Schema & Context Mapping — all 5 phases implemented and consolidated. Architecture (Mal), frontend fixes + field rendering (Wash commits 187032cf), backend schema + validation + enrichment (Kaylee commit 6c4528fb). 459 tests pass.

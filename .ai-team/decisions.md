@@ -2428,3 +2428,110 @@ Three-level dedup: `syncWorkflowApprovalToRoster()` checks (roster_id, approver_
 | `WarrantWorkflowActions.php` | Sync before activating/declining |
 | `WarrantRosterApprovalsTable.php` | Fix validation to match DB schema |
 | `WarrantApproval.php` | Fix `$_accessible` to match DB schema |
+
+
+### 2026-02-11: Action Schema & Context Mapping (consolidated)
+**By:** Mal, Wash, Kaylee
+**Status:** Implemented (all 5 phases complete)
+
+**What:** Structured action schemas, context accumulation, and designer field-mapping UI so configurators can map available context data to action inputs via variable pickers instead of typing raw `$.path` strings. Includes variable picker bug fixes, inputSchema-driven field rendering, approval output schema, publish-time validation, and provider enrichment.
+
+**Why:** The designer config panel only let users pick an action type — it didn't render input fields or show available context data. Users had to know internal path syntax and type it manually. The schema data already existed in PHP registries but wasn't consumed by the frontend. This was error-prone and made the designer unusable for non-developers.
+
+#### Architecture Principle
+**Schema Is Truth, PHP Is Source.** All schema data lives in PHP registries. The designer fetches it via `/workflows/registry`. Context accumulation and field rendering happen in JS using that schema data plus the graph topology. No new endpoints were needed.
+
+#### Schema Format
+- `inputSchema` / `outputSchema` / `payloadSchema`: keyed arrays with `type`, `label`, `required`
+- Optional additive fields: `description`, `default` (backward-compatible, no migration needed)
+- `APPROVAL_OUTPUT_SCHEMA` constant in `WorkflowActionRegistry`: declares 5 approval output fields (status, approverId, comment, rejectionComment, decision)
+- Registry endpoint now returns `approvalOutputSchema` and `builtinContext` (instance.id, instance.created, triggeredBy)
+
+#### Variable Picker Fixes (Phase 1 — Wash)
+1. Trigger variables use `payloadSchema`, not `outputSchema` — fixed to match actual registry data shape
+2. `inputMapping` takes precedence over full `payloadSchema` — only mapped keys exposed as `$.trigger.*`
+3. Action output paths include `.result.` segment — matches engine context structure `context['nodes'][nodeId] = ['result' => $result]`
+4. Registry-first, hardcoded-fallback pattern for approval outputs and builtin context
+
+#### Config Panel Field Rendering (Phase 2 — Wash)
+5. `_actionHTML()` and `_conditionHTML()` render `inputSchema` fields with variable picker
+6. `params.*` form field namespace — `name="params.{key}"` collected into `config.params = {}`
+7. Config panel re-renders on action/condition selection change (same pattern as `onApproverTypeChange`)
+
+#### Backend Schema (Phase 3 — Kaylee)
+8. `APPROVAL_OUTPUT_SCHEMA` constant added to `WorkflowActionRegistry`
+9. `approvalOutputSchema` + `builtinContext` added to registry endpoint response
+
+#### Publish-Time Validation (Phase 4 — Kaylee)
+10. `DefaultWorkflowVersionManager::validateDefinition()` validates action/condition nodes against registered `inputSchema`
+11. Skips nodes without `config.action` or `config.condition` — prevents false positives on structural test fixtures
+12. Checks: unknown action/condition references, missing required parameters
+
+#### Provider Enrichment (Phase 5 — Kaylee)
+13. Added `description` and `default` to inputSchema entries in `WarrantWorkflowProvider` and `OfficersWorkflowProvider`
+
+#### Backward Compatibility
+- Existing workflow definitions: unchanged (`config.params.key = '$.path'` still works)
+- Existing provider registrations: unchanged (additive optional fields only)
+- Existing `resolveValue()` logic: unchanged
+- Manual path typing: still works (variable picker is additive)
+- Plugin registration pattern: unchanged
+
+#### Exclusions
+- No runtime type checking (actions handle coercion via `resolveValue()`)
+- No dynamic schemas (input-dependent fields are out of scope)
+- No schema versioning (schemas tied to code, not data)
+
+#### Key Files
+| File | Role |
+|------|------|
+| `WorkflowActionRegistry.php` | `APPROVAL_OUTPUT_SCHEMA` constant |
+| `WorkflowsController.php` | Registry endpoint — approval/builtin schemas |
+| `workflow-config-panel.js` | inputSchema field rendering |
+| `workflow-variable-picker.js` | Bug fixes, registry-driven schemas |
+| `workflow-designer-controller.js` | `params.key` collection |
+| `Providers/*.php` | `description`/`default` enrichment |
+
+#### Decision Rationale
+1. Client-side context accumulation over server-side — avoids API round-trips
+2. Fix existing infrastructure over building new — picker, panel, registry all existed
+3. `params.key` nesting over flat config — engine already expects `config.params` nested object
+4. Additive schema fields over format changes — backward-compatible, no migration
+
+
+### 2026-02-10: Autocomplete HTML Helper for JavaScript
+**By:** Wash
+**Date:** 2026-02-10
+**Requested by:** Josh Handel
+
+## Context
+
+Josh flagged that autocomplete HTML was being duplicated in JavaScript (`workflow-config-panel.js`) instead of reusing the pattern from `autoCompleteControl.php`. The PHP side has a reusable element, but JS-rendered UIs had no equivalent — they copy-pasted the markup inline.
+
+## Decision
+
+Created `app/assets/js/autocomplete-helper.js` with an exported `renderAutoComplete(options)` function. This is the JS equivalent of the PHP `autoCompleteControl.php` element. It returns an HTML string matching the canonical autocomplete structure.
+
+## Usage
+
+```js
+import { renderAutoComplete } from '../autocomplete-helper.js'
+
+const html = renderAutoComplete({
+    url: '/members/auto-complete',
+    name: 'member_id',
+    placeholder: 'Search members...',
+    minLength: 2,
+    allowOther: false,
+    size: 'sm',                    // Bootstrap size suffix
+    initSelection: { value: '1', text: 'John' },
+    hiddenAttrs: 'data-action="change->my-controller#update"',
+})
+```
+
+## Rule
+
+Any JavaScript code that needs to render autocomplete widgets must use `renderAutoComplete()` from `autocomplete-helper.js`. Do not duplicate autocomplete markup inline. This keeps the HTML structure in sync with the PHP element.
+
+
+

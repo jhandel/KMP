@@ -126,3 +126,32 @@ Completed 8 documentation tasks fixing cross-references, data models, interface 
 📌 Team update (2026-02-10): Workflow engine review complete — all 4 agents reviewed feature/workflow-engine. Key consolidated decisions: DI bypass fix (P1, Kaylee+Jayne), approval atomicity+concurrency (P0, Kaylee+Jayne). Mal's architecture review merged to decisions.md. — decided by Mal, Kaylee, Wash, Jayne
 
 📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee
+
+### 2026-02-11: Action Schema & Context Mapping Architecture
+
+#### Key Findings
+- **Action/trigger schemas are already structured** — `inputSchema` and `outputSchema` in providers already use `['type' => '...', 'label' => '...', 'required' => true]` format. The data is there; the frontend doesn't use it.
+- **Variable picker has a trigger bug** — `WorkflowVariablePicker.getNodeOutputSchema()` looks for `trigger.outputSchema` but triggers register `payloadSchema`. Falls through to generic fallback.
+- **Variable picker has an action path bug** — Generates `$.nodes.{nodeId}.{key}` but engine stores at `$.nodes.{nodeId}.result.{key}` (see `DefaultWorkflowEngine` line 641).
+- **Config panel doesn't render action inputs** — `_actionHTML()` in `workflow-config-panel.js` only shows the action dropdown. No form fields for the action's `inputSchema` params.
+- **Trigger `inputMapping` determines `$.trigger.*` keys** — The trigger node's `config.inputMapping` maps event fields into context. The variable picker ignores this and tries raw payload keys.
+- **Approval resume data structure** — When approval resolves, `WorkflowsController` line 398-403 passes `{approval, approverId, decision, comment}` as `additionalData` to `resumeWorkflow()`, which stores it at `$context['resumeData']`.
+- **Engine merges `config.params` into flat config** — `DefaultWorkflowEngine::executeActionNode()` line 634-636 merges `config.params` into `config` before calling the action. This means param nesting is intentional.
+
+#### Architecture Decision
+- Schema format stays the same — no migration needed. Add optional `description`, `default` fields.
+- Context accumulation happens client-side (graph + registry data already available).
+- Config panel enhanced to render `inputSchema` fields with variable picker per field.
+- 5 phases: fix variable picker bugs → action input rendering → approval schema → publish validation → enrichment.
+- No new PHP endpoints for Phase 1-2. Phase 3 adds approval/builtin schemas to existing `/workflows/registry`.
+
+#### Key File Paths
+- `app/assets/js/controllers/workflow-variable-picker.js` — Context variable builder, upstream traversal, searchable dropdown. Has trigger lookup bug (line 55: looks for `outputSchema` instead of `payloadSchema`).
+- `app/assets/js/controllers/workflow-config-panel.js` — Per-node-type config rendering. `_actionHTML()` (line 82) only renders action dropdown, no input field forms.
+- `app/src/Services/WorkflowRegistry/WorkflowActionRegistry.php` — Static registry, `getForDesigner()` (line 177) already exposes `inputSchema`/`outputSchema`.
+- `app/src/Controller/WorkflowsController.php` — `registry()` action (line 150) serves all 4 registries as JSON.
+- `app/src/Services/WorkflowEngine/DefaultWorkflowEngine.php` — `executeActionNode()` (line 579) does `config.params` merge and stores result at `context['nodes'][$nodeId]['result']`.
+
+📌 Full proposal: `.ai-team/decisions/inbox/mal-action-schema-architecture.md`
+
+📌 Team update (2026-02-11): Action Schema & Context Mapping — all 5 phases implemented and consolidated. Architecture (Mal), frontend fixes + field rendering (Wash commits 187032cf), backend schema + validation + enrichment (Kaylee commit 6c4528fb). 459 tests pass.
