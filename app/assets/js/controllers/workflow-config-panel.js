@@ -7,8 +7,9 @@ export default class WorkflowConfigPanel {
     /**
      * @param {object} registryData - { triggers, actions, conditions, entities }
      */
-    constructor(registryData) {
+    constructor(registryData, policyClasses) {
         this.registryData = registryData
+        this.policyClasses = policyClasses || []
     }
 
     /**
@@ -118,40 +119,138 @@ export default class WorkflowConfigPanel {
     }
 
     _approvalHTML(config) {
-        const isPolicy = config.approverType === 'policy'
+        const permInitSel = config.approverType === 'permission' && config.approverValue
+            ? JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;') : ''
+        const roleInitSel = config.approverType === 'role' && config.approverValue
+            ? JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;') : ''
+        const memberInitSel = config.approverType === 'member' && config.approverValue
+            ? JSON.stringify({value: config.approverValue, text: config.approverValue}).replace(/'/g, '&#39;') : ''
+
         return `<div class="mb-3">
             <label class="form-label">Approver Type</label>
-            <select class="form-select form-select-sm" name="approverType" data-action="change->workflow-designer#updateNodeConfig">
-                <option value="permission" ${config.approverType === 'permission' ? 'selected' : ''}>By Permission</option>
+            <select class="form-select form-select-sm" name="approverType" data-action="change->workflow-designer#onApproverTypeChange">
+                <option value="permission" ${config.approverType === 'permission' || !config.approverType ? 'selected' : ''}>By Permission</option>
                 <option value="role" ${config.approverType === 'role' ? 'selected' : ''}>By Role</option>
                 <option value="member" ${config.approverType === 'member' ? 'selected' : ''}>Specific Member</option>
                 <option value="dynamic" ${config.approverType === 'dynamic' ? 'selected' : ''}>Dynamic (from context)</option>
-                <option value="policy" ${isPolicy ? 'selected' : ''}>By Policy</option>
+                <option value="policy" ${config.approverType === 'policy' ? 'selected' : ''}>By Policy</option>
             </select>
         </div>
-        <div class="mb-3" style="display:${isPolicy ? 'none' : 'block'};">
-            <label class="form-label">Permission/Role</label>
-            <input type="text" class="form-control form-control-sm" name="approverValue" value="${config.approverValue || ''}" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+        <div data-approver-section="permission" style="display:${config.approverType === 'permission' || !config.approverType ? 'block' : 'none'};">
+          <div class="mb-3">
+            <label class="form-label">Permission</label>
+            <div data-controller="auto-complete"
+                 data-auto-complete-url-value="/permissions/auto-complete"
+                 data-auto-complete-min-length-value="2"
+                 data-auto-complete-allow-other-value="true"
+                 data-auto-complete-init-selection-value='${permInitSel}'
+                 style="position:relative;">
+              <input type="text" class="form-control form-control-sm"
+                     data-auto-complete-target="input" placeholder="Search permissions...">
+              <input type="hidden" name="approverValue" value="${config.approverType === 'permission' ? (config.approverValue || '') : ''}"
+                     data-auto-complete-target="hidden"
+                     data-action="change->workflow-designer#updateNodeConfig">
+              <input type="hidden" data-auto-complete-target="hiddenText">
+              <button type="button" class="btn btn-sm btn-link text-muted p-0"
+                      data-auto-complete-target="clearBtn" style="display:none;position:absolute;right:8px;top:8px;">
+                <i class="bi bi-x-lg"></i>
+              </button>
+              <ul class="list-group shadow-sm" data-auto-complete-target="results" style="position:absolute;z-index:1050;width:100%;"></ul>
+            </div>
+          </div>
         </div>
-        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+        <div data-approver-section="role" style="display:${config.approverType === 'role' ? 'block' : 'none'};">
+          <div class="mb-3">
+            <label class="form-label">Role</label>
+            <div data-controller="auto-complete"
+                 data-auto-complete-url-value="/roles/auto-complete"
+                 data-auto-complete-min-length-value="2"
+                 data-auto-complete-allow-other-value="true"
+                 data-auto-complete-init-selection-value='${roleInitSel}'
+                 style="position:relative;">
+              <input type="text" class="form-control form-control-sm"
+                     data-auto-complete-target="input" placeholder="Search roles...">
+              <input type="hidden" name="approverValue" value="${config.approverType === 'role' ? (config.approverValue || '') : ''}"
+                     data-auto-complete-target="hidden"
+                     data-action="change->workflow-designer#updateNodeConfig">
+              <input type="hidden" data-auto-complete-target="hiddenText">
+              <button type="button" class="btn btn-sm btn-link text-muted p-0"
+                      data-auto-complete-target="clearBtn" style="display:none;position:absolute;right:8px;top:8px;">
+                <i class="bi bi-x-lg"></i>
+              </button>
+              <ul class="list-group shadow-sm" data-auto-complete-target="results" style="position:absolute;z-index:1050;width:100%;"></ul>
+            </div>
+          </div>
+        </div>
+        <div data-approver-section="member" style="display:${config.approverType === 'member' ? 'block' : 'none'};">
+          <div class="mb-3">
+            <label class="form-label">Member</label>
+            <div data-controller="auto-complete"
+                 data-auto-complete-url-value="/members/auto-complete"
+                 data-auto-complete-min-length-value="2"
+                 data-auto-complete-allow-other-value="false"
+                 data-auto-complete-init-selection-value='${memberInitSel}'
+                 style="position:relative;">
+              <input type="text" class="form-control form-control-sm"
+                     data-auto-complete-target="input" placeholder="Search members...">
+              <input type="hidden" name="approverValue" value="${config.approverType === 'member' ? (config.approverValue || '') : ''}"
+                     data-auto-complete-target="hidden"
+                     data-action="change->workflow-designer#updateNodeConfig">
+              <input type="hidden" data-auto-complete-target="hiddenText">
+              <button type="button" class="btn btn-sm btn-link text-muted p-0"
+                      data-auto-complete-target="clearBtn" style="display:none;position:absolute;right:8px;top:8px;">
+                <i class="bi bi-x-lg"></i>
+              </button>
+              <ul class="list-group shadow-sm" data-auto-complete-target="results" style="position:absolute;z-index:1050;width:100%;"></ul>
+            </div>
+          </div>
+        </div>
+        <div data-approver-section="dynamic" style="display:${config.approverType === 'dynamic' ? 'block' : 'none'};">
+          <div class="mb-3">
+            <label class="form-label">Context Path</label>
+            <input type="text" class="form-control form-control-sm" name="approverValue"
+                   value="${config.approverType === 'dynamic' ? (config.approverValue || '') : ''}"
+                   placeholder="$.initiator.id"
+                   data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+          </div>
+        </div>
+        <div data-approver-section="policy" style="display:${config.approverType === 'policy' ? 'block' : 'none'};">
+          <div class="mb-3">
             <label class="form-label">Policy Class</label>
-            <input type="text" class="form-control form-control-sm" name="policyClass" value="${config.policyClass || ''}" placeholder="e.g. App\\Policy\\WarrantRosterPolicy" data-action="change->workflow-designer#updateNodeConfig">
-        </div>
-        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <select class="form-select form-select-sm" name="policyClass"
+                    data-action="change->workflow-designer#onPolicyClassChange">
+              <option value="">Select a policy class...</option>
+              ${this.policyClasses.map(p =>
+                `<option value="${p.class}" ${config.policyClass === p.class ? 'selected' : ''}>${p.label}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="mb-3">
             <label class="form-label">Policy Action</label>
-            <input type="text" class="form-control form-control-sm" name="policyAction" value="${config.policyAction || ''}" placeholder="e.g. canApprove" data-action="change->workflow-designer#updateNodeConfig">
-        </div>
-        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <select class="form-select form-select-sm" name="policyAction"
+                    data-action="change->workflow-designer#updateNodeConfig">
+              <option value="">Select a policy class first...</option>
+              ${config.policyAction ? `<option value="${config.policyAction}" selected>${config.policyAction}</option>` : ''}
+            </select>
+          </div>
+          <div class="mb-3">
             <label class="form-label">Entity Table</label>
-            <input type="text" class="form-control form-control-sm" name="entityTable" value="${config.entityTable || ''}" placeholder="e.g. WarrantRosters" data-action="change->workflow-designer#updateNodeConfig">
-        </div>
-        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <input type="text" class="form-control form-control-sm" name="entityTable"
+                   value="${config.entityTable || ''}" placeholder="e.g. WarrantRosters"
+                   data-action="change->workflow-designer#updateNodeConfig">
+          </div>
+          <div class="mb-3">
             <label class="form-label">Entity ID Key</label>
-            <input type="text" class="form-control form-control-sm" name="entityIdKey" value="${config.entityIdKey || ''}" placeholder="e.g. trigger.rosterId" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
-        </div>
-        <div class="mb-3" style="display:${isPolicy ? 'block' : 'none'};">
+            <input type="text" class="form-control form-control-sm" name="entityIdKey"
+                   value="${config.entityIdKey || ''}" placeholder="e.g. trigger.rosterId"
+                   data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+          </div>
+          <div class="mb-3">
             <label class="form-label">Permission Label</label>
-            <input type="text" class="form-control form-control-sm" name="permission" value="${config.permission || ''}" placeholder="e.g. Can Approve Warrant Rosters" data-action="change->workflow-designer#updateNodeConfig">
+            <input type="text" class="form-control form-control-sm" name="permission"
+                   value="${config.permission || ''}" placeholder="e.g. Can Approve Warrant Rosters"
+                   data-action="change->workflow-designer#updateNodeConfig">
+          </div>
         </div>
         <div class="mb-3">
             <label class="form-label">Required Approvals</label>

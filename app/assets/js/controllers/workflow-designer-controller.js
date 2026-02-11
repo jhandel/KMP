@@ -132,7 +132,18 @@ class WorkflowDesignerController extends Controller {
             })
             if (response.ok) {
                 this.registryData = await response.json()
-                this._configPanel = new WorkflowConfigPanel(this.registryData)
+                // Fetch policy classes for the designer
+                let policyClasses = []
+                try {
+                    const policyResponse = await fetch('/workflows/policy-classes')
+                    if (policyResponse.ok) {
+                        const policyData = await policyResponse.json()
+                        policyClasses = policyData.policyClasses || []
+                    }
+                } catch (e) {
+                    console.warn('Could not load policy classes:', e)
+                }
+                this._configPanel = new WorkflowConfigPanel(this.registryData, policyClasses)
                 this._variablePicker = new WorkflowVariablePicker(this.registryData)
                 this._validationService = new WorkflowValidationService(
                     (type) => this.getNodePorts(type)
@@ -389,6 +400,11 @@ class WorkflowDesignerController extends Controller {
         if (this.hasNodeConfigTarget && this._configPanel) {
             this.nodeConfigTarget.innerHTML = this._configPanel.renderConfigHTML(nodeId, nodeData)
             this._variablePicker?.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+            // Pre-populate policy actions dropdown if policy class is set
+            const nodeConfig = nodeData.data?.config || {}
+            if (nodeConfig.approverType === 'policy' && nodeConfig.policyClass) {
+                this._loadPolicyActions(nodeConfig.policyClass, nodeConfig.policyAction)
+            }
         }
     }
 
@@ -429,6 +445,58 @@ class WorkflowDesignerController extends Controller {
         this.canvasTarget.querySelectorAll('.wf-multi-selected').forEach(el => {
             el.classList.remove('wf-multi-selected')
         })
+    }
+
+    onApproverTypeChange(event) {
+        this.updateNodeConfig(event)
+        const form = event.target.closest('form')
+        const selectedType = event.target.value
+        form.querySelectorAll('[data-approver-section]').forEach(section => {
+            section.style.display = section.dataset.approverSection === selectedType ? 'block' : 'none'
+        })
+    }
+
+    async onPolicyClassChange(event) {
+        this.updateNodeConfig(event)
+        const form = event.target.closest('form')
+        const policyClass = event.target.value
+        const actionSelect = form.querySelector('[name="policyAction"]')
+
+        if (!policyClass) {
+            actionSelect.innerHTML = '<option value="">Select a policy class first...</option>'
+            return
+        }
+
+        try {
+            const response = await fetch('/workflows/policy-actions?class=' + encodeURIComponent(policyClass))
+            const data = await response.json()
+            let options = '<option value="">Select an action...</option>'
+            data.policyActions.forEach(a => {
+                options += `<option value="${a.action}">${a.label}</option>`
+            })
+            actionSelect.innerHTML = options
+        } catch (error) {
+            console.error('Failed to load policy actions:', error)
+            actionSelect.innerHTML = '<option value="">Error loading actions</option>'
+        }
+    }
+
+    async _loadPolicyActions(policyClass, selectedAction) {
+        try {
+            const response = await fetch('/workflows/policy-actions?class=' + encodeURIComponent(policyClass))
+            const data = await response.json()
+            const actionSelect = this.nodeConfigTarget.querySelector('[name="policyAction"]')
+            if (actionSelect) {
+                let options = '<option value="">Select an action...</option>'
+                data.policyActions.forEach(a => {
+                    const selected = a.action === selectedAction ? 'selected' : ''
+                    options += `<option value="${a.action}" ${selected}>${a.label}</option>`
+                })
+                actionSelect.innerHTML = options
+            }
+        } catch (error) {
+            console.error('Failed to load policy actions:', error)
+        }
     }
 
     updateNodeConfig(event) {
