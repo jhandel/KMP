@@ -7,9 +7,11 @@
 export default class WorkflowValidationService {
     /**
      * @param {Function} getNodePorts - Returns {inputs, outputs} for a node type
+     * @param {object} registryData - Registry data with actions/conditions and their inputSchema
      */
-    constructor(getNodePorts) {
+    constructor(getNodePorts, registryData) {
         this._getNodePorts = getNodePorts
+        this._registryData = registryData || {}
     }
 
     /**
@@ -33,6 +35,7 @@ export default class WorkflowValidationService {
         this._validateLoopNodes(nodes, errors)
         this._validateConnections(nodes, errors, warnings)
         this._validateReachability(nodes, errors)
+        this._validateRequiredParams(nodes, errors)
 
         return { valid: errors.length === 0, errors, warnings }
     }
@@ -125,5 +128,44 @@ export default class WorkflowValidationService {
                 unreachable.map(([id, n]) => `"${n.name}" (#${id})`).join(', ')
             )
         }
+    }
+
+    _validateRequiredParams(nodes, errors) {
+        const actions = this._registryData.actions || []
+        const conditions = this._registryData.conditions || []
+
+        nodes.forEach(([id, node]) => {
+            const type = node.data?.type
+            const config = node.data?.config || {}
+            const params = config.params || {}
+
+            if (type === 'action' && config.action) {
+                const actionDef = actions.find(a => a.action === config.action)
+                if (!actionDef) {
+                    errors.push(`Action node "${node.name}" (#${id}): references unknown action '${config.action}'.`)
+                    return
+                }
+                const schema = actionDef.inputSchema || {}
+                for (const [key, meta] of Object.entries(schema)) {
+                    if (meta.required && !params[key] && !(key in config)) {
+                        errors.push(`Action node "${node.name}" (#${id}): required parameter '${key}' is not configured.`)
+                    }
+                }
+            }
+
+            if (type === 'condition' && config.condition && !config.condition.startsWith('Core.')) {
+                const condDef = conditions.find(c => c.condition === config.condition)
+                if (!condDef) {
+                    errors.push(`Condition node "${node.name}" (#${id}): references unknown condition '${config.condition}'.`)
+                    return
+                }
+                const schema = condDef.inputSchema || {}
+                for (const [key, meta] of Object.entries(schema)) {
+                    if (meta.required && !params[key] && !(key in config)) {
+                        errors.push(`Condition node "${node.name}" (#${id}): required parameter '${key}' is not configured.`)
+                    }
+                }
+            }
+        })
     }
 }

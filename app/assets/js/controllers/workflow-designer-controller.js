@@ -146,7 +146,8 @@ class WorkflowDesignerController extends Controller {
                 this._configPanel = new WorkflowConfigPanel(this.registryData, policyClasses)
                 this._variablePicker = new WorkflowVariablePicker(this.registryData)
                 this._validationService = new WorkflowValidationService(
-                    (type) => this.getNodePorts(type)
+                    (type) => this.getNodePorts(type),
+                    this.registryData
                 )
                 this.populateNodePalette()
             } else {
@@ -771,7 +772,13 @@ class WorkflowDesignerController extends Controller {
                 // Reload to get fresh state — PHP controller creates a new draft automatically
                 setTimeout(() => window.location.reload(), 1000)
             } else {
-                this.showFlash(result.reason || 'Failed to publish workflow', 'danger')
+                const reason = result.reason || 'Failed to publish workflow'
+                if (reason.startsWith('Definition validation failed:')) {
+                    const errorText = reason.replace('Definition validation failed: ', '')
+                    const errors = errorText.split('; ').filter(e => e.trim())
+                    this._showValidationResults({ valid: false, errors, warnings: [] })
+                }
+                this.showFlash(reason, 'danger')
             }
         } catch (error) {
             console.error('Publish failed:', error)
