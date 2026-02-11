@@ -229,6 +229,7 @@ return function (RouteBuilder $routes): void {
             $builder->connect('/migrate-instances', ['controller' => 'Workflows', 'action' => 'migrateInstances']);
             $builder->connect('/policy-classes', ['controller' => 'Workflows', 'action' => 'policyClasses']);
             $builder->connect('/policy-actions', ['controller' => 'Workflows', 'action' => 'policyActions']);
+            $builder->connect('/app-settings', ['controller' => 'Workflows', 'action' => 'appSettings']);
         });
 
         /**

@@ -236,6 +236,7 @@ class WarrantsGridColumns extends BaseGridColumns
                             ['field' => 'status', 'operator' => 'in', 'value' => [
                                 Warrant::DEACTIVATED_STATUS,
                                 Warrant::EXPIRED_STATUS,
+                                Warrant::DECLINED_STATUS,
                             ]],
                         ],
                     ],
@@ -243,6 +244,7 @@ class WarrantsGridColumns extends BaseGridColumns
                         ['field' => 'status', 'operator' => 'in', 'value' => [
                             Warrant::DEACTIVATED_STATUS,
                             Warrant::EXPIRED_STATUS,
+                            Warrant::DECLINED_STATUS,
                         ]],
                         ['field' => 'expires_on', 'operator' => 'dateRange', 'value' => [null, $yesterdayString]],
                     ],

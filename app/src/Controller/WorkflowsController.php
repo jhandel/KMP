@@ -713,6 +713,40 @@ class WorkflowsController extends AppController
     }
 
     /**
+     * Return JSON list of app settings for the workflow designer.
+     *
+     * Used by the approval node to populate the app_setting dropdown
+     * for dynamic requiredCount configuration.
+     *
+     * @return void
+     */
+    public function appSettings(): void
+    {
+        $this->Authorization->skipAuthorization();
+        $this->request->allowMethod(['get']);
+
+        $settingsTable = $this->fetchTable('AppSettings');
+        $settings = $settingsTable->find()
+            ->select(['name', 'value', 'type'])
+            ->orderBy(['name' => 'ASC'])
+            ->all();
+
+        $results = [];
+        foreach ($settings as $setting) {
+            $results[] = [
+                'name' => $setting->name,
+                'value' => $setting->value,
+                'type' => $setting->type,
+            ];
+        }
+
+        $this->set('appSettings', $results);
+        $this->viewBuilder()->setOption('serialize', ['appSettings']);
+        $this->response = $this->response->withType('application/json');
+        $this->viewBuilder()->setClassName('Json');
+    }
+
+    /**
      * Convert camelCase action name to human-readable label.
      */
     private function actionLabel(string $action): string

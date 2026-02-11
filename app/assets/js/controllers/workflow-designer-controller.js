@@ -401,10 +401,15 @@ class WorkflowDesignerController extends Controller {
         if (this.hasNodeConfigTarget && this._configPanel) {
             this.nodeConfigTarget.innerHTML = this._configPanel.renderConfigHTML(nodeId, nodeData)
             this._variablePicker?.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
-            // Pre-populate policy actions dropdown if policy class is set
             const nodeConfig = nodeData.data?.config || {}
+            // Pre-populate policy actions dropdown if policy class is set
             if (nodeConfig.approverType === 'policy' && nodeConfig.policyClass) {
                 this._loadPolicyActions(nodeConfig.policyClass, nodeConfig.policyAction)
+            }
+            // Pre-populate app settings dropdown for requiredCount
+            const rc = nodeConfig.requiredCount
+            if (typeof rc === 'object' && rc !== null && rc.type === 'app_setting') {
+                this._loadAppSettings(this.nodeConfigTarget, rc.key)
             }
         }
     }
@@ -457,6 +462,18 @@ class WorkflowDesignerController extends Controller {
         })
     }
 
+    onRequiredCountTypeChange(event) {
+        this.updateNodeConfig(event)
+        const form = event.target.closest('form')
+        const selectedType = event.target.value
+        form.querySelectorAll('[data-rc-section]').forEach(section => {
+            section.style.display = section.dataset.rcSection === selectedType ? 'block' : 'none'
+        })
+        if (selectedType === 'app_setting') {
+            this._loadAppSettings(form)
+        }
+    }
+
     async onPolicyClassChange(event) {
         this.updateNodeConfig(event)
         const form = event.target.closest('form')
@@ -500,6 +517,36 @@ class WorkflowDesignerController extends Controller {
         }
     }
 
+    async _loadAppSettings(formOrContainer, selectedKey) {
+        const settingsSelect = (formOrContainer || this.nodeConfigTarget)
+            .querySelector('[data-rc-settings-select]')
+        if (!settingsSelect) return
+
+        try {
+            const response = await fetch('/app-settings/workflow-list.json')
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            const data = await response.json()
+            let options = '<option value="">Select a setting...</option>'
+            const items = Array.isArray(data) ? data : (data.settings || [])
+            items.forEach(s => {
+                const key = s.name || s.value || ''
+                const label = s.name || key
+                const selected = key === selectedKey ? 'selected' : ''
+                options += `<option value="${key}" ${selected}>${label}</option>`
+            })
+            settingsSelect.innerHTML = options
+        } catch (error) {
+            console.error('Failed to load app settings:', error)
+            if (!selectedKey) {
+                settingsSelect.innerHTML = '<option value="">Settings unavailable</option>'
+            } else {
+                settingsSelect.innerHTML =
+                    `<option value="">Settings unavailable</option>` +
+                    `<option value="${selectedKey}" selected>${selectedKey}</option>`
+            }
+        }
+    }
+
     updateNodeConfig(event) {
         const form = event.target.closest('form')
         const nodeId = form.dataset.nodeId
@@ -536,6 +583,25 @@ class WorkflowDesignerController extends Controller {
         }
 
         nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true
+
+        // Compose requiredCount from type selector + value fields
+        if (nodeData.data.config.requiredCountType !== undefined) {
+            const rcType = nodeData.data.config.requiredCountType
+            if (rcType === 'app_setting') {
+                const key = nodeData.data.config.requiredCountSettingKey || ''
+                nodeData.data.config.requiredCount = key ? { type: 'app_setting', key } : 1
+            } else if (rcType === 'context') {
+                const path = nodeData.data.config.requiredCountContextPath || ''
+                nodeData.data.config.requiredCount = path ? { type: 'context', path } : 1
+            } else {
+                nodeData.data.config.requiredCount = parseInt(nodeData.data.config.requiredCountFixedValue, 10) || 1
+            }
+            delete nodeData.data.config.requiredCountType
+            delete nodeData.data.config.requiredCountFixedValue
+            delete nodeData.data.config.requiredCountSettingKey
+            delete nodeData.data.config.requiredCountContextPath
+        }
+
         this.editor.updateNodeDataFromId(nodeId, nodeData.data)
 
         // If action or condition changed, re-render config panel to show new inputSchema fields

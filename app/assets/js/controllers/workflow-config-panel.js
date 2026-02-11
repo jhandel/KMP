@@ -323,10 +323,7 @@ export default class WorkflowConfigPanel {
                    data-action="change->workflow-designer#updateNodeConfig">
           </div>
         </div>
-        <div class="mb-3">
-            <label class="form-label">Required Approvals</label>
-            <input type="number" class="form-control form-control-sm" name="requiredCount" value="${config.requiredCount || 1}" min="1" data-action="change->workflow-designer#updateNodeConfig">
-        </div>
+        ${this._requiredCountHTML(config)}
         <div class="form-check mb-3">
             <input type="checkbox" class="form-check-input" name="allowParallel" id="allowParallel" ${config.allowParallel !== false ? 'checked' : ''} data-action="change->workflow-designer#updateNodeConfig">
             <label class="form-check-label" for="allowParallel">Allow Parallel Approvals</label>
@@ -404,6 +401,52 @@ export default class WorkflowConfigPanel {
                 data-action="change->workflow-designer#updateNodeConfig">
                 ${options}
             </select>
+        </div>`
+    }
+
+    _requiredCountHTML(config) {
+        const rc = config.requiredCount
+        let rcType = 'fixed'
+        let rcFixedVal = 1
+        let rcSettingKey = ''
+        let rcContextPath = ''
+
+        if (typeof rc === 'object' && rc !== null) {
+            rcType = rc.type || 'fixed'
+            if (rcType === 'app_setting') rcSettingKey = rc.key || ''
+            else if (rcType === 'context') rcContextPath = rc.path || ''
+            else if (rcType === 'fixed') rcFixedVal = rc.value || 1
+        } else if (rc !== undefined && rc !== null && rc !== '') {
+            rcFixedVal = parseInt(rc, 10) || 1
+        }
+
+        return `<div class="mb-3">
+            <label class="form-label">Required Approvals</label>
+            <select class="form-select form-select-sm mb-2" name="requiredCountType"
+                data-action="change->workflow-designer#onRequiredCountTypeChange">
+                <option value="fixed" ${rcType === 'fixed' ? 'selected' : ''}>Fixed Value</option>
+                <option value="app_setting" ${rcType === 'app_setting' ? 'selected' : ''}>App Setting</option>
+                <option value="context" ${rcType === 'context' ? 'selected' : ''}>Context Path</option>
+            </select>
+            <div data-rc-section="fixed" style="display:${rcType === 'fixed' ? 'block' : 'none'};">
+                <input type="number" class="form-control form-control-sm" name="requiredCountFixedValue"
+                    value="${rcFixedVal}" min="1"
+                    data-action="change->workflow-designer#updateNodeConfig">
+            </div>
+            <div data-rc-section="app_setting" style="display:${rcType === 'app_setting' ? 'block' : 'none'};">
+                <select class="form-select form-select-sm" name="requiredCountSettingKey"
+                    data-action="change->workflow-designer#updateNodeConfig"
+                    data-rc-settings-select="true">
+                    <option value="">Loading settings...</option>
+                    ${rcSettingKey ? `<option value="${this._escapeAttr(rcSettingKey)}" selected>${this._escapeAttr(rcSettingKey)}</option>` : ''}
+                </select>
+            </div>
+            <div data-rc-section="context" style="display:${rcType === 'context' ? 'block' : 'none'};">
+                <input type="text" class="form-control form-control-sm" name="requiredCountContextPath"
+                    value="${this._escapeAttr(rcContextPath)}" placeholder="$.someField"
+                    data-action="change->workflow-designer#updateNodeConfig"
+                    data-variable-picker="true">
+            </div>
         </div>`
     }
 
