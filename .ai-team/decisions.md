@@ -3645,9 +3645,8 @@ trigger-auth → approval-gate → [approved] → action-activate → action-not
 
 ---
 
-### Dynamic Approval Config Panel — Resolver Service Display
-**By:** Wash
-**Date:** 2026-02-12
-**What:** Extended the dynamic approver section in `_approvalHTML()` to show resolver service details when `approverConfig.service` is present, instead of only showing a bare "Context Path" input.
-**Why:** Activities workflow uses `approverConfig: { service, method, activity_id }` pattern. The config panel was hiding this information, making it impossible to see or edit custom resolver fields like `activity_id: "$.trigger.activityId"` in the designer.
-**Decision:** Resolver service/method fields are read-only (they're set by workflow definition, not user-editable). Custom config keys get `renderValuePicker()` with context path support so users can bind them to trigger data. Internal keys are excluded from display via a hardcoded list.
+### 2026-02-11: Dynamic resolver config must be fully editable (consolidated)
+**By:** Wash, Josh Handel
+**What:** The dynamic approver section in the workflow config panel shows resolver service, method, and custom params. All fields — including service and method — must be fully editable (not read-only) so other plugins can configure their own dynamic resolvers through the designer UI. Custom config keys use `renderValuePicker()` with context path support to bind to trigger data. Internal keys are excluded from display via a hardcoded list. Wash added add/remove custom param UI, `approverConfig.*` handling in `updateNodeConfig`, and `addResolverParam`/`removeResolverParam` methods.
+**Why:** Initially resolver service/method were read-only (set by workflow definition). Josh directed that these must be editable so plugins beyond Activities can define their own resolvers. This supersedes the prior read-only decision.
+

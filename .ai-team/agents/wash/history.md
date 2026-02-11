@@ -150,3 +150,20 @@ Updated `_approvalHTML()` in `workflow-config-panel.js` to handle the `approverC
 **Second `data-approver-section="dynamic"` div (Serial Pick Next toggle, lines 353-361):** Left unchanged — it controls a separate feature.
 📌 Team update (2026-02-12): Approval nodes MUST use nested `approverConfig` for dynamic resolvers. Engine flat config fallback added for backward compat. — decided by Kaylee
 📌 Team update (2026-02-12): `action-create` node removed from Activities Authorization workflow to fix dual-write bug. — decided by Kaylee
+
+### 2026-02-12: Dynamic Resolver — Fully Editable Config
+
+Made the dynamic approval resolver section fully editable in the workflow designer config panel.
+
+#### Changes to `workflow-config-panel.js` (`_approvalHTML()`, lines 268-323)
+- **Service & method fields**: Replaced `readonly disabled` inputs with editable inputs using `name="approverConfig.service"` and `name="approverConfig.method"` with `change->workflow-designer#updateNodeConfig` actions.
+- **Removed if/else branch**: Always shows resolver fields when `approverType` is `dynamic` — no more separate "Context Path" fallback. Empty fields shown when no resolver configured yet.
+- **Custom params with remove buttons**: Each custom param row wrapped in `d-flex` with a `btn-outline-danger` × button (`click->workflow-designer#removeResolverParam`).
+- **Add Param form**: `input-group` with text input (`data-resolver-new-key`) and "Add Param" button (`click->workflow-designer#addResolverParam`).
+
+#### Changes to `workflow-designer-controller.js`
+- **`updateNodeConfig()`**: Added `approverConfig.*` namespace handling parallel to `params.*` — collects into `newApproverConfig` object, composed via VP when applicable, stored as `config.approverConfig`. VP skip logic extended for `approverConfig.*` fields.
+- **`addResolverParam()`**: Reads key from `[data-resolver-new-key]` input, adds empty string value to `approverConfig[key]`, re-renders config panel.
+- **`removeResolverParam()`**: Reads key from `data-resolver-param-key` attribute, deletes from `approverConfig`, re-renders config panel.
+
+📌 Team update (2026-02-11): Dynamic resolver config fields (service, method, custom params) must be fully editable, not read-only — supersedes prior read-only decision — decided by Josh Handel
