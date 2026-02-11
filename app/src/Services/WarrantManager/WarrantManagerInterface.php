@@ -91,9 +91,10 @@ interface WarrantManagerInterface
      *
      * @param int $rosterId ID of the approved WarrantRoster
      * @param int $approverId ID of the member who approved
+     * @param bool $sendNotifications Whether to send email notifications (false when workflow handles notifications)
      * @return ServiceResult Success if warrants activated or already active
      */
-    public function activateApprovedRoster(int $rosterId, int $approverId): ServiceResult;
+    public function activateApprovedRoster(int $rosterId, int $approverId, bool $sendNotifications = true): ServiceResult;
 
     /**
      * Sync a workflow approval response to the roster approval table.

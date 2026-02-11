@@ -160,7 +160,7 @@ class WarrantWorkflowActions
             }
 
             // Activate warrants via extracted method (no approval bookkeeping)
-            $result = $this->warrantManager->activateApprovedRoster($rosterId, $approverId);
+            $result = $this->warrantManager->activateApprovedRoster($rosterId, $approverId, false);
 
             if (!$result->success) {
                 Log::warning('Workflow ActivateWarrants: activation returned: ' . $result->reason);

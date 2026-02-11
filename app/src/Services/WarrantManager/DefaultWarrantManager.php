@@ -208,7 +208,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
         return new ServiceResult(true);
     }
 
-    public function activateApprovedRoster(int $rosterId, int $approverId): ServiceResult
+    public function activateApprovedRoster(int $rosterId, int $approverId, bool $sendNotifications = true): ServiceResult
     {
         $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
         $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
@@ -265,7 +265,9 @@ class DefaultWarrantManager implements WarrantManagerInterface
                 'warrantStart' => TimezoneHelper::formatDate($warrant->start_on),
                 'warrantExpires' => TimezoneHelper::formatDate($warrant->expires_on),
             ];
-            $this->queueMail('KMP', 'notifyOfWarrant', $warrant->member->email_address, $vars);
+            if ($sendNotifications) {
+                $this->queueMail('KMP', 'notifyOfWarrant', $warrant->member->email_address, $vars);
+            }
         }
         $warrantRosterTable->getConnection()->commit();
 
