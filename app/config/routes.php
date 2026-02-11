@@ -219,6 +219,9 @@ return function (RouteBuilder $routes): void {
             $builder->connect('/approvals', ['controller' => 'Workflows', 'action' => 'approvals']);
             $builder->connect('/approvals-grid-data', ['controller' => 'Workflows', 'action' => 'approvalsGridData']);
             $builder->connect('/record-approval', ['controller' => 'Workflows', 'action' => 'recordApproval']);
+            $builder->connect('/eligible-approvers/{approvalId}', ['controller' => 'Workflows', 'action' => 'eligibleApprovers'])
+                ->setPatterns(['approvalId' => '\d+'])
+                ->setPass(['approvalId']);
             $builder->connect('/versions/{definitionId}', ['controller' => 'Workflows', 'action' => 'versions'])
                 ->setPatterns(['definitionId' => '\d+'])
                 ->setPass(['definitionId']);

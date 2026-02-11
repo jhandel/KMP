@@ -116,3 +116,18 @@ Added `activities-authorization` workflow definition to `20260209170000_SeedWork
 
 📌 Team update (2026-02-12): Fixed activities-authorization dynamic resolver bug — seed used wrong config structure and key names. Engine now supports flat config fallback for dynamic resolvers. 603 tests pass. — fixed by Kaylee
 📌 Team update (2026-02-12): Config panel now shows resolver service/method (read-only) + custom config fields with value picker for dynamic approvers. — decided by Wash
+
+### 2026-02-12: WorkflowApproverResolverRegistry
+
+Created `WorkflowApproverResolverRegistry` following the same static registry pattern as `WorkflowActionRegistry` and `WorkflowTriggerRegistry`. Plugins register dynamic approver resolvers so the designer can show them in a dropdown.
+
+**Changes:**
+1. Created `app/src/Services/WorkflowRegistry/WorkflowApproverResolverRegistry.php` — register/getResolver/getAllResolvers/getForDesigner/clear methods. Keys resolvers by unique key (e.g., `Activities.AuthorizationApproverResolver`). `getForDesigner()` strips `serviceClass` for frontend safety.
+2. Updated `ActivitiesWorkflowProvider::register()` — added `registerResolvers()` call. Registers one resolver: `Activities.AuthorizationApproverResolver` with configSchema for `activity_id`.
+3. Updated `WorkflowsController::registry()` — added `'resolvers' => WorkflowApproverResolverRegistry::getForDesigner()` to response.
+4. Updated `DefaultWorkflowApprovalManager::resolveDynamicApproverIds()` — registry lookup first, falls back to direct class name for backward compat.
+5. Updated `SeedWorkflowDefinitions` — `approverConfig.service` now uses registry key `Activities.AuthorizationApproverResolver` instead of raw class name.
+
+**Key pattern:** `approver_config.service` can be either a registry key (looked up via `getResolver()`) or a fully qualified class name (backward compat). Registry entry provides `serviceClass` and default `serviceMethod`.
+
+📌 Team update (2026-02-12): WorkflowApproverResolverRegistry created. Plugins register dynamic approver resolvers for designer dropdown. Engine does registry-first lookup with FQCN fallback. 261 workflow tests pass. — built by Kaylee

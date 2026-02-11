@@ -21,6 +21,7 @@ use App\Services\ViewCellRegistry;
 use Activities\Services\ActivitiesNavigationProvider;
 use Activities\Services\ActivitiesViewCellProvider;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\KMP\StaticHelpers;
 use Cake\I18n\DateTime;
 
@@ -255,6 +256,13 @@ class ActivitiesPlugin extends BasePlugin implements KMPPluginInterface, KMPApiP
         $container->add(
             AuthorizationManagerInterface::class,
             DefaultAuthorizationManager::class,
-        )->addArgument(ActiveWindowManagerInterface::class);
+        )->addArguments([
+            ActiveWindowManagerInterface::class,
+            TriggerDispatcher::class,
+        ]);
+
+        // Register workflow actions for Activities plugin
+        $container->add(ActivitiesWorkflowActions::class)
+            ->addArgument(AuthorizationManagerInterface::class);
     }
 }

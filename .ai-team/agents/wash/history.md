@@ -167,3 +167,27 @@ Made the dynamic approval resolver section fully editable in the workflow design
 - **`removeResolverParam()`**: Reads key from `data-resolver-param-key` attribute, deletes from `approverConfig`, re-renders config panel.
 
 📌 Team update (2026-02-11): Dynamic resolver config fields (service, method, custom params) must be fully editable, not read-only — supersedes prior read-only decision — decided by Josh Handel
+
+### 2026-02-12: Resolver Dropdown — Registry-Driven Selection
+
+Replaced free-text resolver service and method inputs in the dynamic approval section with **dropdowns populated from the `WorkflowApproverResolverRegistry`**.
+
+#### Changes to `workflow-config-panel.js`
+- **Constructor**: Now stores `this.resolvers = registryData.resolvers || []` from registry data.
+- **Resolver dropdown**: `<select name="resolverKey">` replaces free-text service input. Options populated from `this.resolvers` array, showing `label (source)`. Fires `change->workflow-designer#onResolverChange`.
+- **Method field**: Read-only `<input readonly disabled>` auto-populated from selected resolver's `method` property.
+- **Schema-driven params**: When a resolver is selected, its `configSchema` fields are rendered via `renderValuePicker()` with context path support. Each schema field gets proper label, type, required flag, and description from the registry.
+- **Custom params**: Only params NOT in `configSchema` AND NOT in `internalKeys` are shown with remove buttons. `skipKeys` = `[...internalKeys, ...schemaKeys]`.
+- **Add Param form**: Kept for extra custom params beyond what the schema defines.
+
+#### Changes to `workflow-designer-controller.js`
+- **`onResolverChange(event)`**: New handler. Gets selected resolver key from dropdown, finds resolver data from `_configPanel.resolvers`, sets `approverConfig.service` and `approverConfig.method`, pre-populates schema fields with empty values, re-renders config panel.
+- **Registry data flow**: `resolvers` array flows naturally through `registryData` already passed to `WorkflowConfigPanel` constructor — no additional wiring needed.
+
+#### Data flow
+1. `/workflows/registry` returns `resolvers[]` alongside triggers/actions/conditions/entities
+2. `loadRegistry()` stores full response as `this.registryData` (already includes resolvers)
+3. `WorkflowConfigPanel` constructor extracts `this.resolvers` from registry data
+4. Dropdown selection → `onResolverChange` → updates node data → re-render shows schema fields
+
+📌 Team update (2026-02-12): Resolver service input is now a dropdown populated from registry. Method is auto-set (read-only). Config schema drives param fields. Free-text service/method inputs removed.

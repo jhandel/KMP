@@ -92,6 +92,21 @@ interface AuthorizationManagerInterface
     ): ServiceResult;
 
     /**
+     * Activate a fully-approved authorization.
+     *
+     * Sets status to APPROVED, starts ActiveWindow for temporal validation,
+     * and assigns the activity's granted role. Does not send notifications.
+     *
+     * @param int $authorizationId ID of authorization to activate
+     * @param int $approverId ID of the final approver triggering activation
+     * @return ServiceResult Success with activation data or error details
+     */
+    public function activate(
+        int $authorizationId,
+        int $approverId,
+    ): ServiceResult;
+
+    /**
      * Retract (cancel) a pending authorization request.
      *
      * Allows requester to cancel their own pending request before

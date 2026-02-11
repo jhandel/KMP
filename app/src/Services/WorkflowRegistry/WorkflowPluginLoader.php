@@ -6,6 +6,7 @@ namespace App\Services\WorkflowRegistry;
 
 use App\KMP\KMPWorkflowPluginInterface;
 use App\Services\WorkflowEngine\Providers\WarrantWorkflowProvider;
+use Activities\Services\ActivitiesWorkflowProvider;
 use Cake\Core\PluginCollection;
 use Cake\Core\PluginInterface;
 use Officers\Services\OfficersWorkflowProvider;
@@ -82,6 +83,7 @@ class WorkflowPluginLoader
         // Register plugin workflow providers
         OfficersWorkflowProvider::register();
         WarrantWorkflowProvider::register();
+        ActivitiesWorkflowProvider::register();
     }
 
     /**

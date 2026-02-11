@@ -7,11 +7,12 @@ import { renderAutoComplete } from '../autocomplete-helper.js'
  */
 export default class WorkflowConfigPanel {
     /**
-     * @param {object} registryData - { triggers, actions, conditions, entities }
+     * @param {object} registryData - { triggers, actions, conditions, entities, resolvers }
      */
     constructor(registryData, policyClasses) {
         this.registryData = registryData
         this.policyClasses = policyClasses || []
+        this.resolvers = registryData.resolvers || []
     }
 
     /**
@@ -266,13 +267,50 @@ export default class WorkflowConfigPanel {
           </div>
         </div>
         <div data-approver-section="dynamic" style="display:${config.approverType === 'dynamic' ? 'block' : 'none'};">
-          <div class="mb-3">
-            <label class="form-label">Context Path</label>
-            <input type="text" class="form-control form-control-sm" name="approverValue"
-                   value="${config.approverType === 'dynamic' ? (config.approverValue || '') : ''}"
-                   placeholder="$.initiator.id"
-                   data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
-          </div>
+          ${(() => {
+            const ac = config.approverConfig || {};
+            const selectedResolver = this.resolvers.find(r => r.resolver === ac.service);
+            const schemaKeys = selectedResolver ? Object.keys(selectedResolver.configSchema || {}) : [];
+            const internalKeys = ['service', 'method', 'serial_pick_next', 'exclude_member_ids', 'current_approver_id', 'approval_chain'];
+            const skipKeys = [...internalKeys, ...schemaKeys];
+
+            // Resolver dropdown
+            let resolverHTML = `
+              <div class="mb-3">
+                <label class="form-label">Resolver Service</label>
+                <select class="form-select form-select-sm" name="resolverKey"
+                        data-action="change->workflow-designer#onResolverChange">
+                    <option value="">Select a resolver...</option>
+                    ${this.resolvers.map(r =>
+                        `<option value="${this._escapeAttr(r.resolver)}" ${(ac.service === r.resolver) ? 'selected' : ''}>${this._escapeAttr(r.label)} (${this._escapeAttr(r.source)})</option>`
+                    ).join('')}
+                </select>
+              </div>`;
+
+            // Method — read-only, auto-populated from selected resolver
+            resolverHTML += `
+              <div class="mb-3">
+                <label class="form-label text-muted">Method</label>
+                <input type="text" class="form-control form-control-sm"
+                       name="approverConfig.method" value="${this._escapeAttr(ac.method || '')}" readonly disabled>
+              </div>`;
+
+            // Config params from schema
+            if (selectedResolver && selectedResolver.configSchema) {
+                for (const [key, schema] of Object.entries(selectedResolver.configSchema)) {
+                    resolverHTML += this.renderValuePicker('approverConfig.' + key, {
+                        label: schema.label || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+                        type: schema.type || 'string',
+                        required: schema.required || false,
+                        description: schema.description || ''
+                    }, ac[key] || '', {allowContext: true, allowAppSetting: false});
+                }
+            }
+
+
+
+            return resolverHTML;
+          })()}
         </div>
         <div data-approver-section="policy" style="display:${config.approverType === 'policy' ? 'block' : 'none'};">
           <div class="mb-3">
@@ -319,8 +357,17 @@ export default class WorkflowConfigPanel {
             description: 'Number of approvals needed'
         }, config.requiredCount, {allowContext: true, allowAppSetting: true})}
         <div class="form-check mb-3">
-            <input type="checkbox" class="form-check-input" name="allowParallel" id="allowParallel" ${config.allowParallel !== false ? 'checked' : ''} data-action="change->workflow-designer#updateNodeConfig">
+            <input type="checkbox" class="form-check-input" name="allowParallel" id="allowParallel" ${config.allowParallel !== false && !config.serialPickNext ? 'checked' : ''} ${config.serialPickNext ? 'disabled' : ''} data-action="change->workflow-designer#updateNodeConfig">
             <label class="form-check-label" for="allowParallel">Allow Parallel Approvals</label>
+        </div>
+        <div data-approver-section="dynamic" style="display:${config.approverType === 'dynamic' ? 'block' : 'none'};">
+          <div class="form-check form-switch mb-3">
+            <input type="checkbox" class="form-check-input" name="serialPickNext" id="serialPickNext" ${config.serialPickNext ? 'checked' : ''} data-action="change->workflow-designer#onSerialPickNextChange">
+            <label class="form-check-label" for="serialPickNext">
+              Serial Pick Next Approver
+              <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" title="Each approver picks the next approver from the eligible pool. Approvals happen one at a time in sequence."></i>
+            </label>
+          </div>
         </div>
         <div class="mb-3">
             <label class="form-label">Deadline</label>

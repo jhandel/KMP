@@ -18,3 +18,137 @@ $this->KMP->endBlock(); ?>
     'frameId' => 'approvals-grid',
     'dataUrl' => $this->Url->build(['controller' => 'Workflows', 'action' => 'approvalsGridData']),
 ]) ?>
+
+<!-- Approval Response Modal -->
+<div class="modal fade" id="approvalResponseModal" tabindex="-1" aria-labelledby="approvalResponseModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="approvalResponseModalLabel">
+                    <i class="bi bi-check2-square me-2"></i><?= __('Respond to Approval') ?>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <?= $this->Form->create(null, [
+                'url' => ['controller' => 'Workflows', 'action' => 'recordApproval'],
+                'id' => 'approvalResponseForm',
+                'data-controller' => 'approval-response',
+                'data-approval-response-serial-pick-next-value' => 'false',
+                'data-approval-response-required-count-value' => '1',
+                'data-approval-response-approved-count-value' => '0',
+                'data-approval-response-approval-id-value' => '0',
+                'data-approval-response-eligible-url-value' => '',
+            ]) ?>
+            <div class="modal-body">
+                <input type="hidden" name="approvalId" id="approvalResponseApprovalId" value="">
+
+                <!-- Decision -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold"><?= __('Decision') ?></label>
+                    <div class="d-flex gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="decision" id="decisionApprove" value="approve"
+                                data-approval-response-target="decision"
+                                data-action="change->approval-response#onDecisionChange">
+                            <label class="form-check-label text-success fw-semibold" for="decisionApprove">
+                                <i class="bi bi-check-circle me-1"></i><?= __('Approve') ?>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="decision" id="decisionReject" value="reject"
+                                data-approval-response-target="decision"
+                                data-action="change->approval-response#onDecisionChange">
+                            <label class="form-check-label text-danger fw-semibold" for="decisionReject">
+                                <i class="bi bi-x-circle me-1"></i><?= __('Reject') ?>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comment -->
+                <div class="mb-3">
+                    <label class="form-label" for="approvalComment"><?= __('Comment') ?></label>
+                    <textarea class="form-control" id="approvalComment" name="comment" rows="3"
+                        data-approval-response-target="comment"
+                        placeholder="<?= __('Optional comment...') ?>"></textarea>
+                </div>
+
+                <!-- Next Approver (conditional) -->
+                <div data-approval-response-target="nextApproverSection" hidden>
+                    <hr>
+                    <div class="alert alert-info py-2 small" role="alert" data-approval-response-target="infoText">
+                    </div>
+                    <label class="form-label fw-semibold"><?= __('Select Next Approver') ?></label>
+                    <div data-controller="ac"
+                         data-ac-url-value="/workflows/eligible-approvers/0"
+                         data-ac-min-length-value="2"
+                         data-ac-allow-other-value="false"
+                         role="combobox"
+                         class="position-relative mb-3 kmp_autoComplete">
+                        <input type="hidden" name="next_approver_id"
+                               data-ac-target="hidden"
+                               data-approval-response-target="nextApproverInput">
+                        <input type="hidden" data-ac-target="hiddenText">
+                        <div class="input-group">
+                            <input type="text" class="form-control"
+                                   data-ac-target="input"
+                                   placeholder="<?= __('Search eligible approvers...') ?>">
+                            <button class="btn btn-outline-secondary" data-ac-target="clearBtn" data-action="ac#clear" disabled><?= __('Clear') ?></button>
+                        </div>
+                        <ul data-ac-target="results"
+                            class="list-group z-3 col-12 position-absolute auto-complete-list"
+                            hidden="hidden"></ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= __('Cancel') ?></button>
+                <button type="submit" class="btn btn-primary" data-approval-response-target="submitBtn" disabled>
+                    <i class="bi bi-send me-1"></i><?= __('Submit Response') ?>
+                </button>
+            </div>
+            <?= $this->Form->end() ?>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('approvalResponseModal');
+    if (!modal) return;
+
+    modal.addEventListener('show.bs.modal', function(event) {
+        const btn = event.relatedTarget;
+        if (!btn) return;
+
+        let btnData = {};
+        try {
+            btnData = JSON.parse(btn.getAttribute('data-outlet-btn-btn-data-value') || '{}');
+        } catch (e) {
+            return;
+        }
+
+        const approvalId = btnData.id || 0;
+        const approverConfig = btnData.approver_config || {};
+        const requiredCount = btnData.required_count || 1;
+        const approvedCount = btnData.approved_count || 0;
+        const serialPickNext = approverConfig.serial_pick_next || false;
+
+        // Set hidden field
+        document.getElementById('approvalResponseApprovalId').value = approvalId;
+
+        // Configure the Stimulus controller
+        const form = document.getElementById('approvalResponseForm');
+        const controller = window.Stimulus?.getControllerForElementAndIdentifier(form, 'approval-response');
+        if (controller) {
+            controller.configure({
+                id: approvalId,
+                serialPickNext: serialPickNext,
+                requiredCount: requiredCount,
+                approvedCount: approvedCount,
+                eligibleUrl: '/workflows/eligible-approvers/' + approvalId,
+            });
+        }
+    });
+});
+</script>

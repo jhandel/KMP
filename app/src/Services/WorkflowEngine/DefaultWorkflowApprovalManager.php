@@ -7,6 +7,7 @@ namespace App\Services\WorkflowEngine;
 use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WorkflowApprovalResponse;
 use App\Services\ServiceResult;
+use App\Services\WorkflowRegistry\WorkflowApproverResolverRegistry;
 use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
@@ -23,12 +24,12 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     /**
      * @inheritDoc
      */
-    public function recordResponse(int $approvalId, int $memberId, string $decision, ?string $comment = null): ServiceResult
+    public function recordResponse(int $approvalId, int $memberId, string $decision, ?string $comment = null, ?int $nextApproverId = null): ServiceResult
     {
         try {
             $connection = ConnectionManager::get('default');
 
-            return $connection->transactional(function () use ($approvalId, $memberId, $decision, $comment) {
+            return $connection->transactional(function () use ($approvalId, $memberId, $decision, $comment, $nextApproverId) {
                 $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
                 $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
 
@@ -94,11 +95,52 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 // Reload approval to get accurate counts after atomic increment
                 $approval = $approvalsTable->get($approval->id);
 
+                // Check for serial pick-next mode
+                $approverConfig = $approval->approver_config ?? [];
+                $isSerialPickNext = !empty($approverConfig['serial_pick_next']);
+
                 // Check resolution: threshold met or any rejection
                 if ($approval->approved_count >= $approval->required_count) {
                     $approval->status = WorkflowApproval::STATUS_APPROVED;
                 } elseif ($approval->rejected_count > 0) {
                     $approval->status = WorkflowApproval::STATUS_REJECTED;
+                } elseif ($isSerialPickNext && $decision === WorkflowApprovalResponse::DECISION_APPROVE) {
+                    // Serial pick-next: more approvals needed, update approver_config
+                    if ($nextApproverId) {
+                        $approverConfig['current_approver_id'] = $nextApproverId;
+                    } else {
+                        // No next approver specified — clear current to allow any eligible
+                        unset($approverConfig['current_approver_id']);
+                    }
+
+                    // Append to approval chain for audit trail
+                    $chain = $approverConfig['approval_chain'] ?? [];
+                    $chain[] = [
+                        'approver_id' => $memberId,
+                        'responded_at' => DateTime::now()->toIso8601String(),
+                        'next_picked' => $nextApproverId,
+                    ];
+                    $approverConfig['approval_chain'] = $chain;
+
+                    // Track already-used approvers in exclude list
+                    $excludeIds = $approverConfig['exclude_member_ids'] ?? [];
+                    $excludeIds[] = $memberId;
+                    $approverConfig['exclude_member_ids'] = array_unique(array_map('intval', $excludeIds));
+
+                    $approval->approver_config = $approverConfig;
+                    // Status stays PENDING — don't resolve yet
+
+                    if (!$approvalsTable->save($approval)) {
+                        Log::error("Failed to update approval {$approvalId} approver_config for serial pick-next");
+                        return new ServiceResult(false, 'Failed to update approval for next approver.');
+                    }
+
+                    return new ServiceResult(true, null, [
+                        'approvalStatus' => 'pending',
+                        'needsMore' => true,
+                        'instanceId' => $approval->workflow_instance_id,
+                        'nodeId' => $approval->node_id,
+                    ]);
                 }
 
                 if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
@@ -315,6 +357,11 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     private function isMemberEligible(WorkflowApproval $approval, int $memberId): bool
     {
         $config = $approval->approver_config ?? [];
+
+        // Serial pick-next: when current_approver_id is set, only that member is eligible
+        if (!empty($config['serial_pick_next']) && !empty($config['current_approver_id'])) {
+            return $memberId === (int)$config['current_approver_id'];
+        }
 
         switch ($approval->approver_type) {
             case WorkflowApproval::APPROVER_TYPE_PERMISSION:
@@ -590,6 +637,11 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     ): bool {
         $config = $approval->approver_config ?? [];
 
+        // Serial pick-next: when current_approver_id is set, only that member is eligible
+        if (!empty($config['serial_pick_next']) && !empty($config['current_approver_id'])) {
+            return $memberId === (int)$config['current_approver_id'];
+        }
+
         switch ($approval->approver_type) {
             case WorkflowApproval::APPROVER_TYPE_PERMISSION:
                 $permissionName = $config['permission'] ?? null;
@@ -640,8 +692,18 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     private function resolveDynamicApproverIds(WorkflowApproval $approval): array
     {
         $config = $approval->approver_config ?? [];
-        $serviceClass = $config['service'] ?? null;
+        $serviceRef = $config['service'] ?? null;
         $method = $config['method'] ?? null;
+
+        // Try registry lookup first
+        $registryEntry = $serviceRef ? WorkflowApproverResolverRegistry::getResolver($serviceRef) : null;
+        if ($registryEntry) {
+            $serviceClass = $registryEntry['serviceClass'];
+            $method = $method ?? $registryEntry['serviceMethod'];
+        } else {
+            // Backward compat: treat as direct class name
+            $serviceClass = $serviceRef;
+        }
 
         if (!$serviceClass || !$method) {
             throw new \RuntimeException(

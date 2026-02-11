@@ -465,6 +465,56 @@ class WorkflowDesignerController extends Controller {
         })
     }
 
+    onSerialPickNextChange(event) {
+        const form = event.target.closest('form')
+        const checked = event.target.checked
+        const allowParallel = form.querySelector('[name="allowParallel"]')
+        if (checked && allowParallel) {
+            allowParallel.checked = false
+            allowParallel.disabled = true
+        } else if (allowParallel) {
+            allowParallel.disabled = false
+        }
+        this.updateNodeConfig(event)
+    }
+
+    onResolverChange(event) {
+        const form = event.target.closest('form')
+        const nodeId = form.dataset.nodeId
+        const resolverKey = event.target.value
+        const nodeData = this.editor.getNodeFromId(nodeId)
+
+        if (!nodeData.data) nodeData.data = {}
+        if (!nodeData.data.config) nodeData.data.config = {}
+
+        if (resolverKey) {
+            const resolver = this._configPanel.resolvers.find(r => r.resolver === resolverKey)
+            nodeData.data.config.approverConfig = {
+                service: resolverKey,
+                method: resolver?.method || '',
+            }
+            // Pre-populate schema fields with empty values
+            if (resolver?.configSchema) {
+                for (const key of Object.keys(resolver.configSchema)) {
+                    nodeData.data.config.approverConfig[key] = nodeData.data.config.approverConfig[key] || ''
+                }
+            }
+        } else {
+            nodeData.data.config.approverConfig = {}
+        }
+
+        this.editor.updateNodeDataFromId(nodeId, nodeData.data)
+
+        // Re-render panel
+        if (this.hasNodeConfigTarget && this._configPanel) {
+            const updatedNode = this.editor.getNodeFromId(nodeId)
+            this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this._configPanel.renderConfigHTML(nodeId, updatedNode)
+            if (this._variablePicker) {
+                this._variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+            }
+        }
+    }
+
     onValuePickerTypeChange(event) {
         const select = event.target
         const fieldName = select.dataset.vpType
@@ -617,6 +667,8 @@ class WorkflowDesignerController extends Controller {
         let hasParams = false
         const newInputMapping = {}
         let hasInputMapping = false
+        const newApproverConfig = {}
+        let hasApproverConfig = false
 
         // Collect value picker type selections first
         const vpTypeSelects = form.querySelectorAll('[data-vp-type]')
@@ -627,11 +679,16 @@ class WorkflowDesignerController extends Controller {
             // Skip fields managed by value pickers — they're composed below
             if (vpFields.has(key)) continue
             if (key.startsWith('params.') && vpFields.has(key)) continue
+            if (key.startsWith('approverConfig.') && vpFields.has(key)) continue
 
             if (key.startsWith('params.')) {
                 const paramKey = key.substring(7)
                 newParams[paramKey] = value
                 hasParams = true
+            } else if (key.startsWith('approverConfig.')) {
+                const acKey = key.substring(15)
+                newApproverConfig[acKey] = value
+                hasApproverConfig = true
             } else if (key.startsWith('inputMapping.')) {
                 const mapKey = key.substring(13)
                 newInputMapping[mapKey] = value
@@ -663,6 +720,10 @@ class WorkflowDesignerController extends Controller {
                 const paramKey = fieldName.substring(7)
                 newParams[paramKey] = composedValue
                 hasParams = true
+            } else if (fieldName.startsWith('approverConfig.')) {
+                const acKey = fieldName.substring(15)
+                newApproverConfig[acKey] = composedValue
+                hasApproverConfig = true
             } else {
                 nodeData.data.config[fieldName] = composedValue
             }
@@ -674,8 +735,12 @@ class WorkflowDesignerController extends Controller {
         if (hasInputMapping) {
             nodeData.data.config.inputMapping = newInputMapping
         }
+        if (hasApproverConfig) {
+            nodeData.data.config.approverConfig = newApproverConfig
+        }
 
         nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true
+        nodeData.data.config.serialPickNext = form.querySelector('[name="serialPickNext"]')?.checked ?? false
 
         this.editor.updateNodeDataFromId(nodeId, nodeData.data)
 

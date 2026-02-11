@@ -13,8 +13,15 @@ interface WorkflowApprovalManagerInterface
 {
     /**
      * Record a member's approval decision.
+     *
+     * @param int $approvalId Workflow approval ID
+     * @param int $memberId Responding member ID
+     * @param string $decision 'approve' or 'reject'
+     * @param string|null $comment Optional comment
+     * @param int|null $nextApproverId Optional next approver for serial pick-next chains
+     * @return ServiceResult
      */
-    public function recordResponse(int $approvalId, int $memberId, string $decision, ?string $comment = null): ServiceResult;
+    public function recordResponse(int $approvalId, int $memberId, string $decision, ?string $comment = null, ?int $nextApproverId = null): ServiceResult;
 
     /**
      * Create an approval gate for a workflow node.

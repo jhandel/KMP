@@ -9,6 +9,7 @@ use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use App\Services\WorkflowEngine\WorkflowVersionManagerInterface;
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
+use App\Services\WorkflowRegistry\WorkflowApproverResolverRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Services\WorkflowRegistry\WorkflowEntityRegistry;
 use App\Services\WorkflowRegistry\WorkflowTriggerRegistry;
@@ -156,6 +157,7 @@ class WorkflowsController extends AppController
             'actions' => WorkflowActionRegistry::getForDesigner(),
             'conditions' => WorkflowConditionRegistry::getForDesigner(),
             'entities' => WorkflowEntityRegistry::getForDesigner(),
+            'resolvers' => WorkflowApproverResolverRegistry::getForDesigner(),
             'approvalOutputSchema' => WorkflowActionRegistry::APPROVAL_OUTPUT_SCHEMA,
             'builtinContext' => [
                 ['path' => '$.instance.id', 'label' => 'Instance ID', 'type' => 'integer'],
@@ -408,6 +410,7 @@ class WorkflowsController extends AppController
         }
 
         // Set view variables (following WarrantRostersController pattern)
+        $rowActions = \App\KMP\GridColumns\ApprovalsGridColumns::getRowActions();
         $this->set([
             'data' => $result['data'],
             'gridState' => $result['gridState'],
@@ -423,6 +426,7 @@ class WorkflowsController extends AppController
             'gridKey' => $result['gridKey'],
             'currentSort' => $result['currentSort'],
             'currentMember' => $result['currentMember'],
+            'rowActions' => $rowActions,
         ]);
 
         // Determine template based on Turbo-Frame header
@@ -488,14 +492,16 @@ class WorkflowsController extends AppController
         $approvalId = (int)$this->request->getData('approvalId');
         $decision = $this->request->getData('decision');
         $comment = $this->request->getData('comment');
+        $nextApproverId = $this->request->getData('next_approver_id') ? (int)$this->request->getData('next_approver_id') : null;
         $currentUser = $this->request->getAttribute('identity');
 
         // Eligibility (including policy checks) is enforced inside recordResponse()
         $approvalManager = $this->getApprovalManager();
-        $result = $approvalManager->recordResponse($approvalId, $currentUser->id, $decision, $comment);
+        $result = $approvalManager->recordResponse($approvalId, $currentUser->id, $decision, $comment, $nextApproverId);
 
         if ($result->isSuccess() && $result->getData()) {
             $data = $result->getData();
+            // Only resume workflow when approval is fully resolved (not when serial pick-next needs more)
             if (in_array($data['approvalStatus'] ?? '', ['approved', 'rejected'])) {
                 $engine = $this->getWorkflowEngine();
                 $outputPort = $data['approvalStatus'] === 'approved' ? 'approved' : 'rejected';
@@ -527,6 +533,52 @@ class WorkflowsController extends AppController
 
             return $this->redirect(['action' => 'approvals']);
         }
+    }
+
+    /**
+     * API: Return eligible approvers for a serial-pick-next workflow approval.
+     * Returns HTML list items compatible with the ac (autocomplete) controller.
+     *
+     * @param int $approvalId Workflow approval ID
+     * @return \Cake\Http\Response|null|void
+     */
+    public function eligibleApprovers(int $approvalId)
+    {
+        $this->request->allowMethod(['get']);
+        $this->Authorization->skipAuthorization();
+
+        $q = $this->request->getQuery('q') ?? '';
+
+        $approvalManager = $this->getApprovalManager();
+        $eligible = $approvalManager->getEligibleApprovers($approvalId);
+
+        $html = '';
+        if (!empty($eligible)) {
+            $membersTable = $this->fetchTable('Members');
+            $query = $membersTable->find()
+                ->contain(['Branches'])
+                ->where(['Members.id IN' => $eligible])
+                ->orderBy(['Branches.name', 'Members.sca_name']);
+
+            if ($q !== '') {
+                $query->where(['Members.sca_name LIKE' => "%{$q}%"]);
+            }
+
+            foreach ($query->all() as $member) {
+                $branchName = $member->branch->name ?? '';
+                $displayName = $branchName ? $branchName . ': ' . $member->sca_name : $member->sca_name;
+                $highlighted = $q !== '' ?
+                    preg_replace('/(' . preg_quote($q, '/') . ')/i', '<span class="text-primary">$1</span>', h($displayName)) :
+                    h($displayName);
+                $html .= '<li class="list-group-item" role="option" data-ac-value="' . h($member->id) . '">' . $highlighted . '</li>';
+            }
+        }
+
+        $this->response = $this->response
+            ->withType('text/html')
+            ->withStringBody($html);
+
+        return $this->response;
     }
 
     /**

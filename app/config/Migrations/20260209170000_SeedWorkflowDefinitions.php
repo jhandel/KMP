@@ -51,7 +51,7 @@ class SeedWorkflowDefinitions extends AbstractMigration
 
         $this->execute(
             "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
-                "VALUES ('{$name2}', '{$slug2}', '{$desc2}', 'event', '{$triggerConfig2}', '{$entityType2}', 0, NULL, 1, 1, '{$now}', '{$now}')"
+                "VALUES ('{$name2}', '{$slug2}', '{$desc2}', 'event', '{$triggerConfig2}', '{$entityType2}', 1, NULL, 1, 1, '{$now}', '{$now}')"
         );
 
         $this->execute(
@@ -66,11 +66,37 @@ class SeedWorkflowDefinitions extends AbstractMigration
                 "WHERE wd.slug = '{$slug2}' AND wv.version_number = 1" .
                 ") WHERE slug = '{$slug2}'"
         );
+
+        // Activities Authorization Approval workflow
+        $name3 = 'Activities Authorization Approval';
+        $slug3 = 'activities-authorization';
+        $desc3 = 'Default workflow for activity authorization approval with serial pick-next approver chain';
+        $triggerConfig3 = addslashes(json_encode(['event' => 'Activities.AuthorizationRequested']));
+        $entityType3 = 'Activities';
+        $definition3 = addslashes(json_encode($this->getActivitiesAuthorizationDefinition()));
+
+        $this->execute(
+            "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
+                "VALUES ('{$name3}', '{$slug3}', '{$desc3}', 'event', '{$triggerConfig3}', '{$entityType3}', 1, NULL, 1, 1, '{$now}', '{$now}')"
+        );
+
+        $this->execute(
+            "INSERT INTO workflow_versions (workflow_definition_id, version_number, definition, canvas_layout, status, published_at, published_by, created_by, created, modified) " .
+                "VALUES ((SELECT id FROM workflow_definitions WHERE slug = '{$slug3}'), 1, '{$definition3}', '{}', 'published', '{$now}', 1, 1, '{$now}', '{$now}')"
+        );
+
+        $this->execute(
+            "UPDATE workflow_definitions SET current_version_id = (" .
+                "SELECT wv.id FROM workflow_versions wv " .
+                "INNER JOIN workflow_definitions wd ON wv.workflow_definition_id = wd.id " .
+                "WHERE wd.slug = '{$slug3}' AND wv.version_number = 1" .
+                ") WHERE slug = '{$slug3}'"
+        );
     }
 
     public function down(): void
     {
-        foreach (['warrant-roster', 'officer-hire'] as $slug) {
+        foreach (['warrant-roster', 'officer-hire', 'activities-authorization'] as $slug) {
             $this->execute("UPDATE workflow_definitions SET current_version_id = NULL WHERE slug = '{$slug}'");
             $this->execute("DELETE FROM workflow_versions WHERE workflow_definition_id IN (SELECT id FROM workflow_definitions WHERE slug = '{$slug}')");
             $this->execute("DELETE FROM workflow_definitions WHERE slug = '{$slug}'");
@@ -166,6 +192,136 @@ class SeedWorkflowDefinitions extends AbstractMigration
                     'label' => 'Complete',
                     'config' => (object)[],
                     'position' => ['x' => 1200, 'y' => 200],
+                    'outputs' => [],
+                ],
+            ],
+        ];
+    }
+
+    private function getActivitiesAuthorizationDefinition(): array
+    {
+        return [
+            'nodes' => [
+                'trigger-auth' => [
+                    'type' => 'trigger',
+                    'label' => 'Authorization Requested',
+                    'config' => [
+                        'event' => 'Activities.AuthorizationRequested',
+                        'entityIdField' => 'authorizationId',
+                        'inputMapping' => [
+                            'authorizationId' => '$.event.authorizationId',
+                            'memberId' => '$.event.memberId',
+                            'activityId' => '$.event.activityId',
+                            'activityName' => '$.event.activityName',
+                            'approverId' => '$.event.approverId',
+                            'isRenewal' => '$.event.isRenewal',
+                            'requiredApprovals' => '$.event.requiredApprovals',
+                        ],
+                    ],
+                    'position' => ['x' => 50, 'y' => 200],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'approval-gate'],
+                    ],
+                ],
+                'approval-gate' => [
+                    'type' => 'approval',
+                    'label' => 'Authorization Approval Gate',
+                    'config' => [
+                        'approverType' => 'dynamic',
+                        'approverConfig' => [
+                            'service' => 'Activities.AuthorizationApproverResolver',
+                            'method' => 'getEligibleApproverIds',
+                            'activity_id' => '$.trigger.activityId',
+                        ],
+                        'requiredCount' => '$.trigger.requiredApprovals',
+                        'serialPickNext' => true,
+                        'allowParallel' => false,
+                        'allowComments' => true,
+                        'deadline' => '30d',
+                    ],
+                    'position' => ['x' => 350, 'y' => 200],
+                    'outputs' => [
+                        ['port' => 'approved', 'target' => 'action-activate'],
+                        ['port' => 'rejected', 'target' => 'action-deny'],
+                    ],
+                ],
+                'action-activate' => [
+                    'type' => 'action',
+                    'label' => 'Activate Authorization',
+                    'config' => [
+                        'action' => 'Activities.ActivateAuthorization',
+                        'params' => [
+                            'authorizationId' => '$.trigger.authorizationId',
+                            'approverId' => '$.resumeData.approverId',
+                        ],
+                    ],
+                    'position' => ['x' => 650, 'y' => 100],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'action-notify-approved'],
+                    ],
+                ],
+                'action-notify-approved' => [
+                    'type' => 'action',
+                    'label' => 'Notify Requester (Approved)',
+                    'config' => [
+                        'action' => 'Activities.NotifyRequester',
+                        'params' => [
+                            'activityId' => '$.trigger.activityId',
+                            'requesterId' => '$.trigger.memberId',
+                            'approverId' => '$.resumeData.approverId',
+                            'status' => 'approved',
+                        ],
+                    ],
+                    'position' => ['x' => 950, 'y' => 100],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'end-approved'],
+                    ],
+                ],
+                'action-deny' => [
+                    'type' => 'action',
+                    'label' => 'Handle Denial',
+                    'config' => [
+                        'action' => 'Activities.HandleDenial',
+                        'params' => [
+                            'authorizationId' => '$.trigger.authorizationId',
+                            'approverId' => '$.resumeData.approverId',
+                            'denyReason' => '$.resumeData.comment',
+                        ],
+                    ],
+                    'position' => ['x' => 650, 'y' => 300],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'action-notify-denied'],
+                    ],
+                ],
+                'action-notify-denied' => [
+                    'type' => 'action',
+                    'label' => 'Notify Requester (Denied)',
+                    'config' => [
+                        'action' => 'Activities.NotifyRequester',
+                        'params' => [
+                            'activityId' => '$.trigger.activityId',
+                            'requesterId' => '$.trigger.memberId',
+                            'approverId' => '$.resumeData.approverId',
+                            'status' => 'denied',
+                        ],
+                    ],
+                    'position' => ['x' => 950, 'y' => 300],
+                    'outputs' => [
+                        ['port' => 'next', 'target' => 'end-denied'],
+                    ],
+                ],
+                'end-approved' => [
+                    'type' => 'end',
+                    'label' => 'Approved Complete',
+                    'config' => (object)[],
+                    'position' => ['x' => 1250, 'y' => 100],
+                    'outputs' => [],
+                ],
+                'end-denied' => [
+                    'type' => 'end',
+                    'label' => 'Denied Complete',
+                    'config' => (object)[],
+                    'position' => ['x' => 1250, 'y' => 300],
                     'outputs' => [],
                 ],
             ],

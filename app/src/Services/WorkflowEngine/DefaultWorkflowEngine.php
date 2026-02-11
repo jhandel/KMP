@@ -764,6 +764,37 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             if (!empty($config['entityIdKey'])) {
                 $approverConfig['entityIdKey'] = $config['entityIdKey'];
             }
+            // Dynamic resolver fields (flat config backward compat)
+            if (!empty($config['resolverService'])) {
+                $approverConfig['service'] = $config['resolverService'];
+            }
+            if (!empty($config['resolverMethod'])) {
+                $approverConfig['method'] = $config['resolverMethod'];
+            }
+            // For dynamic type, preserve any remaining custom keys
+            if (($config['approverType'] ?? '') === 'dynamic') {
+                $standardKeys = ['approverType', 'approverConfig', 'approverValue', 'resolverService', 'resolverMethod',
+                    'permission', 'role', 'member_id', 'policyClass', 'policyAction', 'entityTable', 'entityIdKey',
+                    'requiredCount', 'serialPickNext', 'allowParallel', 'allowComments', 'deadline'];
+                foreach ($config as $key => $value) {
+                    if (!in_array($key, $standardKeys) && !isset($approverConfig[$key])) {
+                        $approverConfig[$key] = $value;
+                    }
+                }
+            }
+        }
+
+        // Resolve context references ($.) in approverConfig values
+        $instanceContext = $instance->context ?? [];
+        foreach ($approverConfig as $key => $value) {
+            if (is_string($value) && str_starts_with($value, '$.')) {
+                $approverConfig[$key] = $this->resolveParamValue($value, $instanceContext);
+            }
+        }
+
+        // Preserve serial_pick_next flag from config into approverConfig
+        if (!empty($config['serialPickNext'])) {
+            $approverConfig['serial_pick_next'] = true;
         }
 
         // Resolve requiredCount (may be int, or {type: "app_setting", key: "..."})

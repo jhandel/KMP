@@ -92,6 +92,36 @@ class ApprovalsGridColumns extends BaseGridColumns
     }
 
     /**
+     * Row actions for the approvals grid.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function getRowActions(): array
+    {
+        return [
+            'respond' => [
+                'key' => 'respond',
+                'type' => 'modal',
+                'label' => 'Respond',
+                'icon' => 'bi-reply-fill',
+                'class' => 'btn btn-sm btn-primary',
+                'modalTarget' => '#approvalResponseModal',
+                'statusFilter' => [WorkflowApproval::STATUS_PENDING],
+                'dataAttributes' => [
+                    'controller' => 'outlet-btn',
+                    'action' => 'click->outlet-btn#fireNotice',
+                    'outlet-btn-btn-data-value' => [
+                        'id' => 'id',
+                        'approver_config' => 'approver_config',
+                        'required_count' => 'required_count',
+                        'approved_count' => 'approved_count',
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
      * System views for the approvals grid.
      *
      * @param array<string, mixed> $options
