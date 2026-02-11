@@ -400,7 +400,7 @@ class WorkflowDesignerController extends Controller {
         this._highlightSelectedNodes()
         const nodeData = this.editor.getNodeFromId(nodeId)
         if (this.hasNodeConfigTarget && this._configPanel) {
-            this.nodeConfigTarget.innerHTML = this._configPanel.renderConfigHTML(nodeId, nodeData)
+            this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this._configPanel.renderConfigHTML(nodeId, nodeData)
             this._variablePicker?.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
             const nodeConfig = nodeData.data?.config || {}
             // Pre-populate policy actions dropdown if policy class is set
@@ -422,7 +422,7 @@ class WorkflowDesignerController extends Controller {
             this._clearMultiSelect()
         }
         if (this.hasNodeConfigTarget && this._configPanel) {
-            this.nodeConfigTarget.innerHTML = this._configPanel.renderEmptyHTML()
+            this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this._configPanel.renderEmptyHTML()
         }
     }
 
@@ -578,11 +578,13 @@ class WorkflowDesignerController extends Controller {
         if (!selectEl) return
 
         try {
-            const response = await fetch('/app-settings/workflow-list.json')
+            const response = await fetch('/workflows/app-settings', {
+                headers: { 'Accept': 'application/json' }
+            })
             if (!response.ok) throw new Error(`HTTP ${response.status}`)
             const data = await response.json()
             let options = '<option value="">Select a setting...</option>'
-            const items = Array.isArray(data) ? data : (data.settings || [])
+            const items = Array.isArray(data) ? data : (data.appSettings || data.settings || [])
             items.forEach(s => {
                 const key = s.name || s.value || ''
                 const label = s.name || key
@@ -682,7 +684,7 @@ class WorkflowDesignerController extends Controller {
         if (changedField === 'action' || changedField === 'condition' || changedField === 'event') {
             const updatedNode = this.editor.getNodeFromId(nodeId)
             if (this.hasNodeConfigTarget && this._configPanel) {
-                this.nodeConfigTarget.innerHTML = this._configPanel.renderConfigHTML(nodeId, updatedNode)
+                this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this._configPanel.renderConfigHTML(nodeId, updatedNode)
                 if (this._variablePicker) {
                     this._variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
                 }
@@ -1080,6 +1082,10 @@ class WorkflowDesignerController extends Controller {
     }
 
     // --- Config Panel Resize ---
+
+    get _resizeHandleHTML() {
+        return '<div class="config-panel-resize-handle" data-action="mousedown->workflow-designer#onResizeStart"></div>'
+    }
 
     _restoreConfigPanelWidth() {
         const saved = localStorage.getItem('wf-config-panel-width')
