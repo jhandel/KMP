@@ -62,3 +62,44 @@ Mapped `warrant_rosters`/`warrant_roster_approvals` → `workflow_instances`/`wo
 📌 Team update (2026-02-12): Completed warrant roster → workflow migration research. 34 rosters, 19 approvals to port. Key blockers: no decline actor records, execution_log FK requirement, dual-path approval code. Full analysis in decisions/inbox/kaylee-warrant-migration-research.md. — researched by Kaylee
 
 📌 Team update (2026-02-11): Warrant roster migration → Forward-Only (Option B). No historical data migration. Sync layer stays. Revisit in 6–12 months. — decided by Mal, Kaylee
+
+### 2026-02-12: Activities Workflow Backend (Phase 1+2)
+
+**Phase 1 — Foundation:**
+- Created `ActivitiesWorkflowProvider` (2 triggers: AuthorizationRequested, AuthorizationRetracted; 5 actions: CreateAuthorizationRequest, ActivateAuthorization, HandleDenial, NotifyApprover, NotifyRequester). Follows WarrantWorkflowProvider pattern exactly.
+- Created `ActivitiesWorkflowActions` with `WorkflowContextAwareTrait`, constructor-injects `AuthorizationManagerInterface` via DI. Each method resolves config via `resolveValue()`, delegates to service, catches/logs errors. Follows WarrantWorkflowActions pattern.
+- Created `AuthorizationApproverResolver` for DYNAMIC approver type. Uses `Activity::getApproversQuery()` via `permission_id`. Supports `current_approver_id` (serial pick-next) and `exclude_member_ids`.
+- Added `activate()` method to `AuthorizationManagerInterface` and `DefaultAuthorizationManager`. Extracts core logic from `processApprovedAuthorization()` — sets APPROVED status, starts ActiveWindow, assigns role. Does NOT send notifications (workflow has own notify step).
+- Registered `ActivitiesWorkflowProvider::register()` in `WorkflowPluginLoader::loadCoreComponents()`.
+- Injected `TriggerDispatcher` into `DefaultAuthorizationManager` via DI. Dispatches `Activities.AuthorizationRequested` after successful `request()` and `Activities.AuthorizationRetracted` after successful `retract()`. Non-critical — wrapped in try/catch.
+- Registered `ActivitiesWorkflowActions` in `ActivitiesPlugin::services()` with `AuthorizationManagerInterface` argument.
+
+**Phase 2 — Serial Pick-Next Engine Enhancement:**
+- Extended `WorkflowApprovalManagerInterface::recordResponse()` with optional `?int $nextApproverId` parameter.
+- In `DefaultWorkflowApprovalManager::recordResponse()`: when `serial_pick_next` is true in `approver_config` AND decision is approve AND `approved_count < required_count`, updates `approver_config.current_approver_id`, appends to `approval_chain` array, adds to `exclude_member_ids`, returns `{approvalStatus: 'pending', needsMore: true}` without resolving the approval.
+- Updated `isMemberEligible()` and `isMemberEligibleCached()`: when `serial_pick_next` + `current_approver_id` is set, only the designated member is eligible.
+- Updated `WorkflowsController::recordApproval()`: passes `$nextApproverId` to `recordResponse()`. When `needsMore` is true (serial chain still pending), does NOT call `resumeWorkflow()`.
+- In `DefaultWorkflowEngine::executeApprovalNode()`: resolves `$.` context references in `approverConfig` values via `resolveParamValue()` before saving. Also propagates `serialPickNext` config flag into `approver_config` as `serial_pick_next`.
+
+**Key decisions:**
+- Trigger dispatch from service layer (not controller) — follows established TriggerDispatcher DI pattern from warrants/officers.
+- `activate()` method does NOT send notifications — follows "suppress notifications when workflow wraps service" pattern from warrant activate.
+- `serial_pick_next` stored in JSON `approver_config` column, no DB schema changes needed.
+- Scope: only AuthorizationRequested and AuthorizationRetracted triggers (no Revoked — out of band).
+
+📌 Team update (2026-02-12): Activities workflow backend complete (Phase 1+2). 3 new files, 8 modified. 554 workflow tests pass. — built by Kaylee
+
+### 2026-02-12: Activities Authorization Seed Migration (Phase 4)
+
+Added `activities-authorization` workflow definition to `20260209170000_SeedWorkflowDefinitions.php`. 9-node graph: trigger-auth → action-create → approval-gate (dynamic approver, serialPickNext, context-resolved requiredCount) → approved path (activate → notify → end) / rejected path (deny → notify → end). Set `is_active: 0` per Mal's architecture decision (admin opt-in). Followed exact SQL insert pattern from warrant-roster and officer-hire blocks. Rollback updated to include new slug.
+
+**Key patterns followed:**
+- Same 3-step SQL insert pattern: INSERT definition → INSERT version → UPDATE current_version_id
+- Private `getActivitiesAuthorizationDefinition()` method matching `getWarrantRosterDefinition()` structure
+- Node IDs match the workflow graph spec from Mal's architecture doc §8
+- Canvas positions laid out left-to-right: trigger(50)→create(350)→gate(650)→actions(950)→notify(1250)→end(1550), approved branch y=100, denied branch y=300
+
+📌 Team update (2026-02-12): Activities authorization seed migration added to SeedWorkflowDefinitions (Phase 4). 9 nodes, is_active=0 (opt-in). — built by Kaylee
+
+📌 Team update (2026-02-11): Activities workflow scope limited to submit-to-approval only; Revoked/Expired out-of-band — decided by Josh Handel
+📌 Team update (2026-02-11): Auth queue permission gating question raised — MoAS/Armored marshals get unauthorized on /activities/authorization-approvals/my-queue. May need policy update or confirmation that /workflows/approvals is the intended path — found by Jayne

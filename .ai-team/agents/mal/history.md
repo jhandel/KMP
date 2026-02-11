@@ -28,60 +28,18 @@ Graph-based execution engine with 9 node types, 4 static registries (`WorkflowTr
 
 📌 Team updates (2026-02-10): All 4 agents reviewed codebase, workflow engine, and docs. Auth triage complete (370→463 tests). Queue plugin owned. Roster sync designed and implemented by Kaylee.
 
-### 2026-02-11: Action Schema & Context Mapping Architecture
+### 2026-02-11: Action Schema & Context Mapping Architecture (summarized)
 
-#### Key Findings
-- **Action/trigger schemas are already structured** — `inputSchema` and `outputSchema` in providers already use `['type' => '...', 'label' => '...', 'required' => true]` format. The data is there; the frontend doesn't use it.
-- **Variable picker has a trigger bug** — `WorkflowVariablePicker.getNodeOutputSchema()` looks for `trigger.outputSchema` but triggers register `payloadSchema`. Falls through to generic fallback.
-- **Variable picker has an action path bug** — Generates `$.nodes.{nodeId}.{key}` but engine stores at `$.nodes.{nodeId}.result.{key}` (see `DefaultWorkflowEngine` line 641).
-- **Config panel doesn't render action inputs** — `_actionHTML()` in `workflow-config-panel.js` only shows the action dropdown. No form fields for the action's `inputSchema` params.
-- **Trigger `inputMapping` determines `$.trigger.*` keys** — The trigger node's `config.inputMapping` maps event fields into context. The variable picker ignores this and tries raw payload keys.
-- **Approval resume data structure** — When approval resolves, `WorkflowsController` line 398-403 passes `{approval, approverId, decision, comment}` as `additionalData` to `resumeWorkflow()`, which stores it at `$context['resumeData']`.
-- **Engine merges `config.params` into flat config** — `DefaultWorkflowEngine::executeActionNode()` line 634-636 merges `config.params` into `config` before calling the action. This means param nesting is intentional.
+Action/trigger schemas already structured (`inputSchema`/`outputSchema` in providers). Variable picker had two bugs: trigger lookup (looks for `outputSchema` vs `payloadSchema`) and action path (`$.nodes.{id}.{key}` vs `$.nodes.{id}.result.{key}`). Config panel didn't render action input fields. Architecture: 5 phases implemented — fix variable picker → action input rendering → approval schema → publish validation → enrichment. All consolidated with Wash (frontend) and Kaylee (backend). 459 tests pass.
 
-#### Architecture Decision
-- Schema format stays the same — no migration needed. Add optional `description`, `default` fields.
-- Context accumulation happens client-side (graph + registry data already available).
-- Config panel enhanced to render `inputSchema` fields with variable picker per field.
-- 5 phases: fix variable picker bugs → action input rendering → approval schema → publish validation → enrichment.
-- No new PHP endpoints for Phase 1-2. Phase 3 adds approval/builtin schemas to existing `/workflows/registry`.
+📌 Team update (2026-02-11): Action Schema & Context Mapping — all 5 phases implemented. Wash (187032cf), Kaylee (6c4528fb). 459 tests pass.
 
-#### Key File Paths
-- `app/assets/js/controllers/workflow-variable-picker.js` — Context variable builder, upstream traversal, searchable dropdown. Has trigger lookup bug (line 55: looks for `outputSchema` instead of `payloadSchema`).
-- `app/assets/js/controllers/workflow-config-panel.js` — Per-node-type config rendering. `_actionHTML()` (line 82) only renders action dropdown, no input field forms.
-- `app/src/Services/WorkflowRegistry/WorkflowActionRegistry.php` — Static registry, `getForDesigner()` (line 177) already exposes `inputSchema`/`outputSchema`.
-- `app/src/Controller/WorkflowsController.php` — `registry()` action (line 150) serves all 4 registries as JSON.
-- `app/src/Services/WorkflowEngine/DefaultWorkflowEngine.php` — `executeActionNode()` (line 579) does `config.params` merge and stores result at `context['nodes'][$nodeId]['result']`.
+### 2026-02-11: Universal Value Picker Architecture (summarized)
 
-📌 Full proposal: `.ai-team/decisions/inbox/mal-action-schema-architecture.md`
+Designed centralized value picker for all workflow node parameters. `resolveParamValue()` handles 3 types: `fixed`, `context`, `app_setting` (extensible). Frontend `renderValuePicker()` on existing `WorkflowConfigPanel` — replaces all ad-hoc patterns. Backward compatible (plain scalars pass through, `$.path` auto-detected). Key insight: `field` in conditions is a path reference, NOT a value to resolve. No new files, no DB changes.
 
-📌 Team update (2026-02-11): Action Schema & Context Mapping — all 5 phases implemented and consolidated. Architecture (Mal), frontend fixes + field rendering (Wash commits 187032cf), backend schema + validation + enrichment (Kaylee commit 6c4528fb). 459 tests pass.
-
-### 2026-02-11: Universal Value Picker Architecture
-
-#### Architecture Decision
-Designed a centralized "value picker" pattern for all workflow node parameters. Key decisions:
-
-1. **Unified `resolveParamValue()` on backend** — single resolution method replacing the approval-specific `resolveRequiredCount()` logic. Handles plain scalars, `$.path` context shorthand, and `{type, value|path|key}` descriptor objects. `resolveRequiredCount()` becomes a thin int-casting wrapper around it.
-
-2. **Three resolution types now, extensible later** — `fixed`, `context`, `app_setting` implemented. `entity_field` and `computed` reserved in the schema but not built (no real use case yet). Adding a new type is backward-compatible — just a new `case` in the switch.
-
-3. **Frontend: `renderValuePicker()` on existing `WorkflowConfigPanel`** — not a separate file or Stimulus controller. A rendering helper that produces type-selector + dynamic-input HTML. Used by `_actionHTML`, `_conditionHTML`, `_approvalHTML`, `_delayHTML`, `_loopHTML`. Replaces Wash's `_requiredCountHTML()` (which was the prototype).
-
-4. **Backward compatibility by design** — plain scalar values pass through unchanged. `$.path` strings auto-detected as context references. No workflow definition migration required. Old definitions work with new engine code.
-
-5. **No new endpoints, no new files, no DB changes** — everything fits into existing structures. App settings API stays in `WorkflowsController`.
-
-#### Key Patterns Discovered
-- Wash's `_requiredCountHTML()` + `onRequiredCountTypeChange()` pattern is the exact right UX model — generalize it, don't replace it from scratch.
-- `field` in condition nodes is a path REFERENCE (tells the condition where to look), NOT a value to resolve. Only `expectedValue` and `params.*` get value resolution.
-- The variable picker (`WorkflowVariablePicker`) already handles context path computation correctly via reverse BFS. No changes needed there.
-- `executeActionNode()` merges `config.params` into flat `config` (line 646-648) — param resolution must happen BEFORE this merge.
-
-📌 Full design: `.ai-team/decisions/inbox/mal-universal-value-picker.md`
-
-📌 Team update (2026-02-11): Universal value picker fully implemented — Kaylee built `resolveParamValue()` backend, Wash built `renderValuePicker()` frontend. All 5 config panels refactored. 463 tests pass. Architecture executed as designed. — decided by Mal, Kaylee, Wash
-📌 Team update (2026-02-11): Duplicate email fix — `activateApprovedRoster($sendNotifications)` pattern established for services wrapped by workflow notification steps. — decided by Kaylee
+📌 Team update (2026-02-11): Fully implemented by Kaylee (backend) + Wash (frontend). All 5 config panels refactored. 463 tests pass.
+📌 Team update (2026-02-11): Duplicate email fix — `activateApprovedRoster($sendNotifications)` pattern for services wrapped by workflow notification steps — Kaylee.
 
 ### 2026-02-11: Warrant Roster Migration Architecture Assessment
 
@@ -103,3 +61,39 @@ Designed a centralized "value picker" pattern for all workflow node parameters. 
 📌 Full analysis: `.ai-team/decisions/inbox/mal-warrant-migration-architecture.md`
 
 📌 Team update (2026-02-11): Warrant roster migration → Forward-Only (Option B). No historical data migration. Sync layer stays. Revisit in 6–12 months. — decided by Mal, Kaylee
+
+### 2026-02-12: Activities Authorization Workflow Engine Integration Architecture
+
+#### Architecture Decision
+Designed workflow engine integration for Activities authorization approvals. Key decisions:
+
+1. **Integration Strategy: Workflow wraps `AuthorizationManagerInterface` (Option B).** Same pattern as warrants — `ActivitiesWorkflowActions` delegates to the existing manager service. No rewrite. Manager keeps its business logic and transaction ownership.
+
+2. **Serial Pick-Next Approver: New `serialPickNext` approval node behavior.** Enhancement to existing approval node config, not a new node type. When `serialPickNext: true`, the approval node accumulates approvals serially — each approver picks the next from the eligible pool. Chain state stored in `approver_config` JSON (no DB schema changes).
+
+3. **Approver Resolution: DYNAMIC approver type with `AuthorizationApproverResolver`.** Custom service extracted from `AuthorizationApprovalsController::availableApproversList()`. Uses `Activity::getApproversQuery()` (permission_id-based). Shared by workflow engine and UI.
+
+4. **5 Triggers registered:** `AuthorizationRequested`, `AuthorizationApproved`, `AuthorizationDenied`, `AuthorizationRevoked`, `AuthorizationRetracted`. Primary workflow trigger is `AuthorizationRequested`.
+
+5. **8 Actions registered:** `CreateAuthorization`, `ApproveStep`, `DenyAuthorization`, `ActivateAuthorization`, `GetEligibleApprovers`, `NotifyApprover`, `NotifyRequester`, `RevokeAuthorization`.
+
+6. **Forward-Only transition:** Dual-path (existing controller + workflow). No migration of historical data. Default workflow seeded but opt-in.
+
+#### Engine Changes Required
+- `DefaultWorkflowApprovalManager::recordResponse()` — accept `nextApproverId`, implement serial chain logic
+- `WorkflowsController::respondToApproval()` — pass `nextApproverId`
+- `executeApprovalNode()` — resolve `$.path` references in `approverConfig`
+- `isMemberEligible()` — check `current_approver_id` for serial-pick-next
+
+#### Key New Files
+- `app/plugins/Activities/src/Services/ActivitiesWorkflowProvider.php` — trigger/action registration
+- `app/plugins/Activities/src/Services/ActivitiesWorkflowActions.php` — workflow action implementations
+- `app/plugins/Activities/src/Services/AuthorizationApproverResolver.php` — dynamic approver resolution
+
+#### Implementation Plan
+5 phases: Foundation (Kaylee) → Serial Pick-Next Engine (Kaylee) → Frontend (Wash) → Default Workflow Seed (Kaylee) → Tests (Jayne). No DB schema changes needed.
+
+📌 Full proposal: `.ai-team/decisions/inbox/mal-activities-approval-workflow.md`
+
+📌 Team update (2026-02-11): Activities authorization seed migration implemented (Phase 4) — 9-node graph, is_active=0, matches architecture spec — implemented by Kaylee
+📌 Team update (2026-02-11): E2E tests 4/4 pass (Phase 5). Auth queue permission gating question (medium severity) — tested by Jayne

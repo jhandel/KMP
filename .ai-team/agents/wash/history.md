@@ -84,3 +84,55 @@ Rewrote `app/templates/Workflows/approvals.php` from a hand-coded card+table lay
 📌 Team update (2026-02-11): Approvals DataverseGrid backend architecture decided — Kaylee defined ID pre-filtering for pending tab, post-pagination virtual fields, skipAuthorization on scoped endpoint
 
 📌 Team update (2026-02-11): Warrant roster migration → Forward-Only (Option B). No historical data migration. Sync layer stays. Workflow engine unaffected — no synthetic instances will be created. — decided by Mal, Kaylee
+
+### 2026-02-12: Serial Pick-Next Approver — Frontend (Phase 3)
+
+Implemented frontend for the `serialPickNext` approval node enhancement per Mal's architecture proposal.
+
+#### 1. Workflow Designer Config Panel — serialPickNext Toggle
+
+- **File:** `assets/js/controllers/workflow-config-panel.js` (`_approvalHTML()`)
+- Added a `form-switch` toggle "Serial Pick Next Approver" inside a `data-approver-section="dynamic"` wrapper — only visible when `approverType` is `dynamic`.
+- Tooltip text: "Each approver picks the next approver from the eligible pool. Approvals happen one at a time in sequence."
+- When checked, `allowParallel` is forced unchecked and disabled.
+- `config.serialPickNext` stored as boolean alongside existing `allowParallel`.
+
+- **File:** `assets/js/controllers/workflow-designer-controller.js`
+- Added `onSerialPickNextChange()` handler: forces `allowParallel` unchecked/disabled when serial is on.
+- `updateNodeConfig()` now reads `serialPickNext` checkbox alongside `allowParallel`.
+
+#### 2. Approval Response UI — "Pick Next Approver" Modal
+
+- **File:** `templates/Workflows/approvals.php`
+- Added Bootstrap modal `#approvalResponseModal` with decision radios (Approve/Reject), comment textarea, and conditional "Select Next Approver" autocomplete picker.
+- Next approver section shown only when: decision=approve AND serialPickNext=true AND approvedCount+1 < requiredCount.
+- Autocomplete uses `data-controller="ac"` calling `/workflows/eligible-approvers/{approvalId}`.
+- Form submits to `/workflows/record-approval` with `approvalId`, `decision`, `comment`, and `next_approver_id`.
+- `show.bs.modal` listener extracts approval data from `outlet-btn` data attributes.
+
+- **File:** `assets/js/controllers/approval-response-controller.js` (NEW)
+- Stimulus controller for the modal form. Values: `serialPickNext`, `requiredCount`, `approvedCount`, `approvalId`, `eligibleUrl`.
+- `configure()` method resets form and updates visibility/required state.
+- `_updateVisibility()` shows/hides next approver section based on decision + serial config.
+- Registered as `window.Controllers["approval-response"]`.
+
+#### 3. Grid Row Actions
+
+- **File:** `src/KMP/GridColumns/ApprovalsGridColumns.php`
+- Added `getRowActions()` — "Respond" button (modal type) for pending approvals, passes `id`, `approver_config`, `required_count`, `approved_count` via `outlet-btn`.
+
+- **File:** `src/Controller/WorkflowsController.php`
+- `approvalsGridData()` now passes `rowActions` to view.
+- Added `eligibleApprovers(int $approvalId)` endpoint — returns HTML `<li>` elements compatible with `ac` controller, with branch-qualified SCA names.
+- `recordApproval()` now extracts `next_approver_id` from request data (stored for when Kaylee adds `$nextApproverId` param to `recordResponse()`).
+
+- **File:** `config/routes.php`
+- Added `/workflows/eligible-approvers/{approvalId}` route.
+
+#### Dependencies on Kaylee (Backend Phase 2)
+- `DefaultWorkflowApprovalManager::recordResponse()` needs `$nextApproverId` parameter
+- `isMemberEligible()` needs `current_approver_id` check for serial-pick-next approvals
+- `recordApproval()` controller call currently ignores `$nextApproverId` — will wire through when backend accepts it
+
+📌 Team update (2026-02-11): Activities workflow scope limited to submit-to-approval only; Revoked/Expired out-of-band — decided by Josh Handel
+📌 Team update (2026-02-11): Auth queue permission gating question — MoAS/Armored users get unauthorized on auth queue page. May affect approval UI routing — found by Jayne

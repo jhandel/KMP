@@ -2767,3 +2767,803 @@ Added to `WorkflowConfigPanel` — universal component rendering type-selector +
 3. 6–12 months: Remove sync layer when all pending rosters have resolved via workflows.
 4. Eventually: Drop `warrant_roster_approvals` when historical data is no longer needed.
 
+
+---
+
+### 2026-02-11: Activities workflow scope — submit to approval only
+**By:** Josh Handel (via Copilot)
+**What:** Activities approval workflow handles submission-to-approval flow only. Valid triggers: AuthorizationRequested, AuthorizationApproved, AuthorizationDenied, AuthorizationRetracted. Revoked and Expired are out-of-band events (like warrants/officers) and excluded from this workflow. No RevokeAuthorization action.
+**Why:** User request — keep workflow scope consistent with warrant/officer patterns. Revocation and expiration happen after the approval workflow completes.
+
+---
+
+# Decision: Activities Authorization Seed Migration
+
+**By:** Kaylee  
+**Date:** 2026-02-12  
+**Status:** Implemented  
+
+## What
+
+Added `activities-authorization` workflow definition seed to the existing `20260209170000_SeedWorkflowDefinitions.php` migration. This is Phase 4 from Mal's architecture plan in `mal-activities-approval-workflow.md`.
+
+## Workflow Graph
+
+9 nodes total:
+1. `trigger-auth` — event: `Activities.AuthorizationRequested`, maps 7 payload fields
+2. `action-create` — `Activities.CreateAuthorizationRequest`
+3. `approval-gate` — dynamic approver via `AuthorizationApproverResolver`, `serialPickNext: true`, `requiredCount` resolved from `$.trigger.requiredApprovals`
+4. `action-activate` — `Activities.ActivateAuthorization` (approved path)
+5. `action-notify-approved` — `Activities.NotifyRequester` with status=approved
+6. `action-deny` — `Activities.HandleDenial` (rejected path)
+7. `action-notify-denied` — `Activities.NotifyRequester` with status=denied
+8. `end-approved`
+9. `end-denied`
+
+## Key Decisions
+
+- **`is_active: 0`** — Disabled by default. Administrators explicitly opt-in. This matches Mal's architecture decision §12.6.
+- **entityType: `Activities`** — Consistent with `ActivitiesWorkflowProvider` registration.
+- **No new migration file** — Added to existing `SeedWorkflowDefinitions` migration as a third block, following the same pattern as warrant-roster and officer-hire.
+- **Node naming** — Used descriptive IDs (`trigger-auth`, `action-create`, `approval-gate`, etc.) matching the spec in Mal's doc §8.
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `app/config/Migrations/20260209170000_SeedWorkflowDefinitions.php` | Added `getActivitiesAuthorizationDefinition()` method, third INSERT block in `up()`, updated `down()` rollback array |
+
+---
+
+# Decision: Activities Workflow Backend Implementation
+
+**Author:** Kaylee (Backend Dev)  
+**Date:** 2026-02-12  
+**Status:** Implemented  
+**Implements:** mal-activities-approval-workflow.md (Phases 1+2)
+
+---
+
+## What Was Built
+
+### Phase 1: Foundation
+
+**New files:**
+- `app/plugins/Activities/src/Services/ActivitiesWorkflowProvider.php` — Registers 2 triggers and 5 actions
+- `app/plugins/Activities/src/Services/ActivitiesWorkflowActions.php` — Action implementations delegating to AuthorizationManagerInterface
+- `app/plugins/Activities/src/Services/AuthorizationApproverResolver.php` — Dynamic approver resolution for workflow approval nodes
+
+**Modified files:**
+- `AuthorizationManagerInterface.php` — Added `activate()` method
+- `DefaultAuthorizationManager.php` — Implemented `activate()`, injected TriggerDispatcher, dispatches triggers from `request()` and `retract()`
+- `ActivitiesPlugin.php` — Updated DI: added TriggerDispatcher arg, registered ActivitiesWorkflowActions
+- `WorkflowPluginLoader.php` — Added `ActivitiesWorkflowProvider::register()`
+
+### Phase 2: Serial Pick-Next Engine Enhancement
+
+**Modified files:**
+- `WorkflowApprovalManagerInterface.php` — Added `?int $nextApproverId` param to `recordResponse()`
+- `DefaultWorkflowApprovalManager.php` — Serial pick-next logic in `recordResponse()`, `isMemberEligible()`, `isMemberEligibleCached()`
+- `WorkflowsController.php` — Passes `next_approver_id` through to `recordResponse()`
+- `DefaultWorkflowEngine.php` — Resolves `$.` context refs in `approverConfig`, propagates `serialPickNext` flag
+
+## Key Decisions
+
+1. **Trigger dispatch from service layer** — Follows TriggerDispatcher DI pattern from warrants/officers. Non-critical (wrapped in try/catch so request succeeds even if no workflow is configured).
+
+2. **`activate()` suppresses notifications** — Follows "suppress notifications when workflow wraps service" pattern from warrant activate. Workflow has dedicated NotifyRequester action.
+
+3. **No DB schema changes** — Serial pick-next state (`current_approver_id`, `approval_chain`, `exclude_member_ids`) stored in existing `approver_config` JSON column.
+
+4. **Scoped to submission-to-approval flow only** — Only AuthorizationRequested and AuthorizationRetracted triggers. No Revoked triggers/actions (out of band).
+
+## What's Next
+
+- **Phase 3 (Wash):** Frontend — serial pick-next UI in approval response form, workflow designer config panel
+- **Phase 4 (Kaylee):** Seed migration with default workflow definition
+- **Phase 5 (Jayne):** Tests for all new code
+
+## Dependencies for Frontend (Wash)
+
+- `serial_pick_next` in `approver_config` controls whether "Pick Next Approver" dropdown shows
+- Eligible approvers fetched via `AuthorizationApproverResolver` or existing `availableApproversList` endpoint
+- `next_approver_id` field in approval response POST data
+- When `needsMore: true` returned, UI should show "Approval recorded, awaiting next approver" instead of completion
+
+---
+
+# Architecture: Activities Authorization Workflow Engine Integration
+
+**Author:** Mal (Lead)  
+**Date:** 2026-02-12  
+**Status:** Proposed  
+**Requested by:** Josh Handel  
+
+---
+
+## 1. Problem Statement
+
+The Activities plugin has a working serial approval system in `DefaultAuthorizationManager` but it's hardcoded — no visual workflow designer support, no configurable approval chains, no integration with the workflow engine that warrants already use. Josh wants the same workflow-engine-driven, visual-designer-configurable approval pipeline for activity authorizations.
+
+**Key challenge:** Activity authorizations use a **serial "pick-next-approver" pattern** where each approver manually selects the next approver from a permission-constrained pool. This is fundamentally different from the warrant pattern (parallel/threshold-based, approver pool is self-resolving). The workflow engine's current approval node assumes a pre-determined approver pool and threshold count — it doesn't model "approver N picks approver N+1."
+
+---
+
+## 2. Workflow Triggers
+
+Register these events in `ActivitiesWorkflowProvider`:
+
+| Event | Label | When Fired | Payload |
+|-------|-------|-----------|---------|
+| `Activities.AuthorizationRequested` | Authorization Requested | New authorization request submitted | `authorizationId`, `memberId`, `activityId`, `activityName`, `approverId`, `isRenewal`, `requiredApprovals` |
+| `Activities.AuthorizationApproved` | Authorization Approved (Final) | All required approvals collected, authorization activated | `authorizationId`, `memberId`, `activityId`, `activityName`, `isRenewal` |
+| `Activities.AuthorizationDenied` | Authorization Denied | Any approver denies the request | `authorizationId`, `memberId`, `activityId`, `activityName`, `deniedBy`, `denyReason` |
+| `Activities.AuthorizationRevoked` | Authorization Revoked | Active authorization revoked by admin | `authorizationId`, `memberId`, `activityId`, `revokerId`, `revokedReason` |
+| `Activities.AuthorizationRetracted` | Authorization Retracted | Requester cancels their own pending request | `authorizationId`, `memberId`, `activityId` |
+
+**Primary workflow trigger:** `Activities.AuthorizationRequested`. This is the entry point for the configurable approval workflow. The other events are available for notification-only or follow-up workflows (e.g., "when authorization is revoked, send email to member").
+
+---
+
+## 3. Workflow Actions
+
+Register in `ActivitiesWorkflowProvider`, implemented in `ActivitiesWorkflowActions`:
+
+| Action | Label | Input | Output | Description |
+|--------|-------|-------|--------|-------------|
+| `Activities.CreateAuthorization` | Create Authorization | `memberId`, `activityId`, `approverId`, `isRenewal` | `authorizationId`, `authorizationApprovalId` | Creates authorization record + first approval record via `AuthorizationManagerInterface::request()` |
+| `Activities.ApproveStep` | Approve Authorization Step | `authorizationApprovalId`, `approverId`, `nextApproverId` | `approved`, `needsMore`, `authorizationId` | Records one approval step. Returns whether more approvals needed. Calls `AuthorizationManagerInterface::approve()` |
+| `Activities.DenyAuthorization` | Deny Authorization | `authorizationApprovalId`, `approverId`, `denyReason` | `denied`, `authorizationId` | Denies the authorization. Calls `AuthorizationManagerInterface::deny()` |
+| `Activities.ActivateAuthorization` | Activate Authorization | `authorizationId`, `approverId` | `activated`, `memberRoleId` | Final activation: sets status, starts ActiveWindow, assigns role. Calls into `processApprovedAuthorization()` logic |
+| `Activities.GetEligibleApprovers` | Get Eligible Approvers | `activityId`, `excludeMemberIds` | `approvers[]` (id, sca_name, branch) | Returns eligible approvers for the activity based on `permission_id`, excluding already-used approvers and the requesting member |
+| `Activities.NotifyApprover` | Notify Approver | `activityId`, `requesterId`, `approverId`, `authorizationToken` | `sent` | Sends approval request email to designated approver |
+| `Activities.NotifyRequester` | Notify Requester | `activityId`, `requesterId`, `approverId`, `status`, `nextApproverId` | `sent` | Sends status update email to requesting member |
+| `Activities.RevokeAuthorization` | Revoke Authorization | `authorizationId`, `revokerId`, `revokedReason` | `revoked` | Revokes active authorization via `AuthorizationManagerInterface::revoke()` |
+
+---
+
+## 4. The Serial "Pick Next Approver" Pattern
+
+This is the hardest architectural decision. Let me lay out the options and the recommendation.
+
+### 4.1 Options Considered
+
+**Option A: Single Looping Approval Node** — One approval node with config `{requiredCount: N, serial: true, approverType: 'dynamic'}`. The engine loops back to the same node after each approval. The "pick next approver" is handled inside the dynamic approver resolution.
+
+- ❌ The workflow engine doesn't support looping approval nodes. Approval nodes pause and resume via `resumeWorkflow()`, which advances to `outputPort` targets — there's no "loop back to self" concept.
+- ❌ The "pick" is a UI interaction during approval response. The engine's approval flow is: eligible member → record response → check threshold → resolve. There's no hook for "and now choose who goes next."
+
+**Option B: Multiple Approval Nodes in Sequence** — One approval node per required approval level, connected in series in the workflow graph. Each node has `requiredCount: 1` and `approverType: 'dynamic'` pointing at `Activities.GetEligibleApprovers`.
+
+- ❌ The number of required approvals varies per activity (`num_required_authorizors` vs `num_required_renewers`). You'd need to bake a specific count into the workflow definition at design time, making it non-reusable across activities with different requirements.
+- ❌ Still doesn't solve the "pick" problem — the engine's approval response API (`WorkflowsController::respondToApproval`) takes `{decision, comment}`, not `{decision, comment, nextApproverId}`.
+
+**Option C: Hybrid — Single Approval Node + Post-Approval Action Loop** ⭐ **RECOMMENDED**
+
+The workflow has:
+1. A **single approval node** (the "gate") with `requiredCount: 1` and `approverType: 'dynamic'` using a custom resolver that returns eligible approvers for the activity.
+2. When the approval resolves (approved or rejected), execution advances to:
+   - **Rejected branch:** → `Activities.DenyAuthorization` action → end
+   - **Approved branch:** → `Activities.ProcessApprovalStep` action → condition node checking "needs more approvals?" →
+     - **Yes:** → `Activities.ForwardToNextApprover` action (creates next approval record) → **back to the same approval node** (via a loop edge in the graph)
+     - **No:** → `Activities.ActivateAuthorization` action → notification → end
+
+Wait — the engine doesn't support loop edges either. Let me revise.
+
+**Option D: Action-Driven Approval Chain (No Engine Approval Node)** ⭐ **ACTUAL RECOMMENDATION**
+
+Don't use the engine's built-in approval node at all for the serial chain. Instead:
+
+1. The workflow trigger fires `Activities.AuthorizationRequested`.
+2. An action node calls `Activities.CreateAuthorization` which creates the authorization + first approval record and sends notification.
+3. The workflow instance goes to **WAITING** status (via the existing async action pattern, not the approval node).
+4. When the approver responds (via the existing `AuthorizationApprovalsController::approve/deny`), the controller fires an event that resumes the workflow.
+5. A condition node checks the result: approved or denied?
+6. If denied → `Activities.DenyAuthorization` → notification → end.
+7. If approved → condition: "needs more approvals?" →
+   - Yes: `Activities.ForwardToNextApprover` action (creates next approval record, sends notification) → WAITING again
+   - No: `Activities.ActivateAuthorization` → notification → end
+
+**❌ Problem:** This reinvents the wheel. The "pick next approver" interaction happens OUTSIDE the workflow engine entirely — it's in the existing controller/UI flow. Making the workflow engine orchestrate this would require making every controller action workflow-aware, which is the warrant migration problem all over again but harder.
+
+### 4.2 Final Recommendation: Option B+ (Delegated Serial Chain)
+
+**Use the existing `DefaultAuthorizationManager` as the serial chain orchestrator.** The workflow engine handles the bookends (trigger, final actions, notifications, conditions) but delegates the multi-step approval chain to the existing service.
+
+Architecture:
+
+```
+[Trigger: Activities.AuthorizationRequested]
+    │
+    ▼
+[Action: Activities.CreateAuthorizationRequest]
+  Creates authorization + first approval via AuthorizationManagerInterface::request()
+  Output: {authorizationId, firstApprovalId}
+    │
+    ▼
+[Approval Node: "Authorization Approval Gate"]
+  approverType: 'dynamic'
+  approverConfig: {
+    service: 'Activities\\Services\\AuthorizationApproverResolver',
+    method: 'getEligibleApproverIds'
+  }
+  requiredCount: $.trigger.requiredApprovals  (resolved from activity config)
+  allowParallel: false  (serial)
+  serialPickNext: true  (NEW config flag — see §4.3)
+    │
+    ├── [approved] ──▶ [Action: Activities.ActivateAuthorization]
+    │                     Output: {activated, memberRoleId}
+    │                       │
+    │                       ▼
+    │                  [Action: Activities.NotifyRequester] (status=Approved)
+    │                       │
+    │                       ▼
+    │                     [End]
+    │
+    └── [rejected] ──▶ [Action: Activities.HandleDenial]
+                          Output: {denied}
+                            │
+                            ▼
+                       [Action: Activities.NotifyRequester] (status=Denied)
+                            │
+                            ▼
+                          [End]
+```
+
+### 4.3 The `serialPickNext` Extension
+
+The core insight: we need a **new approval behavior mode** in the workflow engine. Current modes:
+- `allowParallel: true` — any eligible member can respond, threshold-based (warrant pattern)
+- `allowParallel: false` — ... actually this is the same but with `requiredCount: 1`
+
+Neither mode supports "the current responder picks the next responder."
+
+**New approval node config:**
+
+```json
+{
+  "approverType": "dynamic",
+  "approverConfig": {
+    "service": "Activities\\Services\\AuthorizationApproverResolver",
+    "method": "getEligibleApproverIds"
+  },
+  "requiredCount": 3,
+  "serialPickNext": true
+}
+```
+
+**Engine behavior when `serialPickNext: true`:**
+
+1. Approval node creates with `required_count = N`, `approved_count = 0`.
+2. Only one approver is "active" at a time. The approval response API accepts an additional `nextApproverId` field.
+3. When a response is recorded:
+   - If `decision = approve` and `approved_count < required_count`: don't resolve the node yet. Instead, set `approver_config.current_approver_id = nextApproverId` (narrowing the eligible pool to just that one member). The node stays PENDING.
+   - If `decision = approve` and `approved_count >= required_count`: resolve as APPROVED.
+   - If `decision = reject`: resolve as REJECTED immediately (any rejection kills the chain).
+4. The UI for "pick next approver" calls `Activities.GetEligibleApprovers` (existing `availableApproversList` endpoint) and includes the selection in the approval response.
+
+**Engine changes required:**
+- `DefaultWorkflowApprovalManager::recordResponse()` — accept optional `nextApproverId` parameter
+- `WorkflowsController::respondToApproval()` — pass `nextApproverId` from request data
+- `DefaultWorkflowApprovalManager` — when `serialPickNext` is true and more approvals needed, update `approver_config` to `{member_id: nextApproverId, ...original}` and DON'T resolve the approval
+- `WorkflowApproval` entity — add `serial_pick_next` boolean column (or derive from approver_config)
+
+**Why not just use the `member` approver type after each pick?**
+Because the FIRST approver is chosen from the dynamic pool. Only subsequent approvers are "picked." And the eligible pool for picking still needs to be constrained by the activity's `permission_id`. So the dynamic resolver stays active for validation — we just also track "who's currently up."
+
+### 4.4 Approval State Within the Node
+
+For serial-pick-next approvals, the `WorkflowApproval` record accumulates state:
+
+```json
+{
+  "approver_config": {
+    "service": "Activities\\Services\\AuthorizationApproverResolver",
+    "method": "getEligibleApproverIds",
+    "context_key": "trigger.activityId",
+    "current_approver_id": 456,
+    "approval_chain": [
+      {"approver_id": 123, "responded_at": "2026-02-12T10:00:00", "next_picked": 456},
+      {"approver_id": 456, "responded_at": "2026-02-12T14:00:00", "next_picked": null}
+    ]
+  },
+  "required_count": 2,
+  "approved_count": 2,
+  "status": "approved"
+}
+```
+
+When `current_approver_id` is set, the eligibility check becomes:
+```php
+// In isMemberEligible for DYNAMIC type with serialPickNext:
+if ($config['current_approver_id'] ?? null) {
+    return $memberId === (int)$config['current_approver_id'];
+}
+// Otherwise, fall through to normal dynamic resolution
+```
+
+---
+
+## 5. Integration Strategy: Option B — Workflow Wraps Manager
+
+**Decision: Workflow wraps `AuthorizationManagerInterface` methods.** This follows the warrant pattern exactly.
+
+| Component | Role |
+|-----------|------|
+| `AuthorizationManagerInterface` | Business logic contract (unchanged) |
+| `DefaultAuthorizationManager` | Existing implementation (unchanged for non-workflow path) |
+| `ActivitiesWorkflowActions` | NEW — workflow action implementations that delegate to `AuthorizationManagerInterface` |
+| `ActivitiesWorkflowProvider` | NEW — registers triggers, actions, conditions, entities |
+| `AuthorizationApproverResolver` | NEW — dynamic approver resolution service for workflow approval nodes |
+
+**Key constraint:** `DefaultAuthorizationManager` manages its own transactions. Workflow actions must NOT wrap it in another transaction. Follow the `WarrantWorkflowActions` pattern — let the service manage its own txn, workflow handles orchestration.
+
+**Dual-path transition (matching warrant Forward-Only decision):**
+- Existing controller flow (`AuthorizationApprovalsController::approve/deny`) continues to work via `DefaultAuthorizationManager` directly.
+- New workflow path fires trigger → workflow engine → `ActivitiesWorkflowActions` → `AuthorizationManagerInterface`.
+- Sync layer bridges workflow approval data to `activities_authorization_approvals` table (same pattern as `syncWorkflowApprovalToRoster()`).
+- Eventually, the controller path is deprecated in favor of the workflow approval UI.
+
+### 5.1 Controller Integration Points
+
+The existing controllers need minimal changes:
+
+1. **`AuthorizationsController::add/renew`** — After calling `$maService->request()`, fire the `Activities.AuthorizationRequested` event to trigger workflows. If no workflow is configured for this trigger, nothing happens (same as warrants before their workflow was created).
+
+2. **`AuthorizationApprovalsController::approve/deny`** — These continue to call `AuthorizationManagerInterface` directly. The workflow-driven path is separate (uses workflow approval UI, `WorkflowsController::respondToApproval`). During transition, both paths work.
+
+3. **New: `AuthorizationApproverResolver`** — Extracted from `AuthorizationApprovalsController::availableApproversList()`. Shared by both the controller endpoint and the workflow dynamic approver resolution.
+
+---
+
+## 6. Eligible Approver Resolution
+
+### 6.1 New Service: `AuthorizationApproverResolver`
+
+```php
+namespace Activities\Services;
+
+class AuthorizationApproverResolver
+{
+    /**
+     * Get eligible approver member IDs for a workflow approval.
+     * Called by DefaultWorkflowApprovalManager for DYNAMIC approver type.
+     *
+     * @param \App\Model\Entity\WorkflowApproval $approval
+     * @return int[] Member IDs
+     */
+    public function getEligibleApproverIds(WorkflowApproval $approval): array
+    {
+        $config = $approval->approver_config ?? [];
+        $activityId = $config['activity_id'] ?? null;
+        // If a specific approver is currently designated (serial pick-next):
+        if (!empty($config['current_approver_id'])) {
+            return [(int)$config['current_approver_id']];
+        }
+        // Resolve from activity.permission_id
+        $activity = $this->getActivity($activityId);
+        $query = $activity->getApproversQuery(-1000000); // all branches
+        $excludeIds = $config['exclude_member_ids'] ?? [];
+        if (!empty($excludeIds)) {
+            $query->where(['Members.id NOT IN' => $excludeIds]);
+        }
+        return $query->select(['Members.id'])->distinct()
+            ->all()->extract('id')->toArray();
+    }
+}
+```
+
+### 6.2 Context Enrichment
+
+The workflow trigger payload includes `activityId`. The approval node's `approverConfig` references this:
+
+```json
+{
+  "approverType": "dynamic",
+  "approverConfig": {
+    "service": "Activities\\Services\\AuthorizationApproverResolver",
+    "method": "getEligibleApproverIds",
+    "activity_id": "$.trigger.activityId"
+  }
+}
+```
+
+**Note:** The `activity_id` value uses a context reference (`$.trigger.activityId`). The engine's `executeApprovalNode()` needs to resolve these references in `approverConfig` before storing. This is a small engine enhancement — currently `approverConfig` values are stored as-is.
+
+### 6.3 UI Integration
+
+The "pick next approver" dropdown in the workflow approval UI calls the same resolver, filtered by context:
+
+- Endpoint: existing `AuthorizationApprovalsController::availableApproversList()` (for legacy path)
+- New endpoint or enhancement to `WorkflowsController`: return eligible approvers for a workflow approval (for workflow path)
+- The frontend shows a member picker when `serialPickNext: true` in the approval config
+
+---
+
+## 7. Data Flow
+
+### 7.1 Trigger Payload (`$.trigger.*`)
+
+```json
+{
+  "authorizationId": 42,
+  "memberId": 123,
+  "activityId": 7,
+  "activityName": "Heavy Weapons - Single Sword",
+  "approverId": 456,
+  "isRenewal": false,
+  "requiredApprovals": 3
+}
+```
+
+### 7.2 Context After CreateAuthorizationRequest Action
+
+```json
+{
+  "trigger": { ... },
+  "nodes": {
+    "create-auth": {
+      "result": {
+        "authorizationId": 42,
+        "authorizationApprovalId": 101
+      }
+    }
+  }
+}
+```
+
+### 7.3 Context After Approval Gate Resolution
+
+```json
+{
+  "trigger": { ... },
+  "nodes": {
+    "create-auth": { "result": { "authorizationId": 42 } },
+    "approval-gate": {
+      "status": "approved",
+      "approverId": 789,
+      "comment": "Looks good",
+      "decision": "approved"
+    }
+  },
+  "resumeData": {
+    "approverId": 789,
+    "decision": "approve",
+    "comment": "Looks good",
+    "approval_chain": [
+      {"approver_id": 456, "decision": "approve"},
+      {"approver_id": 789, "decision": "approve"},
+      {"approver_id": 321, "decision": "approve"}
+    ]
+  }
+}
+```
+
+### 7.4 Context After ActivateAuthorization Action
+
+```json
+{
+  "nodes": {
+    "activate-auth": {
+      "result": {
+        "activated": true,
+        "memberRoleId": 55
+      }
+    }
+  }
+}
+```
+
+---
+
+## 8. Default Workflow Definition (Visual Designer Graph)
+
+```
+┌─────────────────────────────────────┐
+│  TRIGGER: Activities.               │
+│  AuthorizationRequested             │
+│  Payload: authorizationId,          │
+│  memberId, activityId, approverId,  │
+│  isRenewal, requiredApprovals       │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  ACTION: Activities.                │
+│  CreateAuthorizationRequest         │
+│  Params:                            │
+│    memberId: $.trigger.memberId     │
+│    activityId: $.trigger.activityId │
+│    approverId: $.trigger.approverId │
+│    isRenewal: $.trigger.isRenewal   │
+│  Output: authorizationId,           │
+│          authorizationApprovalId    │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  APPROVAL: Authorization Gate       │
+│  approverType: dynamic              │
+│  service: AuthorizationApprover-    │
+│           Resolver                  │
+│  requiredCount:                     │
+│    $.trigger.requiredApprovals      │
+│  serialPickNext: true               │
+│  allowParallel: false               │
+└──────┬───────────────┬──────────────┘
+       │               │
+  [approved]      [rejected]
+       │               │
+       ▼               ▼
+┌──────────────┐ ┌────────────────────┐
+│ ACTION:      │ │ ACTION:            │
+│ Activities.  │ │ Activities.        │
+│ Activate-    │ │ HandleDenial       │
+│ Authorization│ │ Params:            │
+│ Params:      │ │   authorizationId: │
+│  authId:     │ │     $.trigger.     │
+│   $.trigger. │ │     authorizationId│
+│   authId     │ │   approverId:      │
+│  approverId: │ │     $.resumeData.  │
+│   $.resume   │ │     approverId     │
+│   Data.      │ │   denyReason:      │
+│   approverId │ │     $.resumeData.  │
+└──────┬───────┘ │     comment        │
+       │         └─────────┬──────────┘
+       ▼                   │
+┌──────────────┐           ▼
+│ ACTION:      │  ┌────────────────────┐
+│ Activities.  │  │ ACTION:            │
+│ Notify-      │  │ Activities.        │
+│ Requester    │  │ NotifyRequester    │
+│ (Approved)   │  │ (Denied)           │
+└──────┬───────┘  └─────────┬──────────┘
+       │                    │
+       ▼                    ▼
+    [END]                [END]
+```
+
+**Node count:** 7 (trigger, create action, approval gate, activate action, deny action, 2x notify actions)
+
+---
+
+## 9. Engine Changes Required
+
+### 9.1 `serialPickNext` Support (New Feature)
+
+| File | Change | Size |
+|------|--------|------|
+| `WorkflowApproval` entity | Add `serial_pick_next` boolean property (config-derived, no DB column needed — read from `approver_config`) | S |
+| `DefaultWorkflowApprovalManager::recordResponse()` | Accept optional `?int $nextApproverId`. When `serialPickNext && approved_count < required_count`: update `approver_config.current_approver_id`, append to `approval_chain`, DON'T change status. Return `{approvalStatus: 'pending', needsMore: true}` | M |
+| `DefaultWorkflowApprovalManager::isMemberEligible()` | For DYNAMIC type: check `current_approver_id` first if set | S |
+| `WorkflowsController::respondToApproval()` | Pass `nextApproverId` from request data to `recordResponse()` | S |
+| `executeApprovalNode()` | Resolve `$.path` references in `approverConfig` values before saving | S |
+
+### 9.2 Migration
+
+```sql
+-- No schema changes to workflow_approvals table needed.
+-- serialPickNext and approval_chain are stored in the existing
+-- approver_config JSON column.
+-- 
+-- No changes to activities_* tables needed.
+-- The workflow operates on existing authorization/approval records.
+```
+
+---
+
+## 10. Implementation Plan
+
+### Phase 1: Foundation (Kaylee — Backend)
+**Depends on:** Nothing  
+**Estimated effort:** M
+
+1. **Create `ActivitiesWorkflowProvider`** — Register triggers, actions, conditions, entities following `WarrantWorkflowProvider` pattern. File: `app/plugins/Activities/src/Services/ActivitiesWorkflowProvider.php`
+
+2. **Create `ActivitiesWorkflowActions`** — Implement action methods that delegate to `AuthorizationManagerInterface`. File: `app/plugins/Activities/src/Services/ActivitiesWorkflowActions.php`
+
+3. **Create `AuthorizationApproverResolver`** — Extract eligible approver logic from `AuthorizationApprovalsController::availableApproversList()` into a reusable service. File: `app/plugins/Activities/src/Services/AuthorizationApproverResolver.php`
+
+4. **Register provider in `WorkflowPluginLoader`** — Add `ActivitiesWorkflowProvider::register()` alongside `WarrantWorkflowProvider::register()`.
+
+5. **Wire up trigger firing** — In `AuthorizationsController::add/renew`, after successful `$maService->request()`, dispatch `Activities.AuthorizationRequested` event to `WorkflowEngine::startWorkflow()`.
+
+### Phase 2: Serial Pick-Next Engine Enhancement (Kaylee — Backend)
+**Depends on:** Phase 1  
+**Estimated effort:** M
+
+1. **Extend `DefaultWorkflowApprovalManager::recordResponse()`** — Add `nextApproverId` parameter. Implement serial chain logic when `approver_config.serial_pick_next` is true.
+
+2. **Extend `WorkflowsController::respondToApproval()`** — Accept and pass `next_approver_id` from request data.
+
+3. **Resolve context references in `approverConfig`** — In `DefaultWorkflowEngine::executeApprovalNode()`, resolve `$.path` values in `approverConfig` before saving.
+
+4. **Extend `isMemberEligible()`** — Check `current_approver_id` for serial-pick-next approvals.
+
+### Phase 3: Frontend (Wash — Frontend)
+**Depends on:** Phase 2  
+**Estimated effort:** M
+
+1. **Approval response UI enhancement** — When approval config has `serial_pick_next: true` and more approvals needed, show "Pick Next Approver" dropdown in the workflow approval response form. Fetch eligible approvers from `AuthorizationApproverResolver` via API.
+
+2. **Workflow designer config panel** — Add `serialPickNext` toggle to approval node config panel. Show when `approverType` is `dynamic`.
+
+3. **Eligible approver API endpoint** — Add endpoint to `WorkflowsController` (or reuse existing `availableApproversList`) that returns eligible approvers for a workflow approval, filtered by activity permission.
+
+### Phase 4: Default Workflow Definition (Kaylee — Backend)
+**Depends on:** Phase 2  
+**Estimated effort:** S
+
+1. **Create seed migration** — Insert default "Activities Authorization Approval" workflow definition matching the graph in §8. Set as active but not auto-assigned — administrators opt-in.
+
+2. **Documentation** — Update Activities plugin docs to describe workflow integration, configuration options, and migration from direct-service to workflow-driven approvals.
+
+### Phase 5: Tests (Jayne — Tests)
+**Depends on:** Phase 1, 2, 3  
+**Estimated effort:** M-L
+
+1. **Unit tests for `ActivitiesWorkflowActions`** — Each action method with success/failure cases.
+2. **Unit tests for `AuthorizationApproverResolver`** — Eligible approver resolution with permission constraints, exclusion lists.
+3. **Integration tests for serial-pick-next** — Full chain: request → approve (pick next) → approve (pick next) → activate. Also: request → approve → deny.
+4. **Integration tests for workflow trigger** — Verify `Activities.AuthorizationRequested` event fires and starts workflow instance.
+5. **Regression tests** — Existing `DefaultAuthorizationManager` tests continue to pass (non-workflow path unaffected).
+
+---
+
+## 11. Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| Serial-pick-next engine changes break warrant approval flow | Low | High | Warrant approvals use `allowParallel: true`, never `serialPickNext`. New behavior only activates when flag is true. Feature-flagged. |
+| Dual-path sync complexity (workflow vs direct controller) | Medium | Medium | Follow warrant Forward-Only pattern. Both paths call same `AuthorizationManagerInterface`. No sync layer needed initially — workflow actions call the same service methods. |
+| "Pick next approver" UX in workflow approval form | Medium | Medium | Phase 3 is frontend-only. If delayed, the serial chain works via the existing `AuthorizationApprovalsController` UI — just not through the workflow approval panel. |
+| Activity `permission_id` null for some activities | Low | Low | `AuthorizationApproverResolver` returns empty list if `permission_id` is null. Approval gate blocks until resolved. Validate in workflow definition publish step. |
+
+---
+
+## 12. Decisions Made
+
+1. **Integration strategy: Workflow wraps `AuthorizationManagerInterface` (Option B).** Same pattern as warrants. Manager keeps its business logic; workflow handles orchestration.
+
+2. **Serial approval: New `serialPickNext` approval node behavior.** Not a new node type — an enhancement to existing approval node config. Minimal engine surface area change.
+
+3. **Approver resolution: DYNAMIC approver type with custom resolver service.** `AuthorizationApproverResolver` extracted from controller, shared by workflow and UI.
+
+4. **No DB schema changes.** Serial chain state stored in existing `approver_config` JSON column. No new tables.
+
+5. **Dual-path transition: Forward-Only.** Existing controller flow continues to work. Workflow path is additive. No migration of historical data.
+
+6. **Default workflow is opt-in.** Seeded but not auto-assigned. Administrators explicitly configure activities to use workflow-driven approvals.
+
+---
+
+## 13. What This Does NOT Cover (Scope Boundaries)
+
+- **Migrating existing pending authorizations to workflow instances** — out of scope, same as warrant decision.
+- **Removing `DefaultAuthorizationManager`** — it stays. Workflow actions delegate to it.
+- **Changing the Activities plugin's controller UI** — existing approval queue, mobile approval, etc. continue to work via direct service calls.
+- **Adding workflow triggers for activity CRUD** (create/edit/delete activities) — not requested, not needed.
+- **Bulk/batch authorization workflows** — one authorization per workflow instance. Bulk is a future enhancement.
+
+---
+
+# Decision: Activities Approval UI — Serial Pick-Next Frontend
+
+**Author:** Wash (Frontend Dev)  
+**Date:** 2026-02-12  
+**Status:** Implemented  
+**Requested by:** Josh Handel  
+
+---
+
+## What Was Decided
+
+### Approval Response Pattern: Modal from Grid Row Action
+
+The workflow approval response UI uses a **Bootstrap modal** triggered from a grid row action on the "Pending Approvals" DataverseGrid tab. This follows the `AppSettings` edit pattern (modal type row action with `outlet-btn` data passing).
+
+**Why not inline or a separate page?**
+- The grid already exists and works well for listing approvals
+- Modal keeps the user on the approvals page for fast multi-approval workflows
+- Row action pattern is established (AppSettings, GatheringAttendances use it)
+- Separate page would require a new route and template for minimal benefit
+
+### Autocomplete Endpoint: HTML Response (not JSON)
+
+The `/workflows/eligible-approvers/{approvalId}` endpoint returns **HTML `<li>` elements**, not JSON. This matches how the `ac` (autocomplete) Stimulus controller works — it calls `doFetch()` which sets `innerHTML` on the results list.
+
+This follows the same pattern as `/members/auto-complete` and `/permissions/auto-complete`.
+
+### next_approver_id: Frontend Passes, Backend Not Wired Yet
+
+The form submits `next_approver_id` to `recordApproval()`, and the controller extracts it from request data. However, it is **not yet passed** to `DefaultWorkflowApprovalManager::recordResponse()` because that method's signature doesn't accept it yet (Phase 2 backend work by Kaylee).
+
+When Kaylee updates `recordResponse()` to accept `?int $nextApproverId`, one line changes in the controller.
+
+---
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `assets/js/controllers/workflow-config-panel.js` | `serialPickNext` toggle in `_approvalHTML()` |
+| `assets/js/controllers/workflow-designer-controller.js` | `onSerialPickNextChange()` handler, `serialPickNext` in `updateNodeConfig()` |
+| `assets/js/controllers/approval-response-controller.js` | **NEW** — Stimulus controller for approval modal |
+| `templates/Workflows/approvals.php` | Approval response modal with conditional next-approver picker |
+| `src/KMP/GridColumns/ApprovalsGridColumns.php` | `getRowActions()` — Respond button for pending |
+| `src/Controller/WorkflowsController.php` | `eligibleApprovers()` endpoint, `rowActions` in grid data, `next_approver_id` extraction |
+| `config/routes.php` | `/workflows/eligible-approvers/{approvalId}` route |
+
+---
+
+## For Kaylee
+
+When you add `$nextApproverId` to `recordResponse()`:
+
+```php
+// In WorkflowsController::recordApproval(), change:
+$result = $approvalManager->recordResponse($approvalId, $currentUser->id, $decision, $comment);
+// To:
+$result = $approvalManager->recordResponse($approvalId, $currentUser->id, $decision, $comment, $nextApproverId);
+```
+
+The `$nextApproverId` variable is already extracted from `$this->request->getData('next_approver_id')` in the controller.
+
+---
+
+## For Jayne
+
+Test scenarios for the approval response modal:
+1. Pending approval without serialPickNext — modal shows decision + comment only, no next approver picker
+2. Pending approval with serialPickNext, needs more approvals — "Approve" shows next approver picker, "Reject" hides it
+3. Pending approval with serialPickNext, this is the final approval — next approver picker should NOT appear
+4. Next approver autocomplete returns filtered results from eligible pool
+5. Form submission includes `next_approver_id` when picker is visible and filled
+
+---
+
+# Activities Authorization Workflow — E2E Test Findings
+
+**Author:** Jayne (Tester)
+**Date:** 2026-02-11
+**Status:** For Review
+
+## Summary
+
+Ran E2E Playwright tests against the Activities authorization approval workflow. Overall results: **4/4 test areas PASS**. One finding worth team attention.
+
+## Key Finding: Auth Queue Permission Gating
+
+**Severity:** Medium (may be working as designed, needs confirmation)
+
+The authorization approvals queue at `/activities/authorization-approvals/my-queue` is only accessible to the super-user admin. All other test users — including:
+- **agatha@ampdemo.com** (Local MoAS — should be able to approve authorizations)
+- **haylee@ampdemo.com** (Kingdom MoAS — should be able to approve authorizations)  
+- **devon@ampdemo.com** (Regional Armored — should be able to approve armored authorizations)
+
+...are redirected to `/pages/unauthorized`.
+
+**Root cause:** `AuthorizationApprovalsController::beforeFilter()` calls `$this->Authorization->authorizeModel('myQueue')`, and the associated policy restricts access. The sidebar "Pending Auths" link only appears for admin.
+
+**Question for team:** Is this intentional? If MoAS officers and Armored marshals should be approving authorizations through this queue, the policy needs to be updated. If the intent is that authorization approvals happen through the workflow-based `/workflows/approvals` page instead, then this is working correctly — but we may want to verify that workflow-based auth approvals actually route to the right approvers.
+
+## All Test Results
+
+| # | Test | URL | Result |
+|---|------|-----|--------|
+| 1 | Workflow Designer loads Activities triggers | `/workflows/designer/2` | ✅ PASS |
+| 2a | Workflow approvals page (admin) | `/workflows/approvals` | ✅ PASS |
+| 2b | Auth queue page (admin) | `/activities/authorization-approvals/my-queue` | ✅ PASS (6 pending) |
+| 2c | Auth queue page (agatha) | `/activities/authorization-approvals/my-queue` | ✅ Unauthorized (by design?) |
+| 2d | Auth queue page (devon) | `/activities/authorization-approvals/my-queue` | ✅ Unauthorized (by design?) |
+| 2e | Auth queue page (haylee) | `/activities/authorization-approvals/my-queue` | ✅ Unauthorized (by design?) |
+| 3 | Eligible approvers endpoint | `/workflows/eligible-approvers/1` | ✅ PASS (200, no 500) |
+| 4a | Activities listing | `/activities/activities` | ✅ PASS |
+| 4b | Activity groups | `/activities/activity-groups` | ✅ PASS (7 groups) |
+| 4c | Auth card | `/members/view-card/1` | ✅ PASS |
+| 4d | Workflow definitions | `/workflows` | ✅ PASS |
+| 4e | Workflow instances | `/workflows/instances` | ✅ PASS |
+
+## Screenshots
+
+16 screenshots saved in `test-results/e2e-*.png` for visual verification.
