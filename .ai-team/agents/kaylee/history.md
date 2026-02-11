@@ -126,3 +126,16 @@ Implemented Mal's design for syncing workflow approval data to roster tables. Ke
 📌 Team update (2026-02-10): Warrant roster ↔ workflow sync implemented — 5 files changed, 2 new WarrantManager methods, workflow actions now sync approval data to roster tables before activating/declining. Backwards compatible with direct approval path. — decided by Mal, Kaylee
 
 📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee
+
+### 2026-02-10: Workflow Autocomplete Endpoints
+
+Added 4 backend endpoints for the workflow designer UI's approval node configuration:
+
+1. **RolesController::autoComplete()** — HTML autocomplete search by role name, `data-ac-value` = role name string. Template at `templates/Roles/auto_complete.php`.
+2. **PermissionsController::autoComplete()** — Same pattern for permissions. Template at `templates/Permissions/auto_complete.php`.
+3. **WorkflowsController::policyClasses()** — JSON endpoint scanning `app/src/Policy/` and `plugins/*/src/Policy/` for entity policies (excludes BasePolicy, *TablePolicy, *ControllerPolicy). Returns `[{class, label}]`.
+4. **WorkflowsController::policyActions()** — JSON endpoint using ReflectionClass to list public `can*` methods on a given policy class. Validates class exists, ends with "Policy", and is in a Policy namespace. Returns `[{action, label}]`.
+
+All endpoints use `skipAuthorization()` matching the existing Members autocomplete pattern. Routes: Roles/Permissions via fallback routing, policy endpoints via explicit `/workflows/policy-classes` and `/workflows/policy-actions` routes.
+
+📌 Team update (2026-02-10): Workflow autocomplete endpoints implemented — 4 endpoints for roles, permissions, policy classes, and policy actions. Ready for Wash's frontend integration. — decided by Josh Handel, implemented by Kaylee
