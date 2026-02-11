@@ -227,6 +227,8 @@ return function (RouteBuilder $routes): void {
                 ->setPass(['id']);
             $builder->connect('/create-draft', ['controller' => 'Workflows', 'action' => 'createDraft']);
             $builder->connect('/migrate-instances', ['controller' => 'Workflows', 'action' => 'migrateInstances']);
+            $builder->connect('/policy-classes', ['controller' => 'Workflows', 'action' => 'policyClasses']);
+            $builder->connect('/policy-actions', ['controller' => 'Workflows', 'action' => 'policyActions']);
         });
 
         /**

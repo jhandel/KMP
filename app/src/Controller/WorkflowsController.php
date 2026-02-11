@@ -571,4 +571,132 @@ class WorkflowsController extends AppController
     {
         return $this->approvalManager;
     }
+
+    /**
+     * Return JSON list of entity policy classes in the system.
+     *
+     * @return void
+     */
+    public function policyClasses()
+    {
+        $this->Authorization->skipAuthorization();
+        $this->request->allowMethod(['get']);
+
+        $results = [];
+
+        // Scan app/src/Policy/
+        $appPolicyDir = APP . 'Policy' . DS;
+        if (is_dir($appPolicyDir)) {
+            foreach (glob($appPolicyDir . '*Policy.php') as $file) {
+                $className = basename($file, '.php');
+                if ($this->isEntityPolicy($className)) {
+                    $fqcn = 'App\\Policy\\' . $className;
+                    $results[] = [
+                        'class' => $fqcn,
+                        'label' => $this->policyLabel($className),
+                    ];
+                }
+            }
+        }
+
+        // Scan plugins/*/src/Policy/
+        $pluginsDir = ROOT . DS . 'plugins' . DS;
+        if (is_dir($pluginsDir)) {
+            foreach (glob($pluginsDir . '*/src/Policy/*Policy.php') as $file) {
+                $className = basename($file, '.php');
+                if ($this->isEntityPolicy($className)) {
+                    // Derive plugin name from path
+                    $relative = str_replace($pluginsDir, '', $file);
+                    $pluginName = explode(DS, $relative)[0];
+                    $fqcn = $pluginName . '\\Policy\\' . $className;
+                    $results[] = [
+                        'class' => $fqcn,
+                        'label' => $this->policyLabel($className),
+                    ];
+                }
+            }
+        }
+
+        sort($results);
+        $this->set('policyClasses', $results);
+        $this->viewBuilder()->setOption('serialize', ['policyClasses']);
+        $this->response = $this->response->withType('application/json');
+        $this->viewBuilder()->setClassName('Json');
+    }
+
+    /**
+     * Return JSON list of public 'can*' methods for a given policy class.
+     *
+     * @return void
+     */
+    public function policyActions()
+    {
+        $this->Authorization->skipAuthorization();
+        $this->request->allowMethod(['get']);
+
+        $className = $this->request->getQuery('class');
+        $results = [];
+
+        if (
+            $className
+            && class_exists($className)
+            && str_ends_with($className, 'Policy')
+            && str_contains($className, '\\Policy\\')
+        ) {
+            $reflection = new \ReflectionClass($className);
+            foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+                if (
+                    str_starts_with($method->getName(), 'can')
+                    && $method->getDeclaringClass()->getName() === $className
+                ) {
+                    $action = $method->getName();
+                    $results[] = [
+                        'action' => $action,
+                        'label' => $this->actionLabel($action),
+                    ];
+                }
+            }
+        }
+
+        $this->set('policyActions', $results);
+        $this->viewBuilder()->setOption('serialize', ['policyActions']);
+        $this->response = $this->response->withType('application/json');
+        $this->viewBuilder()->setClassName('Json');
+    }
+
+    /**
+     * Check if a policy class name is an entity policy (not base, table, or controller).
+     */
+    private function isEntityPolicy(string $className): bool
+    {
+        if ($className === 'BasePolicy') {
+            return false;
+        }
+        if (str_ends_with($className, 'TablePolicy')) {
+            return false;
+        }
+        if (str_ends_with($className, 'ControllerPolicy')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Convert PascalCase policy class name to human-readable label.
+     */
+    private function policyLabel(string $className): string
+    {
+        // Split PascalCase into words
+        return trim(preg_replace('/([a-z])([A-Z])/', '$1 $2', $className));
+    }
+
+    /**
+     * Convert camelCase action name to human-readable label.
+     */
+    private function actionLabel(string $action): string
+    {
+        // "canApprove" → "Can Approve"
+        return trim(ucfirst(preg_replace('/([a-z])([A-Z])/', '$1 $2', $action)));
+    }
 }
