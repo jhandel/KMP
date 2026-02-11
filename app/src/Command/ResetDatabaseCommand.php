@@ -62,6 +62,11 @@ class ResetDatabaseCommand extends Command
             $maxAttempts = 30; // Prevent infinite loops
             $attempts = 0;
 
+            // Disable foreign key checks for MySQL/MariaDB to handle circular dependencies
+            if (stripos($driverName, 'mysql') !== false) {
+                $db->execute('SET FOREIGN_KEY_CHECKS = 0');
+            }
+
             // Keep trying to drop tables until all are gone
             while ($remainingTables && $attempts < $maxAttempts) {
                 $attempts++;
@@ -118,6 +123,11 @@ class ResetDatabaseCommand extends Command
                 $io->warning("Could not drop all tables after $maxAttempts attempts.");
 
                 return null;
+            }
+
+            // Re-enable foreign key checks
+            if (stripos($driverName, 'mysql') !== false) {
+                $db->execute('SET FOREIGN_KEY_CHECKS = 1');
             }
 
             $io->success('Database reset.');
