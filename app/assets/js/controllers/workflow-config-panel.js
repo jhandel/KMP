@@ -85,10 +85,40 @@ export default class WorkflowConfigPanel {
             const selected = config.action === a.action ? 'selected' : ''
             options += `<option value="${a.action}" ${selected}>${a.label}</option>`
         })
-        return `<div class="mb-3">
+
+        let html = `<div class="mb-3">
             <label class="form-label">Action</label>
-            <select class="form-select form-select-sm" name="action" data-action="change->workflow-designer#updateNodeConfig">${options}</select>
+            <select class="form-select form-select-sm" name="action"
+                data-action="change->workflow-designer#updateNodeConfig">${options}</select>
         </div>`
+
+        if (config.action) {
+            const action = this.registryData.actions?.find(a => a.action === config.action)
+            if (action?.inputSchema) {
+                html += '<h6 class="mt-3 mb-2 text-muted small">Input Parameters</h6>'
+                const params = config.params || {}
+                for (const [key, meta] of Object.entries(action.inputSchema)) {
+                    const currentVal = params[key] || ''
+                    const escapedVal = this._escapeAttr(currentVal)
+                    const required = meta.required ? '<span class="text-danger">*</span>' : ''
+                    const typeHint = `<span class="text-muted small">(${meta.type})</span>`
+                    const desc = meta.description ? `<small class="form-text text-muted">${meta.description}</small>` : ''
+                    html += `<div class="mb-2">
+                        <label class="form-label form-label-sm mb-0">
+                            ${meta.label || key} ${required} ${typeHint}
+                        </label>
+                        <input type="text" class="form-control form-control-sm"
+                            name="params.${key}" value="${escapedVal}"
+                            placeholder="${meta.description || '$.path or literal value'}"
+                            data-action="change->workflow-designer#updateNodeConfig"
+                            data-variable-picker="true">
+                        ${desc}
+                    </div>`
+                }
+            }
+        }
+
+        return html
     }
 
     _conditionHTML(config) {
@@ -106,7 +136,7 @@ export default class WorkflowConfigPanel {
             })
             options += '</optgroup>'
         }
-        return `<div class="mb-3">
+        let html = `<div class="mb-3">
             <label class="form-label">Condition</label>
             <select class="form-select form-select-sm" name="condition" data-action="change->workflow-designer#updateNodeConfig">${options}</select>
         </div>
@@ -118,6 +148,31 @@ export default class WorkflowConfigPanel {
             <label class="form-label">Expected Value</label>
             <input type="text" class="form-control form-control-sm" name="expectedValue" value="${config.expectedValue || ''}" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>`
+
+        if (config.condition && !config.condition.startsWith('Core.')) {
+            const cond = this.registryData.conditions?.find(c => c.condition === config.condition)
+            if (cond?.inputSchema) {
+                html += '<h6 class="mt-3 mb-2 text-muted small">Condition Parameters</h6>'
+                const params = config.params || {}
+                for (const [key, meta] of Object.entries(cond.inputSchema)) {
+                    const currentVal = params[key] || ''
+                    const escapedVal = this._escapeAttr(currentVal)
+                    const required = meta.required ? '<span class="text-danger">*</span>' : ''
+                    html += `<div class="mb-2">
+                        <label class="form-label form-label-sm mb-0">
+                            ${meta.label || key} ${required} <span class="text-muted small">(${meta.type})</span>
+                        </label>
+                        <input type="text" class="form-control form-control-sm"
+                            name="params.${key}" value="${escapedVal}"
+                            placeholder="$.path or literal value"
+                            data-action="change->workflow-designer#updateNodeConfig"
+                            data-variable-picker="true">
+                    </div>`
+                }
+            }
+        }
+
+        return html
     }
 
     _approvalHTML(config) {
@@ -269,5 +324,10 @@ export default class WorkflowConfigPanel {
             <label class="form-label">Exit Condition</label>
             <input type="text" class="form-control form-control-sm" name="exitCondition" value="${config.exitCondition || ''}" placeholder="Expression to evaluate" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>`
+    }
+
+    _escapeAttr(str) {
+        if (!str) return ''
+        return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     }
 }

@@ -52,9 +52,25 @@ export default class WorkflowVariablePicker {
 
         if (type === 'trigger') {
             const trigger = this.registryData.triggers?.find(t => t.event === config.event)
-            if (trigger?.outputSchema) {
-                for (const [key, meta] of Object.entries(trigger.outputSchema)) {
-                    vars.push({ path: `$.trigger.${key}`, label: `Trigger: ${key}`, type: meta.type || 'string' })
+            if (trigger?.payloadSchema) {
+                const mapping = config.inputMapping
+                if (mapping && typeof mapping === 'object') {
+                    for (const [key, sourcePath] of Object.entries(mapping)) {
+                        const payloadField = trigger.payloadSchema[key] || {}
+                        vars.push({
+                            path: `$.trigger.${key}`,
+                            label: `Trigger: ${payloadField.label || key}`,
+                            type: payloadField.type || 'string'
+                        })
+                    }
+                } else {
+                    for (const [key, meta] of Object.entries(trigger.payloadSchema)) {
+                        vars.push({
+                            path: `$.trigger.${key}`,
+                            label: `Trigger: ${meta.label || key}`,
+                            type: meta.type || 'string'
+                        })
+                    }
                 }
             } else if (config.event) {
                 vars.push({ path: '$.trigger.entity', label: 'Trigger: entity', type: 'object' })
@@ -65,16 +81,27 @@ export default class WorkflowVariablePicker {
             const nodeKey = node.data?.nodeKey || node.name
             if (action?.outputSchema) {
                 for (const [key, meta] of Object.entries(action.outputSchema)) {
-                    vars.push({ path: `$.nodes.${nodeKey}.${key}`, label: `${action.label}: ${key}`, type: meta.type || 'string' })
+                    vars.push({ path: `$.nodes.${nodeKey}.result.${key}`, label: `${action.label}: ${key}`, type: meta.type || 'string' })
                 }
             } else {
                 vars.push({ path: `$.nodes.${nodeKey}.result`, label: `${node.name}: result`, type: 'mixed' })
             }
         } else if (type === 'approval') {
             const nodeKey = node.data?.nodeKey || node.name
-            vars.push({ path: `$.nodes.${nodeKey}.status`, label: `${node.name}: status`, type: 'string' })
-            vars.push({ path: `$.nodes.${nodeKey}.approvedBy`, label: `${node.name}: approvedBy`, type: 'array' })
-            vars.push({ path: `$.nodes.${nodeKey}.comment`, label: `${node.name}: comment`, type: 'string' })
+            const schema = this.registryData?.approvalOutputSchema
+            if (schema) {
+                for (const [key, meta] of Object.entries(schema)) {
+                    vars.push({
+                        path: `$.nodes.${nodeKey}.${key}`,
+                        label: `${node.name}: ${meta.label || key}`,
+                        type: meta.type || 'string'
+                    })
+                }
+            } else {
+                vars.push({ path: `$.nodes.${nodeKey}.status`, label: `${node.name}: status`, type: 'string' })
+                vars.push({ path: `$.nodes.${nodeKey}.approvedBy`, label: `${node.name}: approvedBy`, type: 'array' })
+                vars.push({ path: `$.nodes.${nodeKey}.comment`, label: `${node.name}: comment`, type: 'string' })
+            }
         } else if (type === 'condition') {
             const nodeKey = node.data?.nodeKey || node.name
             vars.push({ path: `$.nodes.${nodeKey}.result`, label: `${node.name}: result`, type: 'boolean' })
@@ -105,11 +132,16 @@ export default class WorkflowVariablePicker {
             }
         })
 
-        variables.push(
-            { path: '$.instance.id', label: 'Instance ID', type: 'integer' },
-            { path: '$.instance.created', label: 'Instance Created', type: 'datetime' },
-            { path: '$.context', label: 'Full Context', type: 'object' }
-        )
+        const builtins = this.registryData?.builtinContext
+        if (builtins && Array.isArray(builtins)) {
+            variables.push(...builtins)
+        } else {
+            variables.push(
+                { path: '$.instance.id', label: 'Instance ID', type: 'integer' },
+                { path: '$.instance.created', label: 'Instance Created', type: 'datetime' },
+                { path: '$.context', label: 'Full Context', type: 'object' }
+            )
+        }
 
         return variables
     }

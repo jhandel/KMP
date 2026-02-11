@@ -14384,10 +14384,37 @@ class WorkflowConfigPanel {
       const selected = config.action === a.action ? 'selected' : '';
       options += `<option value="${a.action}" ${selected}>${a.label}</option>`;
     });
-    return `<div class="mb-3">
+    let html = `<div class="mb-3">
             <label class="form-label">Action</label>
-            <select class="form-select form-select-sm" name="action" data-action="change->workflow-designer#updateNodeConfig">${options}</select>
+            <select class="form-select form-select-sm" name="action"
+                data-action="change->workflow-designer#updateNodeConfig">${options}</select>
         </div>`;
+    if (config.action) {
+      const action = this.registryData.actions?.find(a => a.action === config.action);
+      if (action?.inputSchema) {
+        html += '<h6 class="mt-3 mb-2 text-muted small">Input Parameters</h6>';
+        const params = config.params || {};
+        for (const [key, meta] of Object.entries(action.inputSchema)) {
+          const currentVal = params[key] || '';
+          const escapedVal = this._escapeAttr(currentVal);
+          const required = meta.required ? '<span class="text-danger">*</span>' : '';
+          const typeHint = `<span class="text-muted small">(${meta.type})</span>`;
+          const desc = meta.description ? `<small class="form-text text-muted">${meta.description}</small>` : '';
+          html += `<div class="mb-2">
+                        <label class="form-label form-label-sm mb-0">
+                            ${meta.label || key} ${required} ${typeHint}
+                        </label>
+                        <input type="text" class="form-control form-control-sm"
+                            name="params.${key}" value="${escapedVal}"
+                            placeholder="${meta.description || '$.path or literal value'}"
+                            data-action="change->workflow-designer#updateNodeConfig"
+                            data-variable-picker="true">
+                        ${desc}
+                    </div>`;
+        }
+      }
+    }
+    return html;
   }
   _conditionHTML(config) {
     let options = '<option value="">Select a condition...</option>';
@@ -14404,7 +14431,7 @@ class WorkflowConfigPanel {
       });
       options += '</optgroup>';
     }
-    return `<div class="mb-3">
+    let html = `<div class="mb-3">
             <label class="form-label">Condition</label>
             <select class="form-select form-select-sm" name="condition" data-action="change->workflow-designer#updateNodeConfig">${options}</select>
         </div>
@@ -14416,6 +14443,29 @@ class WorkflowConfigPanel {
             <label class="form-label">Expected Value</label>
             <input type="text" class="form-control form-control-sm" name="expectedValue" value="${config.expectedValue || ''}" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>`;
+    if (config.condition && !config.condition.startsWith('Core.')) {
+      const cond = this.registryData.conditions?.find(c => c.condition === config.condition);
+      if (cond?.inputSchema) {
+        html += '<h6 class="mt-3 mb-2 text-muted small">Condition Parameters</h6>';
+        const params = config.params || {};
+        for (const [key, meta] of Object.entries(cond.inputSchema)) {
+          const currentVal = params[key] || '';
+          const escapedVal = this._escapeAttr(currentVal);
+          const required = meta.required ? '<span class="text-danger">*</span>' : '';
+          html += `<div class="mb-2">
+                        <label class="form-label form-label-sm mb-0">
+                            ${meta.label || key} ${required} <span class="text-muted small">(${meta.type})</span>
+                        </label>
+                        <input type="text" class="form-control form-control-sm"
+                            name="params.${key}" value="${escapedVal}"
+                            placeholder="$.path or literal value"
+                            data-action="change->workflow-designer#updateNodeConfig"
+                            data-variable-picker="true">
+                    </div>`;
+        }
+      }
+    }
+    return html;
   }
   _approvalHTML(config) {
     // Build initSelection for whichever approver type is active
@@ -14555,6 +14605,10 @@ class WorkflowConfigPanel {
             <label class="form-label">Exit Condition</label>
             <input type="text" class="form-control form-control-sm" name="exitCondition" value="${config.exitCondition || ''}" placeholder="Expression to evaluate" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
         </div>`;
+  }
+  _escapeAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 }
 
@@ -15114,11 +15168,36 @@ class WorkflowDesignerController extends _hotwired_stimulus__WEBPACK_IMPORTED_MO
     const nodeData = this.editor.getNodeFromId(nodeId);
     if (!nodeData.data) nodeData.data = {};
     if (!nodeData.data.config) nodeData.data.config = {};
+    const newParams = {};
+    let hasParams = false;
     for (const [key, value] of formData.entries()) {
-      nodeData.data.config[key] = value;
+      if (key.startsWith('params.')) {
+        const paramKey = key.substring(7);
+        newParams[paramKey] = value;
+        hasParams = true;
+      } else {
+        nodeData.data.config[key] = value;
+      }
+    }
+    if (hasParams) {
+      nodeData.data.config.params = newParams;
     }
     nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true;
     this.editor.updateNodeDataFromId(nodeId, nodeData.data);
+
+    // If action or condition changed, re-render config panel to show new inputSchema fields
+    const changedField = event.target?.name;
+    if (changedField === 'action' || changedField === 'condition') {
+      const updatedNode = this.editor.getNodeFromId(nodeId);
+      if (this.hasNodeConfigTarget && this._configPanel) {
+        this.nodeConfigTarget.innerHTML = this._configPanel.renderConfigHTML(nodeId, updatedNode);
+        if (this._variablePicker) {
+          this._variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor);
+        }
+      }
+    } else if (this._variablePicker && this.hasNodeConfigTarget) {
+      this._variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor);
+    }
   }
   onConnectionCreated(connection) {
     // Validate connection rules
@@ -15855,13 +15934,25 @@ class WorkflowVariablePicker {
     const vars = [];
     if (type === 'trigger') {
       const trigger = this.registryData.triggers?.find(t => t.event === config.event);
-      if (trigger?.outputSchema) {
-        for (const [key, meta] of Object.entries(trigger.outputSchema)) {
-          vars.push({
-            path: `$.trigger.${key}`,
-            label: `Trigger: ${key}`,
-            type: meta.type || 'string'
-          });
+      if (trigger?.payloadSchema) {
+        const mapping = config.inputMapping;
+        if (mapping && typeof mapping === 'object') {
+          for (const [key, sourcePath] of Object.entries(mapping)) {
+            const payloadField = trigger.payloadSchema[key] || {};
+            vars.push({
+              path: `$.trigger.${key}`,
+              label: `Trigger: ${payloadField.label || key}`,
+              type: payloadField.type || 'string'
+            });
+          }
+        } else {
+          for (const [key, meta] of Object.entries(trigger.payloadSchema)) {
+            vars.push({
+              path: `$.trigger.${key}`,
+              label: `Trigger: ${meta.label || key}`,
+              type: meta.type || 'string'
+            });
+          }
         }
       } else if (config.event) {
         vars.push({
@@ -15881,7 +15972,7 @@ class WorkflowVariablePicker {
       if (action?.outputSchema) {
         for (const [key, meta] of Object.entries(action.outputSchema)) {
           vars.push({
-            path: `$.nodes.${nodeKey}.${key}`,
+            path: `$.nodes.${nodeKey}.result.${key}`,
             label: `${action.label}: ${key}`,
             type: meta.type || 'string'
           });
@@ -15895,21 +15986,32 @@ class WorkflowVariablePicker {
       }
     } else if (type === 'approval') {
       const nodeKey = node.data?.nodeKey || node.name;
-      vars.push({
-        path: `$.nodes.${nodeKey}.status`,
-        label: `${node.name}: status`,
-        type: 'string'
-      });
-      vars.push({
-        path: `$.nodes.${nodeKey}.approvedBy`,
-        label: `${node.name}: approvedBy`,
-        type: 'array'
-      });
-      vars.push({
-        path: `$.nodes.${nodeKey}.comment`,
-        label: `${node.name}: comment`,
-        type: 'string'
-      });
+      const schema = this.registryData?.approvalOutputSchema;
+      if (schema) {
+        for (const [key, meta] of Object.entries(schema)) {
+          vars.push({
+            path: `$.nodes.${nodeKey}.${key}`,
+            label: `${node.name}: ${meta.label || key}`,
+            type: meta.type || 'string'
+          });
+        }
+      } else {
+        vars.push({
+          path: `$.nodes.${nodeKey}.status`,
+          label: `${node.name}: status`,
+          type: 'string'
+        });
+        vars.push({
+          path: `$.nodes.${nodeKey}.approvedBy`,
+          label: `${node.name}: approvedBy`,
+          type: 'array'
+        });
+        vars.push({
+          path: `$.nodes.${nodeKey}.comment`,
+          label: `${node.name}: comment`,
+          type: 'string'
+        });
+      }
     } else if (type === 'condition') {
       const nodeKey = node.data?.nodeKey || node.name;
       vars.push({
@@ -15940,19 +16042,24 @@ class WorkflowVariablePicker {
         variables.push(...this.getNodeOutputSchema(node));
       }
     });
-    variables.push({
-      path: '$.instance.id',
-      label: 'Instance ID',
-      type: 'integer'
-    }, {
-      path: '$.instance.created',
-      label: 'Instance Created',
-      type: 'datetime'
-    }, {
-      path: '$.context',
-      label: 'Full Context',
-      type: 'object'
-    });
+    const builtins = this.registryData?.builtinContext;
+    if (builtins && Array.isArray(builtins)) {
+      variables.push(...builtins);
+    } else {
+      variables.push({
+        path: '$.instance.id',
+        label: 'Instance ID',
+        type: 'integer'
+      }, {
+        path: '$.instance.created',
+        label: 'Instance Created',
+        type: 'datetime'
+      }, {
+        path: '$.context',
+        label: 'Full Context',
+        type: 'object'
+      });
+    }
     return variables;
   }
 

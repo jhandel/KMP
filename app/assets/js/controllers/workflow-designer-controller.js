@@ -508,11 +508,39 @@ class WorkflowDesignerController extends Controller {
         if (!nodeData.data) nodeData.data = {}
         if (!nodeData.data.config) nodeData.data.config = {}
 
+        const newParams = {}
+        let hasParams = false
+
         for (const [key, value] of formData.entries()) {
-            nodeData.data.config[key] = value
+            if (key.startsWith('params.')) {
+                const paramKey = key.substring(7)
+                newParams[paramKey] = value
+                hasParams = true
+            } else {
+                nodeData.data.config[key] = value
+            }
         }
+
+        if (hasParams) {
+            nodeData.data.config.params = newParams
+        }
+
         nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true
         this.editor.updateNodeDataFromId(nodeId, nodeData.data)
+
+        // If action or condition changed, re-render config panel to show new inputSchema fields
+        const changedField = event.target?.name
+        if (changedField === 'action' || changedField === 'condition') {
+            const updatedNode = this.editor.getNodeFromId(nodeId)
+            if (this.hasNodeConfigTarget && this._configPanel) {
+                this.nodeConfigTarget.innerHTML = this._configPanel.renderConfigHTML(nodeId, updatedNode)
+                if (this._variablePicker) {
+                    this._variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+                }
+            }
+        } else if (this._variablePicker && this.hasNodeConfigTarget) {
+            this._variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+        }
     }
 
     onConnectionCreated(connection) {
