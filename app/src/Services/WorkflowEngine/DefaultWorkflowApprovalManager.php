@@ -140,6 +140,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                         'needsMore' => true,
                         'instanceId' => $approval->workflow_instance_id,
                         'nodeId' => $approval->node_id,
+                        'nextApproverId' => $nextApproverId,
                     ]);
                 }
 
@@ -150,11 +151,18 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                     }
                 }
 
-                return new ServiceResult(true, null, [
+                $returnData = [
                     'approvalStatus' => $approval->status,
                     'instanceId' => $approval->workflow_instance_id,
                     'nodeId' => $approval->node_id,
-                ]);
+                ];
+
+                // Flag parallel non-final approvals so the controller can fire intermediate actions
+                if ($approval->status === WorkflowApproval::STATUS_PENDING) {
+                    $returnData['needsMore'] = true;
+                }
+
+                return new ServiceResult(true, null, $returnData);
             });
         } catch (\Exception $e) {
             Log::error("Error recording approval response: {$e->getMessage()}");

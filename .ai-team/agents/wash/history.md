@@ -269,3 +269,19 @@ Completed 9 documentation tasks (8 modified, 1 no-change-needed):
 - Bootstrap Icons version is 1.11.3 (from CSS header), not managed via npm
 - Only Waivers plugin CSS is auto-compiled; other plugins need manual webpack.mix.js entries
 - Service files (assets/js/services/) are also bundled into controllers.js
+
+### 2026-02-12: Third Output Port on Approval Nodes (`on_each_approval`)
+
+Added a third output port to approval nodes in the workflow designer, per Mal's architecture decision for intermediate approval actions.
+
+#### Changes
+- **`getNodePorts()`**: Approval outputs changed from 2 → 3.
+- **`getPortLabel()`**: Added `'on_each_approval'` as third port label (index 2). This is the engine-facing name used in edge data.
+- **`buildNodeHTML()`**: Approval nodes now render 3 port labels instead of sharing the 2-label block with condition/loop. Pulled approval into its own rendering block. Labels: "Approved" (green), "Rejected" (red), "Each Step" (blue).
+- **CSS**: Added `.wf-port-label-mid` class — blue (#2563eb on #eff6ff) to visually distinguish the intermediate port from the terminal approved/rejected ports. Updated both `assets/css/` and `webroot/css/`.
+
+#### UX Decisions
+- **UI label**: "Each Step" — short, clear, tells the user this fires on each individual approval step, not at the end. Avoids jargon like "on_each_approval" in the visual designer.
+- **Port name (engine-facing)**: `on_each_approval` — matches what the backend engine looks for in edge traversal.
+- **Color**: Blue for the third label. Green = success, red = failure, blue = intermediate/informational. Consistent mental model.
+- **Backward compat**: Existing 2-port workflows still render correctly — `getPortLabel()` returns by array index, and Drawflow handles extra ports gracefully. Old workflows without edges to port 3 simply don't fire anything on that port.

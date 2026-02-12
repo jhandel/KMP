@@ -307,7 +307,7 @@ class WorkflowDesignerController extends Controller {
 
         return this.editor.addNode(
             nodeKey, inputs, outputs,
-            x, y, nodeKey,
+            x, y, `${nodeKey} wf-type-${type}`,
             { type, config, nodeKey },
             html
         )
@@ -318,7 +318,7 @@ class WorkflowDesignerController extends Controller {
             case 'trigger': return { inputs: 0, outputs: 1 }
             case 'action': return { inputs: 1, outputs: 1 }
             case 'condition': return { inputs: 1, outputs: 2 }
-            case 'approval': return { inputs: 1, outputs: 2 }
+            case 'approval': return { inputs: 1, outputs: 3 }
             case 'fork': return { inputs: 1, outputs: 2 }
             case 'join': return { inputs: 2, outputs: 1 }
             case 'loop': return { inputs: 1, outputs: 2 }
@@ -361,16 +361,22 @@ class WorkflowDesignerController extends Controller {
         else if (config.condition) description = config.condition
 
         let portLabelsHtml = ''
-        if (['condition', 'approval', 'loop'].includes(type)) {
+        if (['condition', 'loop'].includes(type)) {
             const labels = {
                 condition: ['True', 'False'],
-                approval: ['Approved', 'Rejected'],
                 loop: ['Continue', 'Exit'],
             }
             const pair = labels[type]
             portLabelsHtml = `<div class="wf-port-labels">
                 <span class="wf-port-label wf-port-label-yes">${pair[0]}</span>
                 <span class="wf-port-label wf-port-label-no">${pair[1]}</span>
+            </div>`
+        }
+        if (type === 'approval') {
+            portLabelsHtml = `<div class="wf-port-labels">
+                <span class="wf-port-label wf-port-label-yes">Approved</span>
+                <span class="wf-port-label wf-port-label-no">Rejected</span>
+                <span class="wf-port-label wf-port-label-mid">Each Step</span>
             </div>`
         }
         if (type === 'fork') {
@@ -807,7 +813,7 @@ class WorkflowDesignerController extends Controller {
             trigger: ['default'],
             action: ['default'],
             condition: ['true', 'false'],
-            approval: ['approved', 'rejected'],
+            approval: ['approved', 'rejected', 'on_each_approval'],
             loop: ['continue', 'exit'],
             fork: ['path-1', 'path-2', 'path-3', 'path-4'],
             delay: ['default'],
@@ -842,7 +848,7 @@ class WorkflowDesignerController extends Controller {
 
             const drawflowId = this.editor.addNode(
                 nodeKey, inputs, outputs,
-                pos.x, pos.y, nodeKey,
+                pos.x, pos.y, `${nodeKey} wf-type-${nodeDef.type}`,
                 { type: nodeDef.type, config: nodeDef.config || {}, nodeKey, label: nodeDef.label || '' },
                 html
             )

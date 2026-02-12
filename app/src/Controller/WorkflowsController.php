@@ -517,6 +517,21 @@ class WorkflowsController extends AppController
                     ]
                 );
             }
+
+            // Fire intermediate actions for non-final approvals
+            if (!empty($data['needsMore'])) {
+                $engine = $this->getWorkflowEngine();
+                $engine->fireIntermediateApprovalActions(
+                    $data['instanceId'],
+                    $data['nodeId'],
+                    [
+                        'approverId' => $currentUser->id,
+                        'decision' => $decision,
+                        'comment' => $comment ?? null,
+                        'nextApproverId' => $data['nextApproverId'] ?? null,
+                    ]
+                );
+            }
         }
 
         if ($this->request->is('ajax')) {

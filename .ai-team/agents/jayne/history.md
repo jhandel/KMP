@@ -53,6 +53,28 @@ Created `app/tests/TestCase/Services/WarrantManager/WarrantRosterSyncTest.php` �
 
 📌 Team update (2026-02-10): Warrant roster workflow sync implemented — decided by Mal, implemented by Kaylee
 
+### 2026-02-12: Intermediate Approval Actions (on_each_approval) Tests — Complete
+
+Created `app/tests/TestCase/Services/WorkflowEngine/IntermediateApprovalActionsTest.php` — 6 tests written against the spec for `fireIntermediateApprovalActions()`. All 6 currently SKIPPED (method not yet implemented by Kaylee). Existing 72 engine tests still pass.
+
+**Tests written:**
+1. `testSerialIntermediateApprovalFiresOnEachApprovalTargets` — 3-approval serial workflow. After 1st and 2nd approvals: on_each_approval targets execute, instance stays WAITING. After 3rd (final): approved targets execute, instance completes, on_each_approval does NOT fire.
+2. `testParallelIntermediateApprovalFiresOnEachApprovalTargets` — Same pattern with parallel approval (requiredCount=3). Intermediate approvals 1 & 2 fire on_each_approval; approval 3 fires approved.
+3. `testNoOnEachApprovalEdgesBackwardCompatible` — Approval node with only approved/rejected outputs. fireIntermediateApprovalActions succeeds without error, no actions fire.
+4. `testRejectionDoesNotFireOnEachApproval` — Rejection routes through rejected port. on_each_approval never fires. end_ok never reached.
+5. `testIntermediateApprovalContextInjection` — Verifies approvedCount, requiredCount, approverId, decision injected into `$.nodes.<nodeId>.*` context. Action service receives the injected context.
+6. `testSingleApprovalGateOnEachApprovalNeverFires` — requiredCount=1, on_each_approval wired but never fires because the only approval is the final one.
+
+**Testing patterns used/established:**
+- `IntermediateActionTracker` — static call-recording dummy action registered via `WorkflowActionRegistry::register()` in setUp. Tracks invocations with context and config for assertion. Reset via `IntermediateActionTracker::reset()` per test. Useful pattern for any test that needs to verify action node execution without real side effects.
+- `requireIntermediateMethod()` guard — uses `markTestSkipped()` when the method doesn't exist yet. Tests are visible in the suite as SKIPPED until implementation lands, then auto-activate. Good pattern for spec-first testing.
+- Tests verify behavior from THREE angles: (a) tracker call count, (b) instance state in DB, (c) execution logs and context in DB. Triple-redundant verification catches subtle implementation bugs.
+
+**Edge cases discovered:**
+- Cycle detection: `fireIntermediateApprovalActions()` must reset `visitedNodes` (like `startWorkflow`/`resumeWorkflow` do), otherwise calling it twice on the same instance would fail the second time when the notify_action node is "already visited." Test 1 implicitly covers this by calling the method twice.
+- Static registry pollution: `WorkflowActionRegistry` is static — registering test actions persists across ALL tests in the process. Used `self::$actionRegistered` flag to register once, and a unique action name (`TestIntermediate.Track`) to avoid collisions with real actions.
+- `on_each_approval` with end-node targets: If someone wires `on_each_approval` to an `end` node, the normal `executeEndNode` would try to complete the workflow. The implementation must handle this — either by executing targets in a non-finalizing context or by filtering node types. Our tests use action-type targets (the realistic case).
+
 ### 2026-02-10: Approval Node Context Tests — Complete
 
 Added 4 tests to `app/tests/TestCase/Services/WorkflowEngine/DefaultWorkflowEngineTest.php` verifying `resumeWorkflow()` populates `$context['nodes'][$nodeId]` for approval nodes.

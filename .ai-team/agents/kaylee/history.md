@@ -131,6 +131,35 @@ Created `WorkflowApproverResolverRegistry` following the same static registry pa
 **Key pattern:** `approver_config.service` can be either a registry key (looked up via `getResolver()`) or a fully qualified class name (backward compat). Registry entry provides `serviceClass` and default `serviceMethod`.
 
 📌 Team update (2026-02-12): WorkflowApproverResolverRegistry created. Plugins register dynamic approver resolvers for designer dropdown. Engine does registry-first lookup with FQCN fallback. 261 workflow tests pass. — built by Kaylee
+
+### 2026-02-13: Intermediate Approval Actions (on_each_approval port)
+
+**Feature:** Added third output port `on_each_approval` to approval nodes. When a non-final approval is recorded (serial pick-next intermediate step, or parallel approval that hasn't reached requiredCount), the engine fires actions connected to this port, then returns the node to WAITING state. Existing `approved`/`rejected` ports fire only on final resolution.
+
+**Changes (5 files):**
+
+1. **WorkflowEngineInterface** — Added `fireIntermediateApprovalActions(int $instanceId, string $nodeId, array $approvalData): ServiceResult` method.
+
+2. **DefaultWorkflowEngine** — Implemented `fireIntermediateApprovalActions()`. Key design decisions:
+   - Executes intermediate action nodes **synchronously and directly** (resolves service from registry, calls method, logs execution) rather than using `executeNode()`. This avoids the async-action status corruption problem: if `executeNode()` handled an `isAsync` action, it would set instance to WAITING and queue a WorkflowResume job — when that job runs later, `resumeWorkflow()` changes instance to RUNNING, and no subsequent node resets it to WAITING, leaving the instance stuck in RUNNING while the approval gate is still pending.
+   - Context injection: populates `context['nodes'][$nodeId]` with approvedCount, requiredCount, approverId, nextApproverId, approvalChain, decision, comment. Uses `approvalData` parameter values when present, falls back to DB approval record.
+   - Instance stays WAITING throughout — never transitions to RUNNING.
+   - Approval node's execution log stays WAITING — never marked completed.
+   - Approval node stays in `active_nodes` — never removed.
+
+3. **DefaultWorkflowApprovalManager** — Added `needsMore: true` to return data for parallel non-final approvals (when status remains PENDING after recording a response). Also added `nextApproverId` to the serial pick-next return data for controller passthrough.
+
+4. **WorkflowsController** — After existing `if (approved/rejected) → resumeWorkflow` block, added `if (!empty($data['needsMore'])) → fireIntermediateApprovalActions()` call.
+
+5. **SeedWorkflowDefinitions** — Added `on_each_approval` port to activities-authorization `approval-gate` node targeting new `action-notify-step` node. Notification uses `Activities.NotifyRequester` with `status: 'pending'` and context-resolved `approverId`/`nextApproverId` from `$.nodes.approval-gate.*`.
+
+**Key pattern: Direct service invocation for intermediate actions (not executeNode)**
+When firing side-effect actions at a lifecycle point that shouldn't change the workflow's state machine position, invoke the action service directly rather than using the full `executeNode()` traversal machinery. This prevents: (1) async actions corrupting instance status, (2) output port traversal inadvertently advancing the graph, (3) the node being incorrectly removed from active_nodes.
+
+**Edge case: async action resume orphans.** If the intermediate notification action were async (executeNode path), the queued WorkflowResume job would later set instance to RUNNING and leave it there — breaking the pending approval. The direct invocation approach eliminates this entirely.
+
+📌 Team update (2026-02-13): Intermediate approval actions implemented (on_each_approval port). 5 files changed, 267 workflow tests pass. Direct service invocation pattern avoids async status corruption. — built by Kaylee
+
 ### 2026-02-10: Backend Architecture (summarized from deep dive)
 
 #### Service Layer
@@ -248,3 +277,41 @@ Completed 13 documentation tasks fixing inaccuracies found during codebase revie
 
 #### Pattern Observed
 Docs were consistently wrong about: DI registrations (showing services that aren't registered), session config structure (CakePHP uses flat `ini` block not nested objects), and event names (fictional ActiveWindow events). These likely came from AI-generated docs that assumed patterns rather than reading actual source.
+
+### 2026-02-13: Authorization Approval ID Investigation
+
+**Question:** Josh asked what the "Authorization Approval ID" field is on the "Handle Authorization Denial" action and whether the workflow engine needs changes.
+
+**Finding: The inputSchema is misleading — the action doesn't actually use `authorizationApprovalId`.**
+
+The `Activities.HandleDenial` action registration (in `ActivitiesWorkflowProvider`) declares `authorizationApprovalId` in its inputSchema, but:
+1. The actual `handleDenial()` method in `ActivitiesWorkflowActions` accepts `authorizationId` (not `authorizationApprovalId`) and looks up the pending approval record by `authorization_id` internally.
+2. The seed workflow definition passes `authorizationId: '$.trigger.authorizationId'` — never passes `authorizationApprovalId`.
+3. The old controller flow (`AuthorizationApprovalsController::deny()`) takes the `authorization_approvals.id` directly from the route/form, but the workflow action was designed to avoid this — it resolves the pending approval from the authorization_id instead.
+
+**What `authorization_approvals` is:**
+- Table: `activities_authorization_approvals`
+- Columns: id, authorization_id, approver_id, authorization_token, requested_on, responded_on, approved, approver_notes
+- It's the Activities plugin's own approval tracking table (separate from `workflow_approvals`)
+- The old deny flow: controller gets `authorization_approvals.id` from route → calls `AuthorizationManager::deny($approvalId, $approverId, $reason)` → loads approval + contained authorization, marks denied
+
+**Current APPROVAL_OUTPUT_SCHEMA (in WorkflowActionRegistry):**
+- `status`, `approverId`, `comment`, `rejectionComment`, `decision`
+- Available at `$.nodes.<approvalNodeId>.*`
+- Does NOT include any Activities-specific IDs — and doesn't need to.
+
+**Resolution:** The inputSchema on `Activities.HandleDenial` has a bug — it lists `authorizationApprovalId` as a required field, but the implementation uses `authorizationId`. The schema should be corrected to match the implementation:
+- Remove `authorizationApprovalId` from inputSchema
+- Add `authorizationId` (which is already what the seed passes and the code resolves)
+- No changes needed to the workflow engine's APPROVAL_OUTPUT_SCHEMA
+- No changes needed to the seed definition (it already correctly passes `authorizationId`)
+
+**Key file paths:**
+- Provider registration: `app/plugins/Activities/src/Services/ActivitiesWorkflowProvider.php` (lines 130-144)
+- Action implementation: `app/plugins/Activities/src/Services/ActivitiesWorkflowActions.php` (lines 146-182)
+- Old controller deny: `app/plugins/Activities/src/Controller/AuthorizationApprovalsController.php` (lines 676-707)
+- Service deny method: `app/plugins/Activities/src/Services/DefaultAuthorizationManager.php` (lines 422-467)
+- Seed definition: `app/config/Migrations/20260209170000_SeedWorkflowDefinitions.php` (lines 297-312)
+- APPROVAL_OUTPUT_SCHEMA: `app/src/Services/WorkflowRegistry/WorkflowActionRegistry.php` (lines 26-32)
+
+📌 Team update (2026-02-13): Authorization Approval ID investigation — it's a misleading inputSchema bug, not a missing engine feature. The HandleDenial action uses authorizationId (not authorizationApprovalId). Schema needs correction. No workflow engine changes needed. — investigated by Kaylee

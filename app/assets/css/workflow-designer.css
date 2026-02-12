@@ -272,7 +272,7 @@
     background: #667085;
 }
 
-/* Typed output ports */
+/* Typed output ports (legacy class-based) */
 .drawflow .drawflow-node .output.wf-port-true,
 .drawflow .drawflow-node .output.wf-port-approved {
     background: #16a34a;
@@ -282,6 +282,20 @@
 .drawflow .drawflow-node .output.wf-port-rejected {
     background: #dc2626;
 }
+
+/* Approval node output connectors: green / red / blue */
+.drawflow .drawflow-node.wf-type-approval .output.output_1 { background: #16a34a; }
+.drawflow .drawflow-node.wf-type-approval .output.output_2 { background: #dc2626; }
+.drawflow .drawflow-node.wf-type-approval .output.output_3 { background: #2563eb; }
+.drawflow .drawflow-node.wf-type-approval .output.output_1:hover { background: #15803d; }
+.drawflow .drawflow-node.wf-type-approval .output.output_2:hover { background: #b91c1c; }
+.drawflow .drawflow-node.wf-type-approval .output.output_3:hover { background: #1d4ed8; }
+
+/* Condition node output connectors: green (true) / red (false) */
+.drawflow .drawflow-node.wf-type-condition .output.output_1 { background: #16a34a; }
+.drawflow .drawflow-node.wf-type-condition .output.output_2 { background: #dc2626; }
+.drawflow .drawflow-node.wf-type-condition .output.output_1:hover { background: #15803d; }
+.drawflow .drawflow-node.wf-type-condition .output.output_2:hover { background: #b91c1c; }
 
 /* --- Connections --- */
 .drawflow .connection .main-path {
@@ -429,6 +443,11 @@
 .wf-port-label-no {
     background: #fef2f2;
     color: #dc2626;
+}
+
+.wf-port-label-mid {
+    background: #eff6ff;
+    color: #2563eb;
 }
 
 /* ----- Multi-select ----- */

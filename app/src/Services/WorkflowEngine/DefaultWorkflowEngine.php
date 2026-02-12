@@ -1439,4 +1439,154 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         return $latestLog ? $latestLog->node_id : ($inputSources[0] ?? 'unknown');
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function fireIntermediateApprovalActions(
+        int $instanceId,
+        string $nodeId,
+        array $approvalData,
+    ): ServiceResult {
+        $this->visitedNodes = [];
+        $this->executionDepth = 0;
+
+        $connection = ConnectionManager::get('default');
+        try {
+            return $connection->transactional(function () use ($instanceId, $nodeId, $approvalData) {
+                $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+                $instance = $instancesTable->get($instanceId, contain: ['WorkflowVersions']);
+
+                if ($instance->status !== WorkflowInstance::STATUS_WAITING) {
+                    return new ServiceResult(false, "Instance {$instanceId} is not in waiting state.");
+                }
+
+                $definition = $instance->workflow_version->definition;
+
+                // Load current approval to get progress counts
+                $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+                $approval = $approvalsTable->find()
+                    ->where([
+                        'workflow_instance_id' => $instanceId,
+                        'node_id' => $nodeId,
+                        'status' => WorkflowApproval::STATUS_PENDING,
+                    ])
+                    ->first();
+
+                // Inject approval progress into context for intermediate action nodes.
+                // Use values from approvalData when present; fall back to DB approval record.
+                $context = $instance->context ?? [];
+                if (!isset($context['nodes'])) {
+                    $context['nodes'] = [];
+                }
+                $context['nodes'][$nodeId] = [
+                    'approvedCount' => $approvalData['approvedCount'] ?? ($approval ? $approval->approved_count : 0),
+                    'requiredCount' => $approvalData['requiredCount'] ?? ($approval ? $approval->required_count : 1),
+                    'approverId' => $approvalData['approverId'] ?? null,
+                    'nextApproverId' => $approvalData['nextApproverId'] ?? null,
+                    'approvalChain' => $approvalData['approvalChain'] ?? ($approval ? ($approval->approver_config['approval_chain'] ?? []) : []),
+                    'decision' => $approvalData['decision'] ?? 'approve',
+                    'comment' => $approvalData['comment'] ?? null,
+                ];
+                $instance->context = $context;
+
+                // Get targets from on_each_approval port
+                $targets = $this->getNodeOutputTargets($definition, $nodeId, 'on_each_approval');
+
+                if (empty($targets)) {
+                    // No intermediate actions configured — just save context and return
+                    $this->updateInstance($instance, []);
+
+                    return new ServiceResult(true, null, ['instanceId' => $instanceId, 'intermediateActionsRun' => 0]);
+                }
+
+                // Execute each target action node directly (synchronous, non-finalizing)
+                $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
+                $actionsRun = 0;
+
+                foreach ($targets as $targetNodeId) {
+                    $targetNode = $definition['nodes'][$targetNodeId] ?? null;
+                    if (!$targetNode) {
+                        Log::warning("WorkflowEngine: Intermediate action target '{$targetNodeId}' not found in definition.");
+                        continue;
+                    }
+
+                    $targetType = $targetNode['type'] ?? 'unknown';
+                    if ($targetType !== 'action') {
+                        Log::warning("WorkflowEngine: Intermediate action target '{$targetNodeId}' is type '{$targetType}', expected 'action'.");
+                        continue;
+                    }
+
+                    $actionName = $targetNode['config']['action'] ?? null;
+                    if (!$actionName) {
+                        Log::warning("WorkflowEngine: Intermediate action node '{$targetNodeId}' has no action configured.");
+                        continue;
+                    }
+
+                    $actionConfig = WorkflowActionRegistry::getAction($actionName);
+                    if (!$actionConfig) {
+                        Log::warning("WorkflowEngine: Action '{$actionName}' not found in registry for intermediate execution.");
+                        continue;
+                    }
+
+                    // Create execution log for this intermediate action
+                    $log = $logsTable->newEntity([
+                        'workflow_instance_id' => $instance->id,
+                        'node_id' => $targetNodeId,
+                        'node_type' => 'action',
+                        'attempt_number' => 1,
+                        'status' => WorkflowExecutionLog::STATUS_RUNNING,
+                        'input_data' => $this->resolveInputData($instance->context ?? [], $targetNode['config'] ?? []),
+                        'started_at' => DateTime::now(),
+                    ]);
+                    $logsTable->save($log);
+
+                    try {
+                        $serviceClass = $actionConfig['serviceClass'];
+                        $serviceMethod = $actionConfig['serviceMethod'];
+
+                        $service = $this->container->has($serviceClass)
+                            ? $this->container->get($serviceClass)
+                            : new $serviceClass();
+
+                        // Resolve params from context
+                        $nodeConfig = $targetNode['config'] ?? [];
+                        if (!empty($nodeConfig['params']) && is_array($nodeConfig['params'])) {
+                            $resolvedParams = [];
+                            foreach ($nodeConfig['params'] as $key => $paramValue) {
+                                $resolvedParams[$key] = $this->resolveParamValue($paramValue, $instance->context ?? []);
+                            }
+                            $nodeConfig = array_merge($nodeConfig, $resolvedParams);
+                        }
+
+                        $result = $service->{$serviceMethod}($instance->context ?? [], $nodeConfig);
+
+                        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+                        $log->output_data = $result;
+                        $log->completed_at = DateTime::now();
+                        $logsTable->save($log);
+                        $actionsRun++;
+                    } catch (Throwable $e) {
+                        Log::error("WorkflowEngine: Intermediate action '{$actionName}' on node '{$targetNodeId}' failed: {$e->getMessage()}");
+                        $log->status = WorkflowExecutionLog::STATUS_FAILED;
+                        $log->error_message = $e->getMessage();
+                        $log->completed_at = DateTime::now();
+                        $logsTable->save($log);
+                    }
+                }
+
+                // Save updated context; instance remains WAITING
+                $this->updateInstance($instance, []);
+
+                return new ServiceResult(true, null, [
+                    'instanceId' => $instanceId,
+                    'intermediateActionsRun' => $actionsRun,
+                ]);
+            });
+        } catch (Throwable $e) {
+            Log::error("WorkflowEngine::fireIntermediateApprovalActions failed: {$e->getMessage()}");
+
+            return new ServiceResult(false, "Failed to fire intermediate approval actions: {$e->getMessage()}");
+        }
+    }
 }

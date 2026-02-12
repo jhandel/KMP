@@ -77,4 +77,22 @@ interface WorkflowEngineInterface
         array $eventData = [],
         ?int $triggeredBy = null,
     ): array;
+
+    /**
+     * Fire actions connected to an approval node's on_each_approval port.
+     *
+     * Called after a non-final approval is recorded (serial pick-next or parallel).
+     * Executes intermediate actions without finalizing the approval node.
+     * The approval node remains in WAITING state with its execution log unchanged.
+     *
+     * @param int $instanceId The workflow instance ID
+     * @param string $nodeId The approval node ID
+     * @param array $approvalData Approval progress data (approverId, decision, comment, nextApproverId)
+     * @return \App\Services\ServiceResult
+     */
+    public function fireIntermediateApprovalActions(
+        int $instanceId,
+        string $nodeId,
+        array $approvalData,
+    ): ServiceResult;
 }

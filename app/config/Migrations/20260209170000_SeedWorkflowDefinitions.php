@@ -243,7 +243,24 @@ class SeedWorkflowDefinitions extends AbstractMigration
                     'outputs' => [
                         ['port' => 'approved', 'target' => 'action-activate'],
                         ['port' => 'rejected', 'target' => 'action-deny'],
+                        ['port' => 'on_each_approval', 'target' => 'action-notify-step'],
                     ],
+                ],
+                'action-notify-step' => [
+                    'type' => 'action',
+                    'label' => 'Notify Step Approved',
+                    'config' => [
+                        'action' => 'Activities.NotifyRequester',
+                        'params' => [
+                            'activityId' => '$.trigger.activityId',
+                            'requesterId' => '$.trigger.memberId',
+                            'approverId' => '$.nodes.approval-gate.approverId',
+                            'status' => 'pending',
+                            'nextApproverId' => '$.nodes.approval-gate.nextApproverId',
+                        ],
+                    ],
+                    'position' => ['x' => 350, 'y' => 450],
+                    'outputs' => [],
                 ],
                 'action-activate' => [
                     'type' => 'action',

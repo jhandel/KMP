@@ -131,7 +131,7 @@ class ActivitiesWorkflowProvider
                 'label' => 'Handle Authorization Denial',
                 'description' => 'Process denial of an authorization request',
                 'inputSchema' => [
-                    'authorizationApprovalId' => ['type' => 'integer', 'label' => 'Authorization Approval ID', 'required' => true],
+                    'authorizationId' => ['type' => 'integer', 'label' => 'Authorization ID', 'required' => true],
                     'approverId' => ['type' => 'integer', 'label' => 'Approver ID', 'required' => true],
                     'denyReason' => ['type' => 'string', 'label' => 'Deny Reason', 'required' => true],
                 ],

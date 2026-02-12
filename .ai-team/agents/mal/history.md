@@ -175,3 +175,32 @@ Completed 8 documentation tasks fixing cross-references, data models, interface 
 - **RecommendationsTablePolicy used `matching()` not `contain()`** — doc showed `contain(['Awards.Levels'])->where()`, actual code uses `matching('Awards.Levels', ...)`. Also undocumented: global access sentinel value `-10000000` that bypasses branch scoping.
 - **Cross-reference rot** — `5.2.2-awards-event-entity.md` and `5.2.3-awards-domains-table.md` never existed.
 - **Section number mismatch** — 5.4 filename but 5.5 title for GitHubIssueSubmitter.
+
+### 2026-02-12: Intermediate Approval Actions — Engine Architecture
+
+#### Approval Node Execution Flow
+- `executeApprovalNode()` (line 731) creates a `WorkflowApproval` record, sets instance to WAITING, sets log to WAITING. It does NOT follow any output ports — it pauses.
+- `resumeWorkflow()` (line 191) is called externally when the gate resolves. It marks the log complete, removes node from active_nodes, follows the specified output port (`approved` or `rejected`).
+- The gap: `WorkflowsController::recordApproval()` (line 489) only calls `resumeWorkflow()` when `approvalStatus` is `approved` or `rejected`. Intermediate approvals (serial pick-next `needsMore: true`, or parallel not-yet-met) are silently ignored.
+
+#### `DefaultWorkflowApprovalManager::recordResponse()` Resolution Logic
+- `approved_count >= required_count` → STATUS_APPROVED
+- `rejected_count > 0` → STATUS_REJECTED (any rejection = immediate rejection)
+- Serial pick-next + approve + more needed → stays PENDING, updates `current_approver_id`, returns `needsMore: true`
+- Parallel + approve + more needed → stays PENDING, returns `approvalStatus: 'pending'` but does NOT set `needsMore` flag (implicit)
+
+#### Approval Node Output Ports
+- Currently 2: `approved`, `rejected`
+- Port traversal uses `getNodeOutputTargets()` (line 1219) with `portsMatch()` for normalization
+- Drawflow maps output ports 1-based: `output_1` → index 0 → `approved`, `output_2` → index 1 → `rejected`
+- Port labels defined in `getPortLabel()` (line 805) and `buildNodeHTML()` (line 332)
+
+#### Old Activities Intermediate Emails
+In `DefaultAuthorizationManager::processForwardToNextApprover()` (line 855-913), on each non-final approval:
+1. `sendApprovalRequestNotification()` — emails next approver with token
+2. `sendAuthorizationStatusToRequester()` — emails requester with progress
+
+#### Decision
+New `on_each_approval` output port on approval node (Option A). Controller fires `engine->fireIntermediateApprovalActions()` on non-final approvals. Engine traverses `on_each_approval` port, executes connected actions, then returns instance to WAITING. Existing `approved`/`rejected` semantics unchanged. ~80 lines backend, ~15 lines frontend. Backward compatible.
+
+📌 Full proposal: `.ai-team/decisions/inbox/mal-intermediate-approval-actions.md`
