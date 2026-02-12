@@ -204,3 +204,6 @@ In `DefaultAuthorizationManager::processForwardToNextApprover()` (line 855-913),
 New `on_each_approval` output port on approval node (Option A). Controller fires `engine->fireIntermediateApprovalActions()` on non-final approvals. Engine traverses `on_each_approval` port, executes connected actions, then returns instance to WAITING. Existing `approved`/`rejected` semantics unchanged. ~80 lines backend, ~15 lines frontend. Backward compatible.
 
 📌 Full proposal: `.ai-team/decisions/inbox/mal-intermediate-approval-actions.md`
+📌 Team update (2026-02-11): EmailTemplateRendererService now supports safe conditional DSL (`<?php if ($var == "value") : ?>...<?php endif; ?>`) — parsed via regex, never eval()d. Supports ==, ||, && operators. Conditionals processed before {{variable}} substitution. — decided by Kaylee
+
+📌 Team update (2026-02-11): Email template conditionals now use {{#if var == "value"}}...{{/if}} mustache-style syntax instead of PHP-style. convertTemplateVariables() auto-converts on import. — decided by Kaylee

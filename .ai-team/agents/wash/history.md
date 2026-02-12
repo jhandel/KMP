@@ -285,3 +285,6 @@ Added a third output port to approval nodes in the workflow designer, per Mal's 
 - **Port name (engine-facing)**: `on_each_approval` — matches what the backend engine looks for in edge traversal.
 - **Color**: Blue for the third label. Green = success, red = failure, blue = intermediate/informational. Consistent mental model.
 - **Backward compat**: Existing 2-port workflows still render correctly — `getPortLabel()` returns by array index, and Drawflow handles extra ports gracefully. Old workflows without edges to port 3 simply don't fire anything on that port.
+📌 Team update (2026-02-11): EmailTemplateRendererService now supports safe conditional DSL (`<?php if ($var == "value") : ?>...<?php endif; ?>`) — parsed via regex, never eval()d. Supports ==, ||, && operators. Conditionals processed before {{variable}} substitution. — decided by Kaylee
+
+📌 Team update (2026-02-11): Email template conditionals now use {{#if var == "value"}}...{{/if}} mustache-style syntax instead of PHP-style. convertTemplateVariables() auto-converts on import. — decided by Kaylee
