@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Test\TestCase\Controller;
 
 use App\KMP\StaticHelpers;
+use App\Services\Updater\UpgradePipelineService;
 use App\Test\TestCase\Support\HttpIntegrationTestCase;
 use Cake\Core\Configure;
+use RuntimeException;
 
 /**
  * @uses \App\Controller\UpdatesController
@@ -19,6 +21,7 @@ class UpdatesControllerTest extends HttpIntegrationTestCase
         $this->enableCsrfToken();
         $this->enableSecurityToken();
         Configure::write('Updater.githubRepository', '');
+        Configure::delete('Updater.pipelineServiceClass');
     }
 
     public function testIndexRequiresAuthentication(): void
@@ -120,5 +123,45 @@ class UpdatesControllerTest extends HttpIntegrationTestCase
         $this->get('/admin/updates/apply');
 
         $this->assertRedirectContains('/admin/updates');
+    }
+
+    public function testApplyUsesConfiguredPipelineServiceClass(): void
+    {
+        $this->authenticateAsSuperUser();
+        Configure::write('Updater.pipelineServiceClass', SuccessfulUpgradePipelineService::class);
+
+        $this->get('/admin/updates/apply');
+
+        $this->assertRedirectContains('/admin/updates');
+    }
+
+    public function testApplyHandlesPipelineException(): void
+    {
+        $this->authenticateAsSuperUser();
+        Configure::write('Updater.pipelineServiceClass', FailingUpgradePipelineService::class);
+
+        $this->get('/admin/updates/apply');
+
+        $this->assertRedirectContains('/admin/updates');
+    }
+}
+
+class SuccessfulUpgradePipelineService extends UpgradePipelineService
+{
+    public function applyLatestRelease(?string $repository = null): array
+    {
+        return [
+            'status' => 'updated',
+            'releaseTag' => 'nightly/v1.4.2',
+            'releaseHash' => str_repeat('a', 64),
+        ];
+    }
+}
+
+class FailingUpgradePipelineService extends UpgradePipelineService
+{
+    public function applyLatestRelease(?string $repository = null): array
+    {
+        throw new RuntimeException('simulated failure');
     }
 }

@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\KMP\StaticHelpers;
+use App\Services\Updater\UpgradePipelineService;
 use Cake\Core\Configure;
 use Cake\Http\Response;
+use RuntimeException;
+use Throwable;
 
 /**
  * Admin-facing release updater UI.
@@ -105,7 +108,7 @@ class UpdatesController extends AppController
     }
 
     /**
-     * Placeholder update execution endpoint.
+     * Execute update pipeline for latest release in selected channel.
      *
      * @return \Cake\Http\Response
      */
@@ -113,9 +116,51 @@ class UpdatesController extends AppController
     {
         $this->request->allowMethod(['get', 'post']);
         $this->authorizeCurrentUrl();
-        $this->Flash->info(__('Update execution pipeline is not implemented yet.'));
+        try {
+            $result = $this->upgradePipelineService()->applyLatestRelease();
+            $status = (string)($result['status'] ?? '');
+            $releaseTag = trim((string)($result['releaseTag'] ?? ''));
+
+            if ($status === 'current') {
+                $message = $releaseTag !== ''
+                    ? __('You are already on release {0}.', $releaseTag)
+                    : __('You are already on the latest release.');
+                $this->Flash->success($message);
+            } else {
+                $message = $releaseTag !== ''
+                    ? __('Update applied successfully: {0}.', $releaseTag)
+                    : __('Update applied successfully.');
+                $this->Flash->success($message);
+            }
+        } catch (Throwable $exception) {
+            $this->Flash->error(__('Update failed: {0}', $exception->getMessage()));
+        }
 
         return $this->redirect(['action' => 'index']);
+    }
+
+    /**
+     * Create update pipeline service instance.
+     *
+     * @return \App\Services\Updater\UpgradePipelineService
+     */
+    private function upgradePipelineService(): UpgradePipelineService
+    {
+        $serviceClass = trim((string)Configure::read('Updater.pipelineServiceClass', ''));
+        if ($serviceClass !== '') {
+            if (!class_exists($serviceClass)) {
+                throw new RuntimeException(sprintf('Updater service class "%s" was not found.', $serviceClass));
+            }
+
+            $service = new $serviceClass();
+            if (!$service instanceof UpgradePipelineService) {
+                throw new RuntimeException('Configured updater service must extend UpgradePipelineService.');
+            }
+
+            return $service;
+        }
+
+        return new UpgradePipelineService();
     }
 
     /**
