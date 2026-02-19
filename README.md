@@ -26,6 +26,22 @@ Dev Users :
 
 ## Utility Scripts
 
+### live-sim-reset.sh / live-sim-up.sh / live-sim-down.sh
+Creates and runs an isolated "test live deployment" outside the workspace (default: `/tmp/kmp-live-sim`) for realistic upgrade testing without touching your dev checkout:
+```bash
+./live-sim-reset.sh            # Extract latest dist/kmp-full-v*.zip to /tmp/kmp-live-sim/current/app
+./live-sim-up.sh               # Start isolated stack at http://localhost:8081
+./live-sim-down.sh             # Stop isolated stack
+```
+
+Optional environment overrides:
+```bash
+KMP_LIVE_ROOT=/srv/kmp-live-sim \
+KMP_LIVE_HTTP_PORT=8081 \
+KMP_LIVE_OWNER=www-data:www-data \
+./live-sim-reset.sh dist/kmp-full-v1.4.2.zip
+```
+
 ### fix_permissions.sh
 Fixes file permissions for Apache web server access. Run this if you encounter permission errors with logs, tmp, images, or `webroot/img` directories:
 ```bash

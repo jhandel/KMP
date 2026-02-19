@@ -1,0 +1,68 @@
+# KMP Live Deployment Simulation
+#
+# Uses an app bind mount outside the workspace to emulate end-user deployments.
+# Default app path: /tmp/kmp-live-sim/current/app
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${KMP_LIVE_MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${KMP_LIVE_MYSQL_DB_NAME:-KMP_LIVE}
+      MYSQL_USER: ${KMP_LIVE_MYSQL_USERNAME:-KMPLIVE}
+      MYSQL_PASSWORD: ${KMP_LIVE_MYSQL_PASSWORD:-P@ssw0rd}
+    volumes:
+      - kmp-live-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "${KMP_LIVE_MAILPIT_WEB_PORT:-8026}:8025"
+      - "${KMP_LIVE_MAILPIT_SMTP_PORT:-1026}:1025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    ports:
+      - "${KMP_LIVE_HTTP_PORT:-8081}:80"
+    volumes:
+      - ${KMP_LIVE_APP_PATH:-/tmp/kmp-live-sim/current/app}:/var/www/html
+    environment:
+      APP_NAME: KMP_LIVE_SIM
+      MYSQL_HOST: db
+      MYSQL_USERNAME: ${KMP_LIVE_MYSQL_USERNAME:-KMPLIVE}
+      MYSQL_PASSWORD: ${KMP_LIVE_MYSQL_PASSWORD:-P@ssw0rd}
+      MYSQL_DB_NAME: ${KMP_LIVE_MYSQL_DB_NAME:-KMP_LIVE}
+      EMAIL_SMTP_HOST: mailpit
+      EMAIL_SMTP_PORT: "1025"
+      EMAIL_SMTP_USERNAME: ""
+      EMAIL_SMTP_PASSWORD: ""
+      PHP_MEMORY_LIMIT: 256M
+      APACHE_DOCUMENT_ROOT: /var/www/html
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  kmp-live-db-data:

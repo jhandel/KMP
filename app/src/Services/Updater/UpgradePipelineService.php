@@ -54,7 +54,6 @@ class UpgradePipelineService
         'app/resources',
         'app/src',
         'app/templates',
-        'app/vendor',
         'app/webroot',
     ];
 
@@ -767,16 +766,24 @@ class UpgradePipelineService
             if (is_file($targetPath)) {
                 $backupPath = $backupRoot . DS . str_replace('/', DS, $relativePath);
                 $this->ensureDirectory(dirname($backupPath));
-                if (!copy($targetPath, $backupPath)) {
-                    throw new RuntimeException(sprintf('Failed to back up "%s".', $relativePath));
+                if (!@copy($targetPath, $backupPath)) {
+                    throw new RuntimeException(sprintf(
+                        'Failed to back up "%s": %s',
+                        $relativePath,
+                        $this->lastFileOperationError()
+                    ));
                 }
                 $backedUpFiles[] = $relativePath;
             } else {
                 $createdFiles[] = $relativePath;
             }
 
-            if (!copy($sourcePath, $targetPath)) {
-                throw new RuntimeException(sprintf('Failed to copy "%s" into installation.', $relativePath));
+            if (!@copy($sourcePath, $targetPath)) {
+                throw new RuntimeException(sprintf(
+                    'Failed to copy "%s" into installation: %s',
+                    $relativePath,
+                    $this->lastFileOperationError()
+                ));
             }
         }
 
@@ -810,8 +817,12 @@ class UpgradePipelineService
                 continue;
             }
             $this->ensureDirectory(dirname($targetPath));
-            if (!copy($backupPath, $targetPath)) {
-                throw new RuntimeException(sprintf('Rollback failed while restoring "%s".', $relativePath));
+            if (!@copy($backupPath, $targetPath)) {
+                throw new RuntimeException(sprintf(
+                    'Rollback failed while restoring "%s": %s',
+                    $relativePath,
+                    $this->lastFileOperationError()
+                ));
             }
         }
     }
@@ -1222,5 +1233,23 @@ class UpgradePipelineService
         }
 
         rmdir($path);
+    }
+
+    /**
+     * Read the latest filesystem warning text for copy/rename style operations.
+     *
+     * @return string
+     */
+    private function lastFileOperationError(): string
+    {
+        $lastError = error_get_last();
+        if (is_array($lastError)) {
+            $message = trim((string)($lastError['message'] ?? ''));
+            if ($message !== '') {
+                return $message;
+            }
+        }
+
+        return 'unknown filesystem error';
     }
 }
