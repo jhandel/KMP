@@ -46,7 +46,16 @@ class UpgradePipelineService
      * @var array<int, string>
      */
     private const INCLUDED_PATHS = [
-        'app',
+        'app/.htaccess',
+        'app/index.php',
+        'app/bin',
+        'app/config',
+        'app/plugins',
+        'app/resources',
+        'app/src',
+        'app/templates',
+        'app/vendor',
+        'app/webroot',
     ];
 
     /**
