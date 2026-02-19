@@ -41,6 +41,15 @@ class UpgradePipelineService
     ];
 
     /**
+     * Top-level package paths that are applied during in-place update.
+     *
+     * @var array<int, string>
+     */
+    private const INCLUDED_PATHS = [
+        'app',
+    ];
+
+    /**
      * Lock file path used for update execution guard.
      *
      * @var string|null
@@ -934,11 +943,36 @@ class UpgradePipelineService
             return true;
         }
 
+        if (!$this->isIncludedPath($normalizedRelativePath)) {
+            return true;
+        }
+
         foreach (self::EXCLUDED_PATHS as $excludedPath) {
             $normalizedExcludedPath = trim(str_replace('\\', '/', $excludedPath), '/');
             if (
                 $normalizedRelativePath === $normalizedExcludedPath
                 || str_starts_with($normalizedRelativePath, $normalizedExcludedPath . '/')
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check whether a path is within allowed sync scope.
+     *
+     * @param string $relativePath
+     * @return bool
+     */
+    private function isIncludedPath(string $relativePath): bool
+    {
+        foreach (self::INCLUDED_PATHS as $includedPath) {
+            $normalizedIncludedPath = trim(str_replace('\\', '/', $includedPath), '/');
+            if (
+                $relativePath === $normalizedIncludedPath
+                || str_starts_with($relativePath, $normalizedIncludedPath . '/')
             ) {
                 return true;
             }
