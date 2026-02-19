@@ -132,6 +132,8 @@ return [
         "checkIntervalSeconds" => (int)env("UPDATER_CHECK_MIN_INTERVAL", 60),
         /** Release metadata cache TTL in seconds */
         "manifestCacheSeconds" => (int)env("UPDATER_MANIFEST_CACHE_SECONDS", 300),
+        /** Working directory for updater lock/temp artifacts */
+        "runtimeDirectory" => env("UPDATER_RUNTIME_DIR", TMP . "updater"),
         /** Comma-separated host allowlist for updater HTTP requests */
         "allowedHosts" => array_values(array_filter(array_map(
             "trim",

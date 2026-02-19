@@ -48,6 +48,13 @@ class UpgradePipelineService
     private ?string $lockFile = null;
 
     /**
+     * Runtime working directory for updater operations.
+     *
+     * @var string|null
+     */
+    private ?string $runtimeDirectory = null;
+
+    /**
      * Apply the latest matching release to this installation.
      *
      * @param string|null $repository Override repository in owner/repo format.
@@ -947,7 +954,7 @@ class UpgradePipelineService
      */
     private function createWorkingDirectory(): string
     {
-        $baseDirectory = TMP . 'updater' . DS . 'runs';
+        $baseDirectory = $this->resolveRuntimeDirectory() . DS . 'runs';
         $this->ensureDirectory($baseDirectory);
         $suffix = gmdate('YmdHis') . '-' . bin2hex(random_bytes(4));
         $workingDirectory = $baseDirectory . DS . $suffix;
@@ -963,22 +970,90 @@ class UpgradePipelineService
      */
     private function acquireLock(): void
     {
-        $lockDir = TMP . 'updater';
-        $this->ensureDirectory($lockDir);
+        $lockDir = $this->resolveRuntimeDirectory();
         $lockFile = $lockDir . DS . 'apply.lock';
-        if (file_exists($lockFile)) {
-            throw new RuntimeException('Another update operation is already running.');
+        $lockHandle = @fopen($lockFile, 'xb');
+        if ($lockHandle === false) {
+            if (file_exists($lockFile)) {
+                throw new RuntimeException('Another update operation is already running.');
+            }
+            $lastError = error_get_last();
+            $detail = is_array($lastError) ? (string)($lastError['message'] ?? 'unknown error') : 'unknown error';
+
+            throw new RuntimeException(sprintf('Failed to create updater lock file at "%s": %s', $lockFile, $detail));
         }
 
         $payload = json_encode(['startedAt' => gmdate(DATE_ATOM)], JSON_UNESCAPED_SLASHES);
         if ($payload === false) {
+            fclose($lockHandle);
+            @unlink($lockFile);
             throw new RuntimeException('Failed to initialize updater lock metadata.');
         }
-        if (file_put_contents($lockFile, $payload . PHP_EOL, LOCK_EX) === false) {
-            throw new RuntimeException('Failed to create updater lock file.');
+        if (fwrite($lockHandle, $payload . PHP_EOL) === false) {
+            fclose($lockHandle);
+            @unlink($lockFile);
+            throw new RuntimeException(sprintf('Failed to write updater lock file at "%s".', $lockFile));
+        }
+        if (!fclose($lockHandle)) {
+            @unlink($lockFile);
+            throw new RuntimeException(sprintf('Failed to finalize updater lock file at "%s".', $lockFile));
         }
 
         $this->lockFile = $lockFile;
+    }
+
+    /**
+     * Resolve a writable runtime directory for updater lock/temp artifacts.
+     *
+     * @return string
+     */
+    private function resolveRuntimeDirectory(): string
+    {
+        if ($this->runtimeDirectory !== null) {
+            return $this->runtimeDirectory;
+        }
+
+        $configuredRuntimeDir = trim((string)Configure::read('Updater.runtimeDirectory', ''));
+        $systemTempDir = rtrim((string)sys_get_temp_dir(), '/\\');
+        $candidates = [];
+        if ($configuredRuntimeDir !== '') {
+            $candidates[] = $configuredRuntimeDir;
+        }
+        $candidates[] = TMP . 'updater';
+        if ($systemTempDir !== '') {
+            $candidates[] = $systemTempDir . DS . 'kmp-updater';
+        }
+
+        $attempted = [];
+        foreach ($candidates as $candidate) {
+            $normalized = rtrim(str_replace(['\\', '/'], DS, trim($candidate)), DS);
+            if ($normalized === '') {
+                continue;
+            }
+            if (!str_starts_with($normalized, DS)) {
+                $normalized = ROOT . DS . ltrim($normalized, DS);
+            }
+
+            $attempted[] = $normalized;
+            try {
+                $this->ensureDirectory($normalized);
+            } catch (RuntimeException) {
+                continue;
+            }
+
+            if (is_writable($normalized)) {
+                $this->runtimeDirectory = $normalized;
+
+                return $this->runtimeDirectory;
+            }
+        }
+
+        throw new RuntimeException(
+            sprintf(
+                'Failed to resolve writable updater runtime directory. Checked: %s',
+                implode(', ', $attempted)
+            )
+        );
     }
 
     /**
