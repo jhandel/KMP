@@ -1,17 +1,66 @@
 #!/bin/bash
 # Prepare an isolated "live deployment" app tree outside the workspace.
-# Usage: ./live-sim-reset.sh [path-to-release-zip]
+# Usage: ./live-sim-reset.sh [--target <live-root>] [--package <release-zip>]
 
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 LIVE_ROOT="${KMP_LIVE_ROOT:-/tmp/kmp-live-sim}"
-LIVE_APP_PATH="${KMP_LIVE_APP_PATH:-$LIVE_ROOT/current/app}"
 LIVE_OWNER="${KMP_LIVE_OWNER:-www-data:www-data}"
+PACKAGE_PATH="${KMP_LIVE_PACKAGE:-}"
+TARGET_WAS_SET=0
+
+usage() {
+    echo "Usage: ./live-sim-reset.sh [--target <live-root>] [--package <release-zip>]"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --target|-t)
+            if [ $# -lt 2 ]; then
+                echo "❌ Missing value for $1"
+                usage
+                exit 1
+            fi
+            LIVE_ROOT="$2"
+            TARGET_WAS_SET=1
+            shift 2
+            ;;
+        --package|-p)
+            if [ $# -lt 2 ]; then
+                echo "❌ Missing value for $1"
+                usage
+                exit 1
+            fi
+            PACKAGE_PATH="$2"
+            shift 2
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            if [ -z "$PACKAGE_PATH" ]; then
+                PACKAGE_PATH="$1"
+                shift
+            else
+                echo "❌ Unknown argument: $1"
+                usage
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+if [ "$TARGET_WAS_SET" -eq 1 ] || [ -z "${KMP_LIVE_APP_PATH:-}" ]; then
+    export KMP_LIVE_APP_PATH="$LIVE_ROOT/current/app"
+fi
+export KMP_LIVE_ROOT="$LIVE_ROOT"
+
+LIVE_APP_PATH="$KMP_LIVE_APP_PATH"
 EXTRACT_DIR="$LIVE_ROOT/.extract"
 
-PACKAGE_PATH="${1:-}"
 if [ -z "$PACKAGE_PATH" ]; then
     PACKAGE_PATH="$(ls -1t dist/kmp-full-v*.zip 2>/dev/null | head -n 1 || true)"
 fi
@@ -63,4 +112,4 @@ rm -rf "$EXTRACT_DIR"
 
 echo ""
 echo "✅ Live simulation app tree is ready."
-echo "Next: ./live-sim-up.sh"
+echo "Next: ./live-sim-up.sh --target \"$LIVE_ROOT\""

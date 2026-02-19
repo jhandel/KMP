@@ -29,9 +29,9 @@ Dev Users :
 ### live-sim-reset.sh / live-sim-up.sh / live-sim-down.sh
 Creates and runs an isolated "test live deployment" outside the workspace (default: `/tmp/kmp-live-sim`) for realistic upgrade testing without touching your dev checkout:
 ```bash
-./live-sim-reset.sh            # Extract latest dist/kmp-full-v*.zip to /tmp/kmp-live-sim/current/app
-./live-sim-up.sh               # Start isolated stack at http://localhost:8081
-./live-sim-down.sh             # Stop isolated stack
+./live-sim-reset.sh --target /srv/kmp-live-sim --package dist/kmp-full-v1.4.2.zip
+./live-sim-up.sh --target /srv/kmp-live-sim    # Starts isolated stack at http://localhost:8081
+./live-sim-down.sh --target /srv/kmp-live-sim  # Stops that target simulation
 ```
 
 Optional environment overrides:
