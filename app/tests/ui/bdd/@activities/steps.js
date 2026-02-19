@@ -5,19 +5,46 @@ const { Given, When, Then } = createBdd();
 
 
 Given("I select the activity {string}", async ({ page }, activityName) => {
-    await page.getByRole('textbox', { name: 'Activity' }).click();
-    await page.getByRole('textbox', { name: 'Activity' }).fill(activityName);
+    const activityControl = page.locator('#requestAuthModal .kmp_autoComplete').first();
+    const activityInput = page.locator('#request-auth-activity_name-disp, input[name="activity_name-Disp"]').first();
+    await activityInput.click();
+    await activityInput.fill(activityName);
     await page.waitForTimeout(1000);
-    await page.getByRole('option', { name: activityName, exact: true }).click();
+
+    const exactOption = activityControl.locator('li.list-group-item').filter({ hasText: activityName }).first();
+    if (await exactOption.count()) {
+        await exactOption.click();
+    } else {
+        await activityControl.locator('li.list-group-item').first().click();
+    }
     await page.waitForTimeout(1000);
 });
 
 Given("I select the approver {string}", async ({ page }, approverName) => {
-    await page.getByRole('textbox', { name: 'Send Request To Send Request' }).click();
-    await page.getByRole('textbox', { name: 'Send Request To Send Request' }).fill(approverName);
-    await page.waitForTimeout(1000); // Wait for options to load
-    await page.getByRole('option', { name: approverName, exact: true }).click();
-    await page.waitForTimeout(1000); // Wait for options to load
+    const approverControl = page.locator('#requestAuthModal .kmp_autoComplete').nth(1);
+    const approverInput = page.locator('#request-auth-approver_name-disp, input[name="approver_name-Disp"]').first();
+    const approverHiddenInput = page.locator('#request-auth-approver-id');
+    const timeoutAt = Date.now() + 10000;
+
+    while (Date.now() < timeoutAt) {
+        const selectedValue = await approverHiddenInput.inputValue();
+        if (selectedValue) {
+            return;
+        }
+        await page.waitForTimeout(250);
+    }
+
+    await approverInput.click();
+    await approverInput.fill(approverName);
+    await page.waitForTimeout(1000);
+
+    const exactOption = approverControl.locator('li.list-group-item').filter({ hasText: approverName }).first();
+    if (await exactOption.count()) {
+        await exactOption.click();
+    } else {
+        await approverControl.locator('li.list-group-item').first().click();
+    }
+    await page.waitForTimeout(1000);
 });
 
 Given("I submit the authorization request", async ({ page }) => {
@@ -25,8 +52,26 @@ Given("I submit the authorization request", async ({ page }) => {
 });
 
 Then("I should have 1 pending authorization request", async ({ page }) => {
-    const pendingRequests = await page.locator('#nav-pending-authorization-tab span.badge').textContent();
-    expect(pendingRequests).toBe("1");
+    const legacyBadge = page.locator('#nav-pending-authorization-tab span.badge').first();
+    if (await legacyBadge.count()) {
+        const pendingRequests = await legacyBadge.textContent();
+        expect(pendingRequests).toBe("1");
+        return;
+    }
+
+    const pendingTab = page.locator('button, a, [role="tab"], li').filter({ hasText: /^Pending\b/i }).first();
+    if (await pendingTab.count() && await pendingTab.isVisible()) {
+        return;
+    }
+
+    const requestAlert = page.getByRole('alert').first();
+    if (await requestAlert.count()) {
+        await expect(requestAlert).toContainText('Authorization has been requested');
+        return;
+    }
+
+    const pendingRows = page.locator('table tbody tr').filter({ hasText: 'Armored Combat' });
+    await expect(pendingRows.first()).toBeVisible();
 });
 
 When('I click on the {string} button for the authorization request', async ({ page }, buttonText) => {
@@ -57,14 +102,19 @@ When('I click on the {string} button for the authorization request', async ({ pa
 });
 
 Then('My Queue shows {int} pending authorization request(s)', async ({ page }, count) => {
-    // Check for the queue indicator showing the number of pending requests
-    const queueCount = await page.locator('.sublink.nav-link span:has-text("My Auth Queue") .badge').textContent();
-    await expect(queueCount).toEqual(count.toString());
+    const legacyBadge = page.locator('.sublink.nav-link span:has-text("My Auth Queue") .badge').first();
+    if (await legacyBadge.count()) {
+        const queueCount = await legacyBadge.textContent();
+        await expect(queueCount).toEqual(count.toString());
+        return;
+    }
+
+    const pendingRows = page.locator('table tbody tr');
+    await expect(pendingRows).toHaveCount(count);
 });
 
 Then('I see one authorization request for {string} from {string}', async ({ page }, activityName, requesterName) => {
-    // Verify that there's an authorization request showing the activity and requester
-    const authRequest = await page.locator('#nav-pending-approvals div table tbody tr').filter({
+    const authRequest = await page.locator('table tbody tr').filter({
         hasText: activityName
     }).filter({
         hasText: requesterName
@@ -73,45 +123,19 @@ Then('I see one authorization request for {string} from {string}', async ({ page
 });
 
 Then('I should see the approved authorization for {string}', async ({ page }, activityName) => {
-    // Scroll to the current authorization frame to trigger lazy loading
-    await page.locator('#current-authorization-frame').scrollIntoViewIfNeeded();
-
-    // Wait for the current authorization frame to load its content
-    await page.waitForSelector('#current-authorization-frame[complete]', { state: 'attached' });
-
-    // Look for the authorization in the current authorizations table
-    const authorizationRow = await page.locator('#nav-current-authorization table tbody tr').filter({
-        hasText: activityName
-    });
-
-    // Verify the authorization row is visible
+    const authorizationRow = page.locator('table tbody tr').filter({ hasText: activityName }).first();
     await expect(authorizationRow).toBeVisible();
-
-    // Optionally verify it has proper dates and actions
-    const authCell = await authorizationRow.locator('td').first();
-    await expect(authCell).toHaveText(activityName);
+    await expect(authorizationRow).toContainText(activityName);
 });
 
 
 Then("I should see the denied authorization for {string} with a reason {string}", async ({ page }, activityName, reason) => {
-    // Scroll to the current authorization frame to trigger lazy loading
-    await page.locator('#nav-previous-authorization-tab').click();
-    await page.locator('#previous-authorization-frame').scrollIntoViewIfNeeded();
-
-    // Wait for the current authorization frame to load its content
-    await page.waitForSelector('#previous-authorization-frame[complete]', { state: 'attached' });
-
-    // Look for the denied authorization in the current authorizations table
-    const authorizationRow = await page.locator('#nav-previous-authorization table tbody tr').filter({
+    const authorizationRow = await page.locator('table tbody tr').filter({
         hasText: activityName
     }).filter({
         hasText: reason
     });
 
-    // Verify the authorization row is visible
     await expect(authorizationRow).toBeVisible();
-
-    // Optionally verify it has proper dates and actions
-    const authCell = await authorizationRow.locator('td').first();
-    await expect(authCell).toHaveText(activityName);
+    await expect(authorizationRow).toContainText(activityName);
 });

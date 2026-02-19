@@ -106,7 +106,7 @@ $url = $fullBaseUrl . "/keepalive";
     data-session-extender-url-value="<?= $url ?>">
     <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
         <div class="navbar-brand col-md-3 col-lg-2 me-0 px-3">
-            <?= $this->Html->image($this->KMP->getAppSetting("KMP.BannerLogo"), [
+            <?= $this->Html->image($this->KMP->getBannerLogoSource(), [
                 "alt" => "Logo",
                 "height" => "24",
                 "class" => "d-inline-block mb-1",

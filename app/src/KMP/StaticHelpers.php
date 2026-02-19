@@ -16,6 +16,8 @@ declare(strict_types=1);
 namespace App\KMP;
 
 use Cake\Core\Configure;
+use Cake\Database\Exception\DatabaseException;
+use Cake\Database\Exception\QueryException;
 use Cake\ORM\TableRegistry;
 use Cake\Utility\Security;
 use Exception;
@@ -304,8 +306,15 @@ class StaticHelpers
 
             return $value;
         } catch (Exception $e) {
-            // Handle database connectivity issues gracefully
-            if (get_class($e) == "Cake\Database\Exception\DatabaseException") {
+            // Handle database connectivity issues gracefully (catches QueryException, etc.)
+            if ($e instanceof DatabaseException || $e instanceof QueryException) {
+                return $fallback;
+            }
+
+            // A missing-setting exception means the key was never seeded; return the fallback
+            // rather than blowing up the page. This is safe because the setting will be
+            // seeded on the next bootstrap cycle (after migrations have run).
+            if (str_starts_with($e->getMessage(), 'AppSetting ') && str_ends_with($e->getMessage(), ' not found')) {
                 return $fallback;
             }
 
@@ -353,10 +362,8 @@ class StaticHelpers
 
             return $AppSettings->deleteAppSetting($key, $forceDelete);
         } catch (Exception $e) {
-            // Handle database connectivity issues gracefully
-            if (get_class($e) == "Cake\Database\Exception\DatabaseException") {
-                // Consider database unavailability as successful deletion
-                // This prevents application errors when database is down
+            // Handle database connectivity issues gracefully (catches QueryException, etc.)
+            if ($e instanceof DatabaseException || $e instanceof QueryException) {
                 return true;
             }
 

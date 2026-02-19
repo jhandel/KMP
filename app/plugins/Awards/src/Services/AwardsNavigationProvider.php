@@ -127,7 +127,7 @@ class AwardsNavigationProvider
                 ],
                 "icon" => "bi-megaphone-fill",
                 "linkTypeClass" => "btn",
-                "otherClasses" => StaticHelpers::getAppSetting("Awards.RecButtonClass"),
+                "otherClasses" => StaticHelpers::getAppSetting("Awards.RecButtonClass", "btn-warning"),
             ]
         ];
 

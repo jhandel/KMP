@@ -77,12 +77,12 @@ When('I enter invalid credentials', async ({ page }, dataTable) => {
 When('I enter valid admin credentials', async ({ page }, dataTable) => {
     const data = dataTable.rowsHash();
 
-    await page.getByRole('textbox', { name: 'Email Address' }).fill(data.email);
-    await page.getByRole('textbox', { name: 'Password' }).fill(data.password);
+    await page.locator('input[name="email_address"]').fill(data.email);
+    await page.locator('input[name="password"]').fill(data.password);
 });
 
 When('I submit the login form', async ({ page }) => {
-    const submitButton = page.getByRole('button', { name: 'Sign in' });
+    const submitButton = page.locator('input[type="submit"], button[type="submit"]').first();
     await submitButton.click();
     await page.waitForTimeout(2000);
 });

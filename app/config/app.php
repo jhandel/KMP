@@ -25,6 +25,20 @@ use Cake\Log\Engine\FileLog;
 use Cake\Mailer\Transport\MailTransport;
 use Templating\View\Icon\BootstrapIcon;
 
+$readConfigValue = static function (string $filename, string $fallback = ''): string {
+    $path = CONFIG . $filename;
+    if (!is_file($path)) {
+        return $fallback;
+    }
+
+    $value = file_get_contents($path);
+    if ($value === false) {
+        return $fallback;
+    }
+
+    return trim($value);
+};
+
 return [
     /** @var bool Enable debug mode - set via DEBUG environment variable */
     "debug" => filter_var(env("DEBUG", false), FILTER_VALIDATE_BOOLEAN),
@@ -89,7 +103,40 @@ return [
         ],
 
         /** @var string Application version loaded from version.txt */
-        "version" => file_get_contents(CONFIG . "version.txt"),
+        "version" => $readConfigValue('version.txt', '0.0.0'),
+        /** @var string Build/release hash loaded from release_hash.txt */
+        "releaseHash" => $readConfigValue('release_hash.txt', ''),
+        /** @var string Release tag loaded from release_tag.txt */
+        "releaseTag" => $readConfigValue('release_tag.txt', ''),
+    ],
+
+    /** Installer runtime configuration */
+    "Installer" => [
+        /** Absolute path to installer lock file */
+        "lockFile" => env("INSTALLER_LOCK_FILE", ROOT . DS . "tmp" . DS . "installer" . DS . "install.lock"),
+        /** Absolute path to installer-managed env file */
+        "envFile" => env("INSTALLER_ENV_FILE", CONFIG . ".env"),
+        /** Tables that must exist before app is considered installed */
+        "requiredTables" => ["members"],
+    ],
+
+    /** Updater runtime configuration */
+    "Updater" => [
+        /** Default release channel (AppSetting Updater.Channel can override) */
+        "channel" => "stable",
+        /** GitHub repository (owner/repo) used for release checks */
+        "githubRepository" => "jhandel/KMP",
+        /** GitHub API base URL */
+        "githubApiBaseUrl" => env("UPDATER_GITHUB_API_BASE_URL", "https://api.github.com"),
+        /** Minimum seconds between uncached release checks */
+        "checkIntervalSeconds" => (int)env("UPDATER_CHECK_MIN_INTERVAL", 60),
+        /** Release metadata cache TTL in seconds */
+        "manifestCacheSeconds" => (int)env("UPDATER_MANIFEST_CACHE_SECONDS", 300),
+        /** Comma-separated host allowlist for updater HTTP requests */
+        "allowedHosts" => array_values(array_filter(array_map(
+            "trim",
+            explode(",", (string)env("UPDATER_ALLOWED_HOSTS", "api.github.com,github.com,objects.githubusercontent.com,raw.githubusercontent.com")),
+        ))),
     ],
 
     /** @see docs/7.1-security-best-practices.md#encryption-and-cryptographic-salt */
@@ -452,6 +499,9 @@ return [
 
         /** @var string Session cookie name */
         "cookie" => "PHPSESSID",
+
+        /** @var string Store sessions in the app's writable tmp directory */
+        "savePath" => TMP . 'sessions',
 
         /** @var array PHP session ini settings for security */
         "ini" => [

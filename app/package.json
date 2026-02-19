@@ -13,6 +13,8 @@
         "test:js": "jest",
         "test:js:watch": "jest --watch",
         "test:js:coverage": "jest --coverage",
+        "test:ui:install:smoke": "bash ../run_install_first_smoke.sh",
+        "test:ui:install:smoke:headed": "bash ../run_install_first_smoke.sh --headed",
         "test:ui": "bddgen && bash ../reset_dev_database.sh && playwright test",
         "test:ui:headed": "bddgen && bash ../reset_dev_database.sh && playwright test --headed",
         "test:ui:debug": "bddgen && bash ../reset_dev_database.sh && playwright test --debug",

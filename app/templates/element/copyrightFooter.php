@@ -3,7 +3,7 @@
 use Cake\Core\Configure;
 
 $appName = $this->KMP->getAppSetting("KMP.LongSiteTitle");
-$appVersion = $this->KMP->getAppSetting("App.version");
+$appVersion = trim((string)Configure::read('App.version', '0.0.0'));
 
 $footerLinks = $this->KMP->getAppSettingsStartWith("KMP.FooterLink.");
 echo $this->KMP->startBlock("tb_footer"); ?>

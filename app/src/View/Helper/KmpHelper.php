@@ -232,6 +232,22 @@ class KmpHelper extends Helper
     }
 
     /**
+     * Resolve banner logo source from configured mode.
+     *
+     * @return string Relative asset path or absolute external URL
+     */
+    public function getBannerLogoSource(): string
+    {
+        $mode = strtolower((string)StaticHelpers::getAppSetting('KMP.BannerLogoMode', 'packaged'));
+        $external = trim((string)StaticHelpers::getAppSetting('KMP.BannerLogoExternalUrl', ''));
+        if ($mode === 'external' && $external !== '') {
+            return $external;
+        }
+
+        return (string)StaticHelpers::getAppSetting('KMP.BannerLogo', 'badge.png');
+    }
+
+    /**
      * Get application settings that start with a specific key prefix.
      * 
      * @param string $key The prefix to search for in setting keys

@@ -54,6 +54,7 @@ use App\Services\NavigationRegistry;
 use App\Services\CoreNavigationProvider;
 use App\Services\ViewCellRegistry;
 use App\Services\CoreViewCellProvider;
+use App\Services\Installer\InstallerLockService;
 use App\KMP\KmpIdentityInterface; // Add this line
 use App\KMP\StaticHelpers;
 // Authorization usings
@@ -87,6 +88,7 @@ use Cake\Http\BaseApplication;
 use Cake\Http\Middleware\BodyParserMiddleware;
 use Cake\Http\Middleware\CsrfProtectionMiddleware;
 use Cake\Http\MiddlewareQueue;
+use Cake\Http\Response;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\Locator\TableLocator;
@@ -229,12 +231,13 @@ class Application extends BaseApplication implements
         // Version-based application configuration management
         // This system allows automatic updates to application settings when KMP is upgraded
         // Each time the version changes, new default settings are applied
-        $currentConfigVersion = '25.11.05.a'; // Update this with each configuration change
+        $currentConfigVersion = '1.4.1'; // Update this with each configuration change
 
         $configVersion = StaticHelpers::getAppSetting('KMP.configVersion', '0.0.0', null, true);
         if ($configVersion != $currentConfigVersion) {
             // Update configuration version first
             StaticHelpers::setAppSetting('KMP.configVersion', $currentConfigVersion, null, true);
+            StaticHelpers::deleteAppSetting('App.version', true); // Version is sourced from config/version.txt, not AppSettings.
 
             // Core KMP Settings - Basic application configuration
             StaticHelpers::getAppSetting('KMP.BranchInitRun', '', null, true);                           // Tracks branch initialization
@@ -242,10 +245,12 @@ class Application extends BaseApplication implements
             StaticHelpers::getAppSetting('KMP.LongSiteTitle', 'Kingdom Management Portal', null, true); // Full application name
             StaticHelpers::getAppSetting('KMP.ShortSiteTitle', 'KMP', null, true);                      // Abbreviated name for headers
             StaticHelpers::getAppSetting('KMP.BannerLogo', 'badge.png', null, true);                    // Main site logo
+            StaticHelpers::getAppSetting('KMP.BannerLogoMode', 'packaged', null, true);                 // Banner logo source mode (packaged/upload/external)
+            StaticHelpers::getAppSetting('KMP.BannerLogoExternalUrl', '', null, true);                  // External logo URL/path when mode=external
             StaticHelpers::getAppSetting('KMP.Login.Graphic', 'populace_badge.png', null, true);        // Login page graphic
             StaticHelpers::getAppSetting('KMP.EnablePublicRegistration', 'yes', null, true);            // Allow public sign-ups
             StaticHelpers::getAppSetting('KMP.DefaultTimezone', 'America/Chicago', null, true);         // Default timezone for date/time display
-            StaticHelpers::getAppSetting('App.version', '0.0.0', null, true);                           // Application version tracking
+            StaticHelpers::getAppSetting('Updater.Channel', 'stable', null, true);                      // Updater release train
 
             // Member Card Display Settings - Visual presentation of member information
             StaticHelpers::getAppSetting('Member.ViewCard.Graphic', 'auth_card_back.gif', null, true);         // Card background image
@@ -470,11 +475,51 @@ class Application extends BaseApplication implements
                 }),
             )
 
-            // 8. Authentication Middleware - User login and session management
+            // 8. Installer gate middleware
+            // Redirects to installer when required tables are missing and installer is unlocked
+            ->add(function ($request, $handler) {
+                $installerLockService = new InstallerLockService();
+                $installerRequired = $installerLockService->isInstallerRequired();
+                $path = rtrim($request->getUri()->getPath(), '/');
+                if ($path === '') {
+                    $path = '/';
+                }
+                $isInstallPath = $path === '/install' || str_starts_with($path, '/install/');
+
+                if ($installerRequired && !$isInstallPath) {
+                    $installUrl = Router::url([
+                        'prefix' => false,
+                        'plugin' => null,
+                        'controller' => 'Install',
+                        'action' => 'index',
+                    ]);
+
+                    return (new Response())
+                        ->withStatus(302)
+                        ->withHeader('Location', $installUrl);
+                }
+
+                if (!$installerRequired && $isInstallPath && $installerLockService->isLocked()) {
+                    $loginUrl = Router::url([
+                        'prefix' => false,
+                        'plugin' => null,
+                        'controller' => 'Members',
+                        'action' => 'login',
+                    ]);
+
+                    return (new Response())
+                        ->withStatus(302)
+                        ->withHeader('Location', $loginUrl);
+                }
+
+                return $handler->handle($request);
+            })
+
+            // 9. Authentication Middleware - User login and session management
             // Must be added after routing and body parser to access request data
             ->add(new AuthenticationMiddleware($this))
 
-            // 9. Authorization Middleware - Permission checking and access control
+            // 10. Authorization Middleware - Permission checking and access control
             // Enforces policy-based authorization on all requests
             ->add(
                 new AuthorizationMiddleware($this, [
@@ -497,7 +542,7 @@ class Application extends BaseApplication implements
                 ]),
             )
 
-            // 10. Footprint Middleware - User activity tracking for auditing
+            // 11. Footprint Middleware - User activity tracking for auditing
             // Tracks which user performed what actions for security and compliance
             ->add('Muffin/Footprint.Footprint');
 
@@ -640,7 +685,7 @@ class Application extends BaseApplication implements
         ServerRequestInterface $request,
     ): AuthenticationServiceInterface {
         $service = new AuthenticationService();
-        
+
         // Check if this is an API request
         $path = $request->getUri()->getPath();
         $isApiRequest = str_starts_with($path, '/api/');

@@ -27,7 +27,7 @@ Dev Users :
 ## Utility Scripts
 
 ### fix_permissions.sh
-Fixes file permissions for Apache web server access. Run this if you encounter permission errors with logs, tmp, or images directories:
+Fixes file permissions for Apache web server access. Run this if you encounter permission errors with logs, tmp, images, or `webroot/img` directories:
 ```bash
 ./fix_permissions.sh
 ```
@@ -36,6 +36,26 @@ Fixes file permissions for Apache web server access. Run this if you encounter p
 Resets the development database to a clean state with seed data:
 ```bash
 ./reset_dev_database.sh
+```
+
+### dev-reset-installer.sh
+Archives current dev config/database, then resets dev databases to blank + clears installer lock for `/install` walkthrough testing:
+```bash
+./dev-reset-installer.sh
+```
+
+Works from either:
+- host shell with `docker compose` services running, or
+- devcontainer shell with direct MySQL access.
+
+Skip archive and only blank/reset:
+```bash
+./dev-reset-installer.sh --no-archive
+```
+
+If lock/state cleanup reports permission warnings, run:
+```bash
+./fix_permissions.sh
 ```
 
 ### load_test.sh

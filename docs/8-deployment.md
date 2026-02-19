@@ -380,9 +380,9 @@ KMP uses semantic versioning (MAJOR.MINOR.PATCH):
 - **MINOR**: Backward-compatible new features
 - **PATCH**: Backward-compatible bug fixes
 
-The current application version is stored in the `app_settings` table:
+The current application version is read from `config/version.txt` via app config:
 ```php
-StaticHelpers::getAppSetting('App.version');
+Configure::read('App.version');
 ```
 
 ## 8.4 Cloud Object Storage Configuration

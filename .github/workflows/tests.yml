@@ -25,6 +25,11 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+      mailhog:
+        image: mailhog/mailhog:v1.0.1
+        ports:
+          - 1025:1025
+          - 8025:8025
 
     steps:
       - name: Checkout code
@@ -96,6 +101,44 @@ jobs:
 
       - name: Run PHPUnit tests
         run: cd app && vendor/bin/phpunit --testsuite all --no-coverage --log-junit ../test-results/junit.xml
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install UI test dependencies
+        run: cd app && npm ci
+
+      - name: Install Playwright browser
+        run: cd app && npx playwright install --with-deps chromium
+
+      - name: Start PHP test server
+        run: |
+          php -S 127.0.0.1:8080 -t app/webroot app/webroot/index.php > /tmp/kmp-php-server.log 2>&1 &
+          echo $! > /tmp/kmp-php-server.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/install >/dev/null; then
+              echo "Server ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to start"
+          cat /tmp/kmp-php-server.log || true
+          exit 1
+
+      - name: Run installer-first smoke tests
+        run: cd app && npm run test:ui:install:smoke -- --project=chromium
+
+      - name: Stop PHP test server
+        if: always()
+        run: |
+          if [ -f /tmp/kmp-php-server.pid ]; then
+            kill "$(cat /tmp/kmp-php-server.pid)" || true
+          fi
 
       - name: Upload test results
         if: success() || failure()

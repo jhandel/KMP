@@ -2,6 +2,8 @@
 const { chromium, expect } = require('@playwright/test');
 const { execSync } = require('child_process');
 
+const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8080';
+
 async function globalSetup() {
   console.log('🚀 Starting global setup for UI tests...');
 
@@ -31,7 +33,7 @@ async function globalSetup() {
   try {
     // Wait for the server to be ready
     console.log('⏳ Waiting for server to be ready...');
-    await page.goto('https://127.0.0.1:8080', { waitUntil: 'networkidle' });
+    await page.goto(baseUrl, { waitUntil: 'networkidle' });
     console.log('✅ Server is ready');
   } catch (error) {
     console.error('❌ Global setup failed:', error);

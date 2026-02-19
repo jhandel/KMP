@@ -286,6 +286,20 @@ class CoreNavigationProvider
             ],
             [
                 'type' => 'link',
+                'mergePath' => ['Config'],
+                'label' => 'Updates',
+                'order' => 90,
+                'url' => [
+                    'controller' => 'Updates',
+                    'action' => 'index',
+                ],
+                'icon' => 'bi-cloud-download',
+                'activePaths' => [
+                    '/admin/updates',
+                ],
+            ],
+            [
+                'type' => 'link',
                 'mergePath' => ['Security'],
                 'label' => 'Warrants',
                 'order' => 0,

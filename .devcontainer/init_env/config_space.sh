@@ -40,6 +40,11 @@ export PATH_WKHTML='/usr/bin/wkhtmltopdf'
 export AZURE_STORAGE_CONNECTION_STRING='GO GET THIS FROM AZURE PORTAL'
 EOF
 sudo mv /tmp/.env $(echo $REPO_PATH)/app/config/.env
+# Ensure the installer (running as www-data) can write to .env and config/
+sudo chmod 664 "$REPO_PATH/app/config/.env"
+sudo chown vscode:www-data "$REPO_PATH/app/config/.env"
+sudo chmod 775 "$REPO_PATH/app/config"
+sudo chown vscode:www-data "$REPO_PATH/app/config"
 
 # Create Mailpit configuration
 echo "Configuring Mailpit..."
@@ -103,8 +108,8 @@ sudo mkdir -p "$REPO_PATH/app/tmp/sessions"
 sudo mkdir -p "$REPO_PATH/app/tmp/tests"
 sudo chmod -R 775 "$REPO_PATH/app/logs"
 sudo chmod -R 775 "$REPO_PATH/app/tmp"
-sudo chown -R www-data:www-data "$REPO_PATH/app/logs"
-sudo chown -R www-data:www-data "$REPO_PATH/app/tmp"
+sudo chown -R vscode:www-data "$REPO_PATH/app/logs"
+sudo chown -R vscode:www-data "$REPO_PATH/app/tmp"
 
 # Setup cron job for queue processing
 echo "Setting up cron job..."
@@ -135,13 +140,15 @@ fi
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 
-sudo mkdir -p /workspaces/KMP/app/images/uploaded
-sudo mkdir -p /workspaces/KMP/app/images/cache
-sudo chmod -R 766 /workspaces/KMP/app/images
-sudo chown -R www-data:www-data /workspaces/KMP/app/images
+sudo mkdir -p "$REPO_PATH/app/images/uploaded"
+sudo mkdir -p "$REPO_PATH/app/images/cache"
+sudo mkdir -p "$REPO_PATH/app/webroot/img"
+sudo mkdir -p "$REPO_PATH/app/webroot/img/custom"
+sudo chmod -R 775 "$REPO_PATH/app/images"
+sudo chmod -R 775 "$REPO_PATH/app/webroot/img"
+sudo chown -R vscode:www-data "$REPO_PATH/app/images"
+sudo chown -R vscode:www-data "$REPO_PATH/app/webroot/img"
 
 # Start Apache
 echo "Starting Apache..."
 sudo apachectl restart
-
-

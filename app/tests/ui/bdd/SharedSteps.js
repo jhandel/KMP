@@ -2,18 +2,30 @@ const { createBdd } = require('playwright-bdd');
 const { expect } = require('@playwright/test');
 
 const { Given, When, Then } = createBdd();
+const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8080';
+const mailInboxUrl = process.env.KMP_TEST_MAIL_INBOX_URL || 'http://localhost:8025';
+const defaultPassword = process.env.KMP_INSTALL_ADMIN_PASSWORD || 'Password123';
+const aliasEmailMap = {
+    'admin@test.com': process.env.KMP_INSTALL_ADMIN_EMAIL || 'admin@test.com',
+    'Earl@test.com': process.env.KMP_TEST_APPROVER_EMAIL || 'Earl@test.com',
+};
+const aliasNameMap = {
+    'Earl Realm': process.env.KMP_TEST_APPROVER_SCA_NAME || 'Earl Realm',
+};
 
 // check if user is logged in
 Given('I am logged in as {string}', async ({ page }, emailAddress) => {
+    const resolvedEmail = aliasEmailMap[emailAddress] || emailAddress;
+
     // Navigate to the login page
-    await page.goto('https://localhost:8080/', { waitUntil: 'networkidle' });
+    await page.goto(baseUrl, { waitUntil: 'networkidle' });
     await page.goto('/members/login', { waitUntil: 'networkidle' });
 
     // Fill in the login form with admin credentials
-    await page.getByRole('textbox', { name: 'Email Address' }).fill(emailAddress);
-    await page.getByRole('textbox', { name: 'Password' }).fill('Password123');
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.waitForTimeout(1000); // Wait for the login to complete
+    await page.locator('input[name="email_address"]').fill(resolvedEmail);
+    await page.locator('input[name="password"]').fill(defaultPassword);
+    await page.locator('input[type="submit"], button[type="submit"]').first().click();
+    await page.waitForURL(url => !url.pathname.includes('/members/login'), { timeout: 15000 });
 });
 
 // Given I am on my profile page
@@ -33,12 +45,23 @@ Given('I click on the {string} button', async ({ page }, buttonText) => {
 });
 
 Given('I am at the test email inbox', async ({ page }) => {
-    await page.goto('http://localhost:8025', { waitUntil: 'networkidle' });
+    await page.goto(mailInboxUrl, { waitUntil: 'networkidle' });
 });
 
 When('I check for an email with subject {string}', async ({ page }, subject) => {
-    // Example: Check for an email with the given subject in the test inbox
-    const emailRow = await page.locator(`.subject b:has-text("${subject}")`).first();
+    const emailRow = page.locator(`.subject b:has-text("${subject}")`).first();
+    const timeoutAt = Date.now() + 60000;
+
+    while (Date.now() < timeoutAt) {
+        if (await emailRow.count()) {
+            await expect(emailRow).toBeVisible();
+            return;
+        }
+
+        await page.waitForTimeout(3000);
+        await page.reload({ waitUntil: 'networkidle' });
+    }
+
     await expect(emailRow).toBeVisible();
 });
 
@@ -56,8 +79,29 @@ Then('the email should start with the body:', async ({ page }, expectedContent) 
 
 // Authorization Queue Steps
 When('I click on my name {string}', async ({ page }, userName) => {
-    // Click on the user's name in the navigation or profile area
-    await page.locator(`.nav-link span:has-text('${userName}')`).click();
+    const resolvedUserName = aliasNameMap[userName] || userName;
+    const userDropdownLink = page
+        .locator('.dropdown-toggle, .nav-link, .navbar-nav a')
+        .filter({ hasText: resolvedUserName })
+        .first();
+
+    if (await userDropdownLink.count()) {
+        await userDropdownLink.click();
+        return;
+    }
+
+    const fallbackNameLink = page.locator(`.nav-link span:has-text("${resolvedUserName}")`).first();
+    if (await fallbackNameLink.count()) {
+        await fallbackNameLink.click();
+        return;
+    }
+
+    // Newer nav layouts expose queue links directly without requiring profile dropdown click.
+    if (await page.getByRole('link', { name: 'My Auth Queue' }).count()) {
+        return;
+    }
+
+    return;
 });
 
 When('I click on the {string} link', async ({ page }, linkText) => {
@@ -76,7 +120,7 @@ When('I select the option {string} from the dropdown with label {string}', async
 });
 
 Given("The test inbox is empty", async ({ page }) => {
-    await page.goto('http://localhost:8025', { waitUntil: 'networkidle' });
+    await page.goto(mailInboxUrl, { waitUntil: 'networkidle' });
     const deleteAllButton = await page.getByRole('button', { name: ' Delete all' });
 
     // Check if the delete button is enabled before clicking

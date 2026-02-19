@@ -3,6 +3,9 @@ const { defineConfig, devices } = require('@playwright/test');
 // Playwright-BDD configuration  
 const { defineBddConfig } = require('playwright-bdd');
 
+const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8080';
+const webServerCommand = process.env.PLAYWRIGHT_WEB_SERVER_COMMAND || '';
+
 const testDir = defineBddConfig({
   featuresRoot: './tests/ui/bdd',
   outputDir: 'tests/ui/gen',
@@ -30,7 +33,7 @@ module.exports = defineConfig({
   reporter: [
     ['html', {
       outputFolder: 'tests/ui-reports/html', host: '0.0.0.0',
-      port: 9324
+      port: 9324, open: 'never'
     }],
     ['json', { outputFile: 'tests/ui-reports/results.json' }],
     ['junit', { outputFile: 'tests/ui-reports/results.xml' }]
@@ -39,7 +42,7 @@ module.exports = defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'https://127.0.0.1:8080',
+    baseURL: baseUrl,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -100,13 +103,15 @@ module.exports = defineConfig({
     // },
   ],
 
-  /* Run your local dev server before starting the tests */
-  webServer: {
-    command: '',
-    url: 'https://127.0.0.1:8080',
-    reuseExistingServer: true,
-    ignoreHTTPSErrors: true,
-  },
+  /* Optionally start a local dev server before tests when explicitly configured. */
+  ...(webServerCommand ? {
+    webServer: {
+      command: webServerCommand,
+      url: baseUrl,
+      reuseExistingServer: true,
+      ignoreHTTPSErrors: true,
+    },
+  } : {}),
 
   /* Global setup and teardown */
   globalSetup: require.resolve('./tests/ui/global-setup.js'),

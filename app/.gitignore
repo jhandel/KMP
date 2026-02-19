@@ -3,6 +3,8 @@
 /config/app_local.php
 /config/.env
 /config/version.txt
+/config/release_hash.txt
+/config/release_tag.txt
 /logs/*
 /tmp/*
 /vendor/*

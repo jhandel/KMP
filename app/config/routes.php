@@ -193,6 +193,32 @@ return function (RouteBuilder $routes): void {
             'action' => 'gridData'
         ]);
 
+        // Installer and updater routes
+        $builder->connect('/install', [
+            'controller' => 'Install',
+            'action' => 'index',
+        ]);
+        $builder->connect('/install/finalize', [
+            'controller' => 'Install',
+            'action' => 'finalize',
+        ]);
+        $builder->connect('/admin/updates', [
+            'controller' => 'Updates',
+            'action' => 'index',
+        ]);
+        $builder->connect('/admin/updates/check', [
+            'controller' => 'Updates',
+            'action' => 'check',
+        ]);
+        $builder->connect('/admin/updates/channel', [
+            'controller' => 'Updates',
+            'action' => 'setChannel',
+        ]);
+        $builder->connect('/admin/updates/apply', [
+            'controller' => 'Updates',
+            'action' => 'apply',
+        ]);
+
         /**
          * RESTful Fallback Routes
          * 

@@ -113,11 +113,24 @@ return [
     ],
     'Documents' => [
         'storage' => [
-            'adapter' => 'local', //azure to use azure and set the connection string.
+            'adapter' => env('DOCUMENT_STORAGE_ADAPTER', 'local'),
+            'local' => [
+                'path' => WWW_ROOT . '../images/uploaded/',
+            ],
             'azure' => [
                 'connectionString' => env('AZURE_STORAGE_CONNECTION_STRING'),
-                'container' => 'documents',
-                'prefix' => '',
+                'container' => env('AZURE_STORAGE_CONTAINER', 'documents'),
+                'prefix' => env('AZURE_STORAGE_PREFIX', ''),
+            ],
+            's3' => [
+                'bucket' => env('AWS_S3_BUCKET', null),
+                'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+                'prefix' => env('AWS_S3_PREFIX', ''),
+                'key' => env('AWS_ACCESS_KEY_ID', null),
+                'secret' => env('AWS_SECRET_ACCESS_KEY', null),
+                'sessionToken' => env('AWS_SESSION_TOKEN', null),
+                'endpoint' => env('AWS_S3_ENDPOINT', null),
+                'usePathStyleEndpoint' => filter_var(env('AWS_S3_USE_PATH_STYLE_ENDPOINT', false), FILTER_VALIDATE_BOOLEAN),
             ],
         ],
     ],
