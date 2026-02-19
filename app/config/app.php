@@ -134,6 +134,8 @@ return [
         "manifestCacheSeconds" => (int)env("UPDATER_MANIFEST_CACHE_SECONDS", 300),
         /** Working directory for updater lock/temp artifacts */
         "runtimeDirectory" => env("UPDATER_RUNTIME_DIR", TMP . "updater"),
+        /** Consider apply.lock stale after this many seconds */
+        "lockTimeoutSeconds" => (int)env("UPDATER_LOCK_TIMEOUT_SECONDS", 1800),
         /** Comma-separated host allowlist for updater HTTP requests */
         "allowedHosts" => array_values(array_filter(array_map(
             "trim",

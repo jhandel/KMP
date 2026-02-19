@@ -970,36 +970,66 @@ class UpgradePipelineService
      */
     private function acquireLock(): void
     {
-        $lockDir = $this->resolveRuntimeDirectory();
-        $lockFile = $lockDir . DS . 'apply.lock';
-        $lockHandle = @fopen($lockFile, 'xb');
-        if ($lockHandle === false) {
-            if (file_exists($lockFile)) {
-                throw new RuntimeException('Another update operation is already running.');
+        $attemptErrors = [];
+        foreach ($this->runtimeDirectoryCandidates() as $lockDir) {
+            try {
+                $this->ensureDirectory($lockDir);
+            } catch (RuntimeException $exception) {
+                $attemptErrors[] = sprintf('%s (%s)', $lockDir, $exception->getMessage());
+                continue;
             }
-            $lastError = error_get_last();
-            $detail = is_array($lastError) ? (string)($lastError['message'] ?? 'unknown error') : 'unknown error';
+            if (!is_writable($lockDir)) {
+                $attemptErrors[] = sprintf('%s (directory is not writable)', $lockDir);
+                continue;
+            }
 
-            throw new RuntimeException(sprintf('Failed to create updater lock file at "%s": %s', $lockFile, $detail));
+            $lockFile = $lockDir . DS . 'apply.lock';
+            if (is_file($lockFile) && $this->isStaleLockFile($lockFile)) {
+                if (!@unlink($lockFile)) {
+                    $attemptErrors[] = sprintf('%s (stale lock exists and could not be removed)', $lockFile);
+                    continue;
+                }
+            }
+
+            $lockHandle = @fopen($lockFile, 'xb');
+            if ($lockHandle === false) {
+                if (file_exists($lockFile)) {
+                    throw new RuntimeException(sprintf('Another update operation is already running (lock: %s).', $lockFile));
+                }
+                $lastError = error_get_last();
+                $detail = is_array($lastError) ? (string)($lastError['message'] ?? 'unknown error') : 'unknown error';
+                $attemptErrors[] = sprintf('%s (%s)', $lockFile, $detail);
+                continue;
+            }
+
+            $payload = json_encode(['startedAt' => gmdate(DATE_ATOM)], JSON_UNESCAPED_SLASHES);
+            if ($payload === false) {
+                fclose($lockHandle);
+                @unlink($lockFile);
+                throw new RuntimeException('Failed to initialize updater lock metadata.');
+            }
+            if (fwrite($lockHandle, $payload . PHP_EOL) === false) {
+                fclose($lockHandle);
+                @unlink($lockFile);
+                $attemptErrors[] = sprintf('%s (failed to write lock metadata)', $lockFile);
+                continue;
+            }
+            if (!fclose($lockHandle)) {
+                @unlink($lockFile);
+                $attemptErrors[] = sprintf('%s (failed to finalize lock file)', $lockFile);
+                continue;
+            }
+
+            $this->lockFile = $lockFile;
+            $this->runtimeDirectory = $lockDir;
+
+            return;
         }
 
-        $payload = json_encode(['startedAt' => gmdate(DATE_ATOM)], JSON_UNESCAPED_SLASHES);
-        if ($payload === false) {
-            fclose($lockHandle);
-            @unlink($lockFile);
-            throw new RuntimeException('Failed to initialize updater lock metadata.');
-        }
-        if (fwrite($lockHandle, $payload . PHP_EOL) === false) {
-            fclose($lockHandle);
-            @unlink($lockFile);
-            throw new RuntimeException(sprintf('Failed to write updater lock file at "%s".', $lockFile));
-        }
-        if (!fclose($lockHandle)) {
-            @unlink($lockFile);
-            throw new RuntimeException(sprintf('Failed to finalize updater lock file at "%s".', $lockFile));
-        }
-
-        $this->lockFile = $lockFile;
+        throw new RuntimeException(sprintf(
+            'Failed to create updater lock file. Attempts: %s',
+            $attemptErrors !== [] ? implode('; ', $attemptErrors) : 'none'
+        ));
     }
 
     /**
@@ -1013,36 +1043,17 @@ class UpgradePipelineService
             return $this->runtimeDirectory;
         }
 
-        $configuredRuntimeDir = trim((string)Configure::read('Updater.runtimeDirectory', ''));
-        $systemTempDir = rtrim((string)sys_get_temp_dir(), '/\\');
-        $candidates = [];
-        if ($configuredRuntimeDir !== '') {
-            $candidates[] = $configuredRuntimeDir;
-        }
-        $candidates[] = TMP . 'updater';
-        if ($systemTempDir !== '') {
-            $candidates[] = $systemTempDir . DS . 'kmp-updater';
-        }
-
         $attempted = [];
-        foreach ($candidates as $candidate) {
-            $normalized = rtrim(str_replace(['\\', '/'], DS, trim($candidate)), DS);
-            if ($normalized === '') {
-                continue;
-            }
-            if (!str_starts_with($normalized, DS)) {
-                $normalized = ROOT . DS . ltrim($normalized, DS);
-            }
-
-            $attempted[] = $normalized;
+        foreach ($this->runtimeDirectoryCandidates() as $candidate) {
+            $attempted[] = $candidate;
             try {
-                $this->ensureDirectory($normalized);
+                $this->ensureDirectory($candidate);
             } catch (RuntimeException) {
                 continue;
             }
 
-            if (is_writable($normalized)) {
-                $this->runtimeDirectory = $normalized;
+            if (is_writable($candidate)) {
+                $this->runtimeDirectory = $candidate;
 
                 return $this->runtimeDirectory;
             }
@@ -1054,6 +1065,58 @@ class UpgradePipelineService
                 implode(', ', $attempted)
             )
         );
+    }
+
+    /**
+     * Build normalized runtime directory candidates in priority order.
+     *
+     * @return array<int, string>
+     */
+    private function runtimeDirectoryCandidates(): array
+    {
+        $configuredRuntimeDir = trim((string)Configure::read('Updater.runtimeDirectory', ''));
+        $systemTempDir = rtrim((string)sys_get_temp_dir(), '/\\');
+        $candidates = [];
+        if ($configuredRuntimeDir !== '') {
+            $candidates[] = $configuredRuntimeDir;
+        }
+        $candidates[] = TMP . 'updater';
+        if ($systemTempDir !== '') {
+            $candidates[] = $systemTempDir . DS . 'kmp-updater';
+        }
+
+        $normalizedCandidates = [];
+        foreach ($candidates as $candidate) {
+            $normalized = rtrim(str_replace(['\\', '/'], DS, trim($candidate)), DS);
+            if ($normalized === '') {
+                continue;
+            }
+            if (!str_starts_with($normalized, DS)) {
+                $normalized = ROOT . DS . ltrim($normalized, DS);
+            }
+            if (!in_array($normalized, $normalizedCandidates, true)) {
+                $normalizedCandidates[] = $normalized;
+            }
+        }
+
+        return $normalizedCandidates;
+    }
+
+    /**
+     * Determine whether lock file is stale and can be replaced.
+     *
+     * @param string $lockFile
+     * @return bool
+     */
+    private function isStaleLockFile(string $lockFile): bool
+    {
+        $timeoutSeconds = max(60, (int)Configure::read('Updater.lockTimeoutSeconds', 1800));
+        $modifiedAt = @filemtime($lockFile);
+        if ($modifiedAt === false) {
+            return false;
+        }
+
+        return (time() - $modifiedAt) > $timeoutSeconds;
     }
 
     /**
