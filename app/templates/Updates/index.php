@@ -5,12 +5,10 @@
  * @var string $currentVersion
  * @var string $channel
  * @var string $githubRepository
+ * @var string $githubApiBaseUrl
  * @var string $installedReleaseHash
  * @var string $installedReleaseTag
- * @var string|null $releaseIdentityStatus
  * @var array<string, string> $availableChannels
- * @var array<string, mixed>|null $availableRelease
- * @var array<string, mixed>|null $manifest
  */
 $this->extend('/layout/TwitterBootstrap/dashboard');
 
@@ -21,7 +19,14 @@ $this->KMP->endBlock();
 $this->assign('title', __('Updates'));
 ?>
 
-<div class="updates index content">
+<div class="updates index content"
+    data-controller="updates-check"
+    data-updates-check-github-api-base-url-value="<?= h($githubApiBaseUrl) ?>"
+    data-updates-check-github-repository-value="<?= h($githubRepository) ?>"
+    data-updates-check-channel-value="<?= h($channel) ?>"
+    data-updates-check-installed-release-hash-value="<?= h($installedReleaseHash) ?>"
+    data-updates-check-installed-release-tag-value="<?= h($installedReleaseTag) ?>"
+    data-updates-check-set-channel-url-value="<?= h($this->Url->build(['controller' => 'Updates', 'action' => 'setChannel', 'plugin' => null])) ?>">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h3><?= __('Updates') ?></h3>
     </div>
@@ -37,6 +42,8 @@ $this->assign('title', __('Updates'));
                 <dd class="col-sm-9">
                     <?= $githubRepository !== '' ? h($githubRepository) : __('Not configured') ?>
                 </dd>
+                <dt class="col-sm-3"><?= __('GitHub API URL') ?></dt>
+                <dd class="col-sm-9"><?= h($githubApiBaseUrl) ?></dd>
                 <dt class="col-sm-3"><?= __('Installed release tag') ?></dt>
                 <dd class="col-sm-9"><?= $installedReleaseTag !== '' ? h($installedReleaseTag) : __('Not set') ?></dd>
                 <dt class="col-sm-3"><?= __('Installed release hash') ?></dt>
@@ -49,77 +56,69 @@ $this->assign('title', __('Updates'));
 
     <div class="card mb-3">
         <div class="card-body">
-            <?= $this->Form->create(null, [
-                'url' => ['controller' => 'Updates', 'action' => 'setChannel', 'plugin' => null],
-                'class' => 'row g-2 align-items-end',
-            ]) ?>
-            <div class="col-sm-4">
-                <?= $this->Form->control('channel', [
-                    'label' => __('Update channel'),
-                    'type' => 'select',
-                    'options' => $availableChannels,
-                    'value' => $channel,
-                    'empty' => false,
-                ]) ?>
+            <div class="row g-2 align-items-end">
+                <div class="col-sm-4">
+                    <?= $this->Form->control('channel', [
+                        'label' => __('Update channel'),
+                        'type' => 'select',
+                        'options' => $availableChannels,
+                        'value' => $channel,
+                        'empty' => false,
+                        'data-updates-check-target' => 'channelSelect',
+                        'data-action' => 'change->updates-check#channelChanged',
+                    ]) ?>
+                </div>
+                <div class="col-sm-8 mb-3">
+                    <small class="text-muted" data-updates-check-target="statusMessage">
+                        <?= __('Checking latest release...') ?>
+                    </small>
+                </div>
             </div>
-            <div class="col-sm-auto mb-3">
-                <?= $this->Form->button(__('Save channel'), ['class' => 'btn btn-secondary']) ?>
-            </div>
-            <?= $this->Form->end() ?>
         </div>
     </div>
 
-    <div class="mb-3">
-        <?= $this->Form->create(null, [
-            'url' => ['controller' => 'Updates', 'action' => 'check', 'plugin' => null],
-        ]) ?>
-        <?= $this->Form->button(__('Check for updates'), ['class' => 'btn btn-primary']) ?>
-        <?= $this->Form->end() ?>
-    </div>
-
-    <?php if (!empty($availableRelease)): ?>
     <div class="card mb-3">
         <div class="card-header"><?= __('Latest release') ?></div>
         <div class="card-body">
             <dl class="row mb-0">
                 <dt class="col-sm-3"><?= __('Version') ?></dt>
-                <dd class="col-sm-9"><?= h((string)($availableRelease['version'] ?? 'unknown')) ?></dd>
+                <dd class="col-sm-9" data-updates-check-target="latestVersion"><?= __('Checking...') ?></dd>
                 <dt class="col-sm-3"><?= __('Tag') ?></dt>
-                <dd class="col-sm-9"><?= h((string)($availableRelease['tag'] ?? 'unknown')) ?></dd>
+                <dd class="col-sm-9" data-updates-check-target="latestTag"><?= __('Checking...') ?></dd>
                 <dt class="col-sm-3"><?= __('Release hash') ?></dt>
                 <dd class="col-sm-9">
-                    <?php $releaseHash = (string)($availableRelease['releaseHash'] ?? ''); ?>
-                    <code><?= $releaseHash !== '' ? h($releaseHash) : __('Not provided') ?></code>
+                    <code data-updates-check-target="latestHash"><?= __('Checking...') ?></code>
                 </dd>
+                <dt class="col-sm-3"><?= __('Integrity') ?></dt>
+                <dd class="col-sm-9" data-updates-check-target="latestIntegrity"><?= __('Checking...') ?></dd>
                 <dt class="col-sm-3"><?= __('Published') ?></dt>
-                <dd class="col-sm-9"><?= h((string)($availableRelease['publishedAt'] ?? 'unknown')) ?></dd>
+                <dd class="col-sm-9" data-updates-check-target="latestPublished"><?= __('Checking...') ?></dd>
                 <dt class="col-sm-3"><?= __('Release URL') ?></dt>
                 <dd class="col-sm-9">
-                    <?php $releaseUrl = (string)($availableRelease['releaseUrl'] ?? ''); ?>
-                    <?= $releaseUrl !== '' ? h($releaseUrl) : __('Not provided') ?>
+                    <a href="#" target="_blank" rel="noopener noreferrer" data-updates-check-target="latestReleaseUrl">
+                        <?= __('Checking...') ?>
+                    </a>
                 </dd>
                 <dt class="col-sm-3"><?= __('Package URL') ?></dt>
                 <dd class="col-sm-9">
-                    <?php $packageUrl = (string)($availableRelease['package']['url'] ?? ''); ?>
-                    <?= $packageUrl !== '' ? h($packageUrl) : __('Not provided') ?>
+                    <a href="#" target="_blank" rel="noopener noreferrer" data-updates-check-target="latestPackageUrl">
+                        <?= __('Checking...') ?>
+                    </a>
                 </dd>
             </dl>
         </div>
     </div>
 
-    <?php if ($releaseIdentityStatus === 'same'): ?>
-    <div class="alert alert-success"><?= __('You are on this release.') ?></div>
-    <?php elseif ($releaseIdentityStatus === 'different'): ?>
-    <div class="alert alert-warning"><?= __('Installed release identity differs from the latest release.') ?></div>
-    <?php endif; ?>
+    <div class="alert d-none" data-updates-check-target="identityStatus"></div>
 
-    <?= $this->Form->create(null, [
-            'url' => ['controller' => 'Updates', 'action' => 'apply', 'plugin' => null],
-        ]) ?>
-    <?= $this->Form->button(__('Update now'), [
+    <div class="d-none" data-updates-check-target="updateAction">
+        <?= $this->Html->link(__('Update now'), [
+            'controller' => 'Updates',
+            'action' => 'apply',
+            'plugin' => null,
+        ], [
             'class' => 'btn btn-warning',
             'confirm' => __('Apply update workflow for the latest release?'),
         ]) ?>
-    <?= $this->Form->end() ?>
-    <?php endif; ?>
+    </div>
 </div>

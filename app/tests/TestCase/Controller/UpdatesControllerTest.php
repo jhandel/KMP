@@ -18,6 +18,7 @@ class UpdatesControllerTest extends HttpIntegrationTestCase
         parent::setUp();
         $this->enableCsrfToken();
         $this->enableSecurityToken();
+        Configure::write('Updater.githubRepository', '');
     }
 
     public function testIndexRequiresAuthentication(): void
@@ -35,7 +36,8 @@ class UpdatesControllerTest extends HttpIntegrationTestCase
 
         $this->assertResponseOk();
         $this->assertResponseContains('Updates');
-        $this->assertResponseContains('Save channel');
+        $this->assertResponseContains('Checking latest release...');
+        $this->assertResponseContains('Integrity');
     }
 
     public function testIndexUsesUpdaterChannelAppSetting(): void
@@ -62,12 +64,11 @@ class UpdatesControllerTest extends HttpIntegrationTestCase
         $this->assertResponseContains('0123456789abcdef0123456789abcdef01234567');
     }
 
-    public function testCheckRedirectsWhenRepositoryNotConfigured(): void
+    public function testCheckRedirectsToIndex(): void
     {
-        Configure::write('Updater.githubRepository', '');
         $this->authenticateAsSuperUser();
 
-        $this->post('/admin/updates/check');
+        $this->get('/admin/updates/check');
 
         $this->assertRedirectContains('/admin/updates');
     }
@@ -77,7 +78,7 @@ class UpdatesControllerTest extends HttpIntegrationTestCase
         $this->authenticateAsSuperUser();
         StaticHelpers::setAppSetting('Updater.Channel', 'stable', null, true);
 
-        $this->post('/admin/updates/channel', ['channel' => 'nightly']);
+        $this->get('/admin/updates/channel?channel=nightly');
 
         $this->assertRedirectContains('/admin/updates');
         $this->assertSame('nightly', strtolower((string)StaticHelpers::getAppSetting('Updater.Channel', 'stable')));
@@ -88,17 +89,35 @@ class UpdatesControllerTest extends HttpIntegrationTestCase
         $this->authenticateAsSuperUser();
         StaticHelpers::setAppSetting('Updater.Channel', 'beta', null, true);
 
-        $this->post('/admin/updates/channel', ['channel' => 'production']);
+        $this->get('/admin/updates/channel?channel=production');
 
         $this->assertRedirectContains('/admin/updates');
         $this->assertSame('beta', strtolower((string)StaticHelpers::getAppSetting('Updater.Channel', 'stable')));
+    }
+
+    public function testSetChannelReturnsJsonForAjaxRequests(): void
+    {
+        $this->authenticateAsSuperUser();
+        $this->configRequest([
+            'headers' => [
+                'X-Requested-With' => 'XMLHttpRequest',
+                'Accept' => 'application/json',
+            ],
+        ]);
+
+        $this->get('/admin/updates/channel?channel=dev');
+
+        $this->assertResponseOk();
+        $this->assertContentType('application/json');
+        $this->assertResponseContains('"success":true');
+        $this->assertResponseContains('"channel":"dev"');
     }
 
     public function testApplyRedirectsBackToIndex(): void
     {
         $this->authenticateAsSuperUser();
 
-        $this->post('/admin/updates/apply');
+        $this->get('/admin/updates/apply');
 
         $this->assertRedirectContains('/admin/updates');
     }

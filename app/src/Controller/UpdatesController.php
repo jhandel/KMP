@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\KMP\StaticHelpers;
-use App\Services\Updater\ManifestClient;
 use Cake\Core\Configure;
-use Throwable;
+use Cake\Http\Response;
 
 /**
  * Admin-facing release updater UI.
@@ -35,76 +34,24 @@ class UpdatesController extends AppController
             'currentVersion' => trim((string)Configure::read('App.version', '0.0.0')),
             'channel' => $channel,
             'githubRepository' => (string)Configure::read('Updater.githubRepository', ''),
+            'githubApiBaseUrl' => (string)Configure::read('Updater.githubApiBaseUrl', 'https://api.github.com'),
             'installedReleaseHash' => $installedReleaseHash,
             'installedReleaseTag' => $installedReleaseTag,
-            'releaseIdentityStatus' => null,
             'availableChannels' => $this->channelOptions(),
-            'availableRelease' => null,
         ]);
     }
 
     /**
-     * Fetch GitHub release metadata and render updater dashboard with latest release data.
+     * Legacy check endpoint now redirects to index (auto-check runs on page load).
      *
-     * @return \Cake\Http\Response|null|void
+     * @return \Cake\Http\Response
      */
     public function check()
     {
-        $this->request->allowMethod(['post']);
+        $this->request->allowMethod(['get', 'post']);
         $this->authorizeCurrentUrl();
-        $channel = $this->resolveUpdaterChannel();
-        $installedReleaseHash = $this->resolveInstalledReleaseHash();
-        $installedReleaseTag = trim((string)Configure::read('App.releaseTag', ''));
 
-        $githubRepository = trim((string)Configure::read('Updater.githubRepository', ''));
-        if ($githubRepository === '') {
-            $this->Flash->error(__('Updater GitHub repository is not configured.'));
-
-            return $this->redirect(['action' => 'index']);
-        }
-
-        try {
-            $manifest = (new ManifestClient())->fetchManifest($githubRepository);
-            $latestVersion = (string)($manifest['latestVersion'] ?? '');
-            $availableRelease = null;
-            if (!empty($manifest['releases']) && is_array($manifest['releases'])) {
-                $availableRelease = $manifest['releases'][0];
-            }
-            $releaseIdentityStatus = $this->compareReleaseIdentity(
-                $installedReleaseHash,
-                $installedReleaseTag,
-                $availableRelease
-            );
-
-            if ($latestVersion !== '') {
-                $this->Flash->success(__('Latest available version: {0}', $latestVersion));
-            } else {
-                $this->Flash->warning(__('GitHub release data loaded, but no matching release was found for this channel.'));
-            }
-            if ($releaseIdentityStatus === 'same') {
-                $this->Flash->info(__('You are on this release.'));
-            } elseif ($releaseIdentityStatus === 'different') {
-                $this->Flash->warning(__('Installed release identity differs from the latest release.'));
-            }
-
-            $this->set([
-                'currentVersion' => trim((string)Configure::read('App.version', '0.0.0')),
-                'channel' => $channel,
-                'githubRepository' => $githubRepository,
-                'installedReleaseHash' => $installedReleaseHash,
-                'installedReleaseTag' => $installedReleaseTag,
-                'releaseIdentityStatus' => $releaseIdentityStatus,
-                'availableChannels' => $this->channelOptions(),
-                'availableRelease' => $availableRelease,
-                'manifest' => $manifest,
-            ]);
-        } catch (Throwable $exception) {
-            $this->Flash->error(__('Failed to check updates: {0}', $exception->getMessage()));
-
-            return $this->redirect(['action' => 'index']);
-        }
-
-        $this->render('index');
+        return $this->redirect(['action' => 'index']);
     }
 
     /**
@@ -114,20 +61,42 @@ class UpdatesController extends AppController
      */
     public function setChannel()
     {
-        $this->request->allowMethod(['post']);
+        $this->request->allowMethod(['get', 'post']);
         $this->authorizeCurrentUrl();
+        $isJsonRequest = $this->request->is('ajax') || $this->request->is('json');
 
-        $selectedChannel = $this->normalizeUpdaterChannel((string)$this->request->getData('channel', ''));
+        $selectedChannel = $this->normalizeUpdaterChannel(
+            (string)$this->request->getQuery('channel', (string)$this->request->getData('channel', ''))
+        );
         if ($selectedChannel === '') {
+            if ($isJsonRequest) {
+                return $this->jsonResponse([
+                    'success' => false,
+                    'message' => (string)__('Invalid update channel selection.'),
+                ], 400);
+            }
             $this->Flash->error(__('Invalid update channel selection.'));
 
             return $this->redirect(['action' => 'index']);
         }
 
         if (!StaticHelpers::setAppSetting('Updater.Channel', $selectedChannel, null, true)) {
+            if ($isJsonRequest) {
+                return $this->jsonResponse([
+                    'success' => false,
+                    'message' => (string)__('Failed to save update channel.'),
+                ], 500);
+            }
             $this->Flash->error(__('Failed to save update channel.'));
 
             return $this->redirect(['action' => 'index']);
+        }
+        if ($isJsonRequest) {
+            return $this->jsonResponse([
+                'success' => true,
+                'channel' => $selectedChannel,
+                'message' => (string)__('Update channel set to {0}.', $selectedChannel),
+            ]);
         }
 
         $this->Flash->success(__('Update channel set to {0}.', $selectedChannel));
@@ -142,7 +111,7 @@ class UpdatesController extends AppController
      */
     public function apply()
     {
-        $this->request->allowMethod(['post']);
+        $this->request->allowMethod(['get', 'post']);
         $this->authorizeCurrentUrl();
         $this->Flash->info(__('Update execution pipeline is not implemented yet.'));
 
@@ -220,37 +189,6 @@ class UpdatesController extends AppController
     }
 
     /**
-     * Compare installed identity against latest release identity.
-     *
-     * @param string $installedReleaseHash
-     * @param string $installedReleaseTag
-     * @param array<string, mixed>|null $availableRelease
-     * @return string|null
-     */
-    private function compareReleaseIdentity(
-        string $installedReleaseHash,
-        string $installedReleaseTag,
-        ?array $availableRelease
-    ): ?string {
-        if ($availableRelease === null) {
-            return null;
-        }
-
-        $latestReleaseHash = $this->normalizeReleaseHash((string)($availableRelease['releaseHash'] ?? ''));
-        if ($installedReleaseHash !== '' && $latestReleaseHash !== '') {
-            return hash_equals($installedReleaseHash, $latestReleaseHash) ? 'same' : 'different';
-        }
-
-        $latestReleaseTag = strtolower(trim((string)($availableRelease['tag'] ?? '')));
-        $normalizedInstalledTag = strtolower(trim($installedReleaseTag));
-        if ($normalizedInstalledTag !== '' && $latestReleaseTag !== '') {
-            return hash_equals($normalizedInstalledTag, $latestReleaseTag) ? 'same' : 'different';
-        }
-
-        return null;
-    }
-
-    /**
      * Build select options for channel picker.
      *
      * @return array<string, string>
@@ -263,5 +201,26 @@ class UpdatesController extends AppController
             'dev' => __('Dev'),
             'nightly' => __('Nightly'),
         ];
+    }
+
+    /**
+     * Build JSON response payload.
+     *
+     * @param array<string, mixed> $payload
+     * @param int $status
+     * @return \Cake\Http\Response
+     */
+    private function jsonResponse(array $payload, int $status = 200): Response
+    {
+        $json = json_encode($payload);
+        if ($json === false) {
+            $json = '{"success":false,"message":"JSON encoding failed."}';
+            $status = 500;
+        }
+
+        return $this->response
+            ->withStatus($status)
+            ->withType('application/json')
+            ->withStringBody($json);
     }
 }
