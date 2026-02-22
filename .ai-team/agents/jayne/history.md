@@ -120,3 +120,10 @@ Fixed 13 documentation issues across 12 files by verifying each claim against ac
 📌 Team update (2026-02-11): EmailTemplateRendererService now supports safe conditional DSL (superseded — now uses `{{#if var == "value"}}...{{/if}}`; the interim `<?php if ($var == "value") : ?>...<?php endif; ?>` format is no longer active) — parsed via regex, never eval()d. Supports ==, !=, ||, && operators. All status paths (Approved/Pending/Denied) tested and passing. — decided by Kaylee
 
 📌 Team update (2026-02-11): Email template conditionals now use {{#if var == "value"}}...{{/if}} mustache-style syntax instead of PHP-style. Tests should use new syntax. — decided by Kaylee
+
+### 2026-02-22: Runtime log triage (Redis/update_database/Apache MPM)
+
+- **RedisEngine typed property warning (likely root cause):** `app/config/app.php` enables `RedisEngine` whenever `CACHE_ENGINE=redis`, and `installer/internal/providers/railway.go` sets `CACHE_ENGINE=redis` for Redis deployments. If Redis extension/runtime wiring is missing or `REDIS_URL` is unresolved/invalid at boot, Cake’s Redis init path can fail and surface the uninitialized typed-property error noise.
+- **`update_database` fallback warning (confirmed root cause):** `docker/entrypoint.prod.sh` intentionally logs a warning and falls back to `bin/cake migrations migrate` when `bin/cake update_database` exits non-zero on empty DB bootstrap. Warning is from fallback path, not from lock/wait logic.
+- **Apache “More than one MPM loaded” (likely root cause):** no MPM module toggles exist in provided runtime scripts; this points to image/runtime Apache module state (duplicate enabled MPM modules) rather than Cake app code.
+- **Testing gap note:** no existing test pattern currently covers `docker/entrypoint.prod.sh` runtime branching or Railway provider env wiring in this repo’s current test suites, so I documented command-level verification instead of adding a mismatched test.

@@ -134,3 +134,9 @@ Fixed two bugs in `GatheringWaiversTable::countGatheringsNeedingWaivers()` that 
 - `app/plugins/Waivers/src/Controller/GatheringWaiversController.php` — `needingWaivers()` action (list view, line ~1784) — NOT modified
 
 📌 Team update (2026-02-12): Badge count query in GatheringWaiversTable changed to past-only gatherings + aligned permission to uploadWaivers — decided by Kaylee
+
+### 2026-02-22: Runtime startup hardening (Redis/MySQL/Apache)
+
+- Setup and migration commands should force `CACHE_ENGINE=apcu` (or non-Redis) to avoid RedisEngine initialization failures during bootstrap when Redis is not ready.
+- In container startup scripts, prefer explicit `MYSQL_HOST`/`MYSQL_PORT`/`MYSQL_USERNAME` vars over parsing `DATABASE_URL` when available, especially on Railway-managed databases.
+- Production image should explicitly disable extra Apache MPMs (`mpm_event`, `mpm_worker`) and ensure `mpm_prefork` is enabled to avoid “More than one MPM loaded”.

@@ -90,7 +90,7 @@ class NavigationCell extends Cell
         ];
 
         // Get navigation items from the registry instead of dispatching events
-        $menuItems = NavigationRegistry::getNavigationItems($user, $params);
+        $menuItems = NavigationRegistry::getNavigationItems($user, $params, $this->request->getSession());
         $menu = $this->organizeMenu($menuItems, $user);
 
         $this->set(compact('menu'));

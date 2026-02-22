@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Model\Entity\Member;
 use Cake\Core\StaticConfigTrait;
+use Cake\Http\Session;
 
 /**
  * Centralized registry for application navigation items from core and plugins.
@@ -87,20 +88,25 @@ class NavigationRegistry
      * // ]
      * ```
      */
-    public static function getNavigationItems(Member $user, array $params = []): array
+    public static function getNavigationItems(Member $user, array $params = [], ?Session $session = null): array
     {
         self::ensureInitialized();
         $latestRestoreCompletion = self::getLatestRestoreCompletionTimestamp();
+        $hasRegisteredSources = !empty(self::$navigationItems);
 
         $allItems = [];
         // Check for cached items in session for performance
-        if (isset($_SESSION['navigation_items']) && is_array($_SESSION['navigation_items'])) {
+        $cached = $session?->read('navigation_items');
+        if ($cached === null && isset($_SESSION['navigation_items']) && is_array($_SESSION['navigation_items'])) {
             $cached = $_SESSION['navigation_items'];
+        }
+        if (is_array($cached)) {
             if (
                 isset($cached['user_id'], $cached['items'])
                 && (int)$cached['user_id'] === (int)$user->id
                 && is_array($cached['items'])
                 && !self::isCachedNavigationStaleForRestore($cached, $latestRestoreCompletion)
+                && (!$hasRegisteredSources || $cached['items'] !== [])
             ) {
                 return $cached['items'];
             }
@@ -120,13 +126,25 @@ class NavigationRegistry
 
             $allItems = array_merge($allItems, $items);
         }
-
         // Cache processed items in session for performance
-        $_SESSION['navigation_items'] = [
-            'user_id' => (int)$user->id,
-            'items' => $allItems,
-            'generated_at' => (new \DateTimeImmutable('now'))->format(\DateTimeInterface::ATOM),
-        ];
+        if (!$hasRegisteredSources || $allItems !== []) {
+            $payload = [
+                'user_id' => (int)$user->id,
+                'items' => $allItems,
+                'generated_at' => (new \DateTimeImmutable('now'))->format(\DateTimeInterface::ATOM),
+            ];
+            if ($session !== null) {
+                $session->write('navigation_items', $payload);
+            } else {
+                $_SESSION['navigation_items'] = $payload;
+            }
+        } else {
+            if ($session !== null) {
+                $session->delete('navigation_items');
+            } else {
+                unset($_SESSION['navigation_items']);
+            }
+        }
         return $allItems;
     }
 

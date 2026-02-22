@@ -97,7 +97,8 @@ type prereqDoneMsg struct {
 
 // installDoneMsg signals the background install completed.
 type installDoneMsg struct {
-	err error
+	err    error
+	domain string
 }
 
 var progressSteps = []string{
@@ -593,7 +594,7 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case stepWelcome:
 		if key == "enter" {
 			m.step = stepProvider
-			m.cursor = 0
+			m.cursor = m.provider
 		} else if key == "q" || key == "esc" {
 			return m, tea.Quit
 		}
@@ -631,10 +632,14 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if key == "enter" {
 			m.domain = m.domainInput.Value()
 			if m.domain == "" {
-				m.domain = "localhost"
+				if m.selectedProviderID() == "railway" {
+					m.domain = ""
+				} else {
+					m.domain = "localhost"
+				}
 			}
 			m.step = stepChannel
-			m.cursor = 0
+			m.cursor = m.channel
 			return m, nil
 		} else if key == "esc" {
 			m.step = stepPrereqs
@@ -658,7 +663,7 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.channel = m.cursor
 			m.step = stepDatabase
-			m.cursor = 0
+			m.cursor = m.database
 		case "esc":
 			m.step = stepDomain
 			m.domainInput.Focus()
@@ -1034,6 +1039,9 @@ func (m *InstallModel) handleInstallDone(msg installDoneMsg) (tea.Model, tea.Cmd
 		m.step = stepComplete
 		return m, nil
 	}
+	if strings.TrimSpace(msg.domain) != "" {
+		m.domain = strings.TrimSpace(msg.domain)
+	}
 	m.progressStep = len(progressSteps)
 	m.progressDone = true
 	m.step = stepComplete
@@ -1206,7 +1214,7 @@ func (m *InstallModel) runInstall() tea.Cmd {
 		if err := provider.Install(cfg); err != nil {
 			return installDoneMsg{err: err}
 		}
-		return installDoneMsg{}
+		return installDoneMsg{domain: cfg.Domain}
 	}
 }
 
@@ -1440,7 +1448,11 @@ func (m *InstallModel) viewDomain() string {
 	var s strings.Builder
 	s.WriteString("  Enter your domain name:\n\n")
 	s.WriteString("  " + m.domainInput.View() + "\n\n")
-	s.WriteString(components.SubtleStyle.Render("  Leave blank and press Enter for localhost (development mode)."))
+	if m.selectedProviderID() == "railway" {
+		s.WriteString(components.SubtleStyle.Render("  Leave blank to auto-generate a Railway domain and use it for APP_FULL_BASE_URL."))
+	} else {
+		s.WriteString(components.SubtleStyle.Render("  Leave blank and press Enter for localhost (development mode)."))
+	}
 
 	return components.BoxStyle.Render(s.String())
 }
@@ -1474,6 +1486,7 @@ func (m *InstallModel) viewDatabase() string {
 
 	switch m.dbSubStep {
 	case 0:
+		s.WriteString(fmt.Sprintf("  Provider: %s\n\n", providerChoices[m.provider].name))
 		s.WriteString("  Select database configuration:\n\n")
 		for i, db := range dbChoices {
 			cursor := "  ○ "
@@ -1673,9 +1686,13 @@ func (m *InstallModel) viewProgress() string {
 	// Summary of selections
 	dbChoices, _ := dbOptionsForProvider(m.selectedProviderID())
 	selectedDB := selectedLabel(dbChoices, m.database)
+	displayDomain := m.domain
+	if m.selectedProviderID() == "railway" && strings.TrimSpace(displayDomain) == "" {
+		displayDomain = "auto (Railway default)"
+	}
 	s.WriteString(components.SubtleStyle.Render(fmt.Sprintf(
 		"  Provider: %s  |  Domain: %s  |  Channel: %s  |  Database: %s\n\n",
-		providerChoices[m.provider].name, m.domain,
+		providerChoices[m.provider].name, displayDomain,
 		channelValues[m.channel], selectedDB,
 	)))
 
@@ -1731,7 +1748,10 @@ func (m *InstallModel) viewComplete() string {
 
 	domain := m.domain
 	scheme := "https"
-	if domain == "localhost" {
+	if domain == "" {
+		domain = "localhost"
+		scheme = "http"
+	} else if domain == "localhost" {
 		scheme = "http"
 	}
 
