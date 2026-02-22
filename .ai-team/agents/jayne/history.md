@@ -127,3 +127,11 @@ Fixed 13 documentation issues across 12 files by verifying each claim against ac
 - **`update_database` fallback warning (confirmed root cause):** `docker/entrypoint.prod.sh` intentionally logs a warning and falls back to `bin/cake migrations migrate` when `bin/cake update_database` exits non-zero on empty DB bootstrap. Warning is from fallback path, not from lock/wait logic.
 - **Apache “More than one MPM loaded” (likely root cause):** no MPM module toggles exist in provided runtime scripts; this points to image/runtime Apache module state (duplicate enabled MPM modules) rather than Cake app code.
 - **Testing gap note:** no existing test pattern currently covers `docker/entrypoint.prod.sh` runtime branching or Railway provider env wiring in this repo’s current test suites, so I documented command-level verification instead of adding a mismatched test.
+
+### 2026-02-22: Railway startup follow-up validation
+
+- **Apache MPM root-cause signal refined:** `docker/Dockerfile.prod` now explicitly disables `mpm_event`/`mpm_worker` and enables `mpm_prefork` in the runtime image, so current validation should focus on final loaded module state (`apachectl -M`) instead of assuming script-level omission.
+- **Railway sleep/scale-to-zero migration risk pattern:** `installer/internal/providers/railway.go` still runs `railway ssh ... migrations` immediately after `railway up --detach`; resilience currently comes from per-command SSH retries (3 attempts, 5s backoff), not from a separate readiness gate.
+- **New installer regression guard:** added `installer/internal/providers/railway_test.go` with a transient-failure fake `railway` binary to verify `runRailwayMigrations` succeeds after an initial SSH failure (retry path exercised).
+
+📌 Team update (2026-02-22): Railway startup hardening decisions from inbox were merged into a single consolidated entry in `.ai-team/decisions.md`; inbox cleared. — archived by Scribe

@@ -140,3 +140,11 @@ Fixed two bugs in `GatheringWaiversTable::countGatheringsNeedingWaivers()` that 
 - Setup and migration commands should force `CACHE_ENGINE=apcu` (or non-Redis) to avoid RedisEngine initialization failures during bootstrap when Redis is not ready.
 - In container startup scripts, prefer explicit `MYSQL_HOST`/`MYSQL_PORT`/`MYSQL_USERNAME` vars over parsing `DATABASE_URL` when available, especially on Railway-managed databases.
 - Production image should explicitly disable extra Apache MPMs (`mpm_event`, `mpm_worker`) and ensure `mpm_prefork` is enabled to avoid “More than one MPM loaded”.
+
+### 2026-02-22: Railway startup hardening for installer migrations
+
+- Railway migration flows should perform an SSH readiness pre-check loop before running `bin/cake migrations`, because Railway services may be asleep or still starting immediately after deploy.
+- Keep migration failures explicit: if SSH never becomes reachable after bounded retries, return a direct readiness error instead of only per-command migration failures.
+- Runtime entrypoint should re-assert Apache MPM state (`disable mpm_event/mpm_worker`, `enable mpm_prefork`) at startup, not only at image build time, to prevent drift-related boot failures.
+
+📌 Team update (2026-02-22): Railway startup hardening decisions from inbox were merged into a single consolidated entry in `.ai-team/decisions.md`; inbox cleared. — archived by Scribe

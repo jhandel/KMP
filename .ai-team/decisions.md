@@ -1497,10 +1497,10 @@ Completed 13 documentation tasks fixing factual errors across 12 files. Every fi
 **What:** `countGatheringsNeedingWaivers()` now counts ONLY past gatherings (end_date < today) instead of ongoing/future ones. Also aligned the permission action to `'uploadWaivers'` to match the list view controller.
 **Why:** The badge count didn't match the list view for two reasons: (1) it checked a different permission action (`needingWaivers` vs `uploadWaivers`), and (2) its date filter was inverted — it showed future/ongoing gatherings while Josh wanted it to flag events that are OVER but still missing waivers. The badge is now a strict subset of the list view (past-only, needing action), which makes it a useful "things you need to deal with" indicator rather than a confusing mismatch.
 
-### 2026-02-22: Railway runtime startup and validation gates (consolidated)
+### 2026-02-22: Railway runtime startup and migration hardening (consolidated)
 **By:** Jayne, Kaylee
-**What:** Consolidated runtime guidance for Railway/Docker startup paths: keep Redis enabled for normal runtime traffic, but run startup and migration/setup CLI paths with `CACHE_ENGINE=apcu`; rely on explicit MySQL env vars (including port) for startup DB checks; and enforce a single Apache MPM module (`prefork`) in the production image.
-**Why:** Production logs showed three coupled runtime risks: Redis bootstrap failures surfacing typed-property warnings, `update_database` fallback warnings during empty DB startup, and Apache startup failures when multiple MPM modules are active. Consolidating these decisions keeps deployment behavior predictable while preserving Redis for normal operations.
+**What:** Consolidated Railway/Docker startup guidance: keep Redis enabled for normal runtime traffic, but run startup and migration/setup CLI paths with `CACHE_ENGINE=apcu`; rely on explicit MySQL env vars (including port) for startup DB checks; add a bounded SSH readiness loop before Railway migration commands; keep explicit failure output when readiness never succeeds; and enforce/re-assert a single Apache MPM module (`prefork`) by disabling `mpm_event`/`mpm_worker` and enabling `mpm_prefork`.
+**Why:** Production logs and follow-up validation showed coupled startup risks: Redis bootstrap failures surfacing typed-property warnings, `update_database` fallback warnings during empty DB startup, Railway SSH migration failures when services are still waking/sleeping after detached deploys, and Apache startup failures when multiple MPM modules are active. Consolidating these decisions keeps deployment behavior predictable while preserving clear failure signals.
 
 **Verification gates:**
 ```bash
@@ -1510,6 +1510,12 @@ cd /var/www/html && php -r 'require "config/bootstrap.php"; \Cake\Cache\Cache::w
 # Startup DB path succeeds (or fallback behavior is explicitly expected)
 cd /var/www/html && bin/cake update_database
 
-# Exactly one Apache MPM is enabled
+# Exactly one Apache MPM should be loaded
 apachectl -M 2>/dev/null | grep -E "mpm_(event|worker|prefork)_module" | wc -l
+
+# Loaded MPM must be prefork
+apachectl -M 2>/dev/null | grep -E "mpm_(event|worker|prefork)_module"
+
+# Railway migration retry/readiness behavior is covered by installer test
+cd installer && go test ./internal/providers -run TestRunRailwayMigrationsRetriesTransientSSHFailure -v
 ```
