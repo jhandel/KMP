@@ -366,7 +366,45 @@ func runRailwayVariants(variants [][]string, context string) error {
 	return fmt.Errorf("%s:\n- %s", context, strings.Join(attempts, "\n- "))
 }
 
+func waitForRailwaySSH(appServiceName string, maxAttempts int, delay time.Duration) error {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if _, err := runCommand(
+			"railway",
+			"ssh",
+			"-s", appServiceName,
+			"--",
+			"sh",
+			"-lc",
+			"echo 'kmp-ssh-ready'",
+		); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+
+		if attempt < maxAttempts {
+			time.Sleep(delay)
+		}
+	}
+
+	return fmt.Errorf(
+		"service %q not reachable via Railway SSH after %d attempts: %w",
+		appServiceName,
+		maxAttempts,
+		lastErr,
+	)
+}
+
 func runRailwayMigrations(appServiceName string) error {
+	if err := waitForRailwaySSH(appServiceName, 24, 5*time.Second); err != nil {
+		return fmt.Errorf("failed waiting for Railway service readiness before migrations: %w", err)
+	}
+
 	migrationCommands := []string{
 		"cd /app && CACHE_ENGINE=apcu php bin/cake.php migrations migrate",
 		"cd /app && CACHE_ENGINE=apcu php bin/cake.php migrations migrate -p Queue",

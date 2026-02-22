@@ -287,7 +287,14 @@ BACKUP_CRON="0 3 * * * cd /var/www/html && bin/cake backup_check >> /var/log/cro
 service cron start
 
 # ---------------------------------------------------------------------------
-# 7. Start application
+# 7. Ensure exactly one Apache MPM is enabled
+# ---------------------------------------------------------------------------
+echo "Ensuring Apache MPM configuration is valid..."
+a2dismod mpm_event mpm_worker >/dev/null 2>&1 || true
+a2enmod mpm_prefork >/dev/null
+
+# ---------------------------------------------------------------------------
+# 8. Start application
 # ---------------------------------------------------------------------------
 echo "=== KMP Production Container Ready ==="
 echo "  Listening on port 80"
