@@ -34,18 +34,26 @@ $isSetupCommand = PHP_SAPI === 'cli' && (in_array('migrations', $cliArgs, true) 
 if ($cacheEngine === RedisEngine::class && $isSetupCommand) {
     $cacheEngine = ArrayEngine::class;
 }
+$redisExtensionLoaded = extension_loaded('redis');
+if ($cacheEngine === RedisEngine::class && !$redisExtensionLoaded) {
+    $cacheEngine = ApcuEngine::class;
+}
 $redisConfig = [];
 if ($cacheEngine === RedisEngine::class) {
-    $redisUrl = env('REDIS_URL', 'redis://redis:6379');
-    $parsed = parse_url($redisUrl) ?: [];
-    $redisConfig = [
-        'server'   => $parsed['host'] ?? 'redis',
-        'port'     => $parsed['port'] ?? 6379,
-        'password' => ($parsed['pass'] ?? null) ?: env('REDIS_PASSWORD', null),
-        'database' => (int)(ltrim($parsed['path'] ?? '/0', '/') ?: '0'),
-        'timeout'  => 0,
-        'persistent' => false,
-    ];
+    $redisUrl = trim((string)env('REDIS_URL', ''));
+    if ($redisUrl === '') {
+        $cacheEngine = ApcuEngine::class;
+    } else {
+        $parsed = parse_url($redisUrl) ?: [];
+        $redisConfig = [
+            'server'   => $parsed['host'] ?? 'redis',
+            'port'     => $parsed['port'] ?? 6379,
+            'password' => ($parsed['pass'] ?? null) ?: env('REDIS_PASSWORD', null),
+            'database' => (int)(ltrim($parsed['path'] ?? '/0', '/') ?: '0'),
+            'timeout'  => 0,
+            'persistent' => false,
+        ];
+    }
 }
 $restoreStatusPath = env('RESTORE_STATUS_CACHE_PATH', sys_get_temp_dir() . DS . 'kmp_restore_status_shared' . DS);
 if (!is_dir($restoreStatusPath)) {
