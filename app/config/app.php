@@ -88,7 +88,7 @@ return [
         //'baseUrl' => env('SCRIPT_NAME'),
 
         /** @var string|false Full base URL for absolute links (auto-detected if false) */
-        "fullBaseUrl" => false,
+        "fullBaseUrl" => env("APP_FULL_BASE_URL", false),
 
         /** @var string Web path to images directory */
         "imageBaseUrl" => "img/",

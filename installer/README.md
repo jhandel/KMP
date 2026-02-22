@@ -37,5 +37,5 @@ make install        # Install to $GOPATH/bin
 - **Azure** — Container Apps + Azure DB for MySQL
 - **AWS** — ECS Fargate + RDS MySQL + S3
 - **Fly.io** — Fly Machines + Fly Postgres
-- **Railway** — Railway containers + managed MySQL
+- **Railway** — Railway containers + optional managed MySQL/Redis (requires `railway` CLI + `railway login`)
 - **VPS** — Any SSH-accessible host with Docker

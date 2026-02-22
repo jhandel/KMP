@@ -52,20 +52,34 @@ var providerChoices = []providerChoice{
 var channelChoices = []string{"Release (stable, recommended)", "Beta", "Dev", "Nightly"}
 var channelValues = []string{"release", "beta", "dev", "nightly"}
 
-var dbChoices = []string{
+var defaultDBChoices = []string{
 	"Bundled MariaDB (recommended)",
 	"Bundled PostgreSQL",
 	"Existing MySQL server",
 	"Existing PostgreSQL server",
 }
-var dbValues = []string{"bundled-mariadb", "bundled-postgres", "mysql", "postgres"}
+var defaultDBValues = []string{"bundled-mariadb", "bundled-postgres", "mysql", "postgres"}
 
-var cacheChoices = []string{
+var railwayDBChoices = []string{
+	"Railway managed MySQL (provision automatically)",
+	"Existing MySQL server",
+	"Existing PostgreSQL server",
+}
+var railwayDBValues = []string{"railway-managed-mysql", "mysql", "postgres"}
+
+var defaultCacheChoices = []string{
 	"APCu (local in-process cache, recommended for single container)",
 	"Redis (bundled — add a local Redis container)",
 	"Redis (external — provide a remote Redis URL)",
 }
-var cacheValues = []string{"apcu", "redis-local", "redis-remote"}
+var defaultCacheValues = []string{"apcu", "redis-local", "redis-remote"}
+
+var railwayCacheChoices = []string{
+	"APCu (in-process cache)",
+	"Railway managed Redis (provision automatically)",
+	"Existing Redis URL",
+}
+var railwayCacheValues = []string{"apcu", "railway-managed-redis", "redis-remote"}
 
 type prereqCheck struct {
 	name   string
@@ -114,29 +128,29 @@ type InstallModel struct {
 	prereqs []prereqCheck
 
 	// Database external connection
-	dbSubStep    int              // 0=choice, 1=conn method, 2=DSN, 3=DB name, 4=parts form, 5=SSL
-	dbConnMethod int              // 0=dsn, 1=parts
-	dsnInput     textinput.Model  // connection string field
-	dbNameInput  textinput.Model  // prompted when DSN lacks a database name
+	dbSubStep    int               // 0=choice, 1=conn method, 2=DSN, 3=DB name, 4=parts form, 5=SSL
+	dbConnMethod int               // 0=dsn, 1=parts
+	dsnInput     textinput.Model   // connection string field
+	dbNameInput  textinput.Model   // prompted when DSN lacks a database name
 	dbInputs     []textinput.Model // [host, port, dbname, user, password]
 	dbFocusIdx   int
-	mysqlSSL     bool             // require SSL for external MySQL
+	mysqlSSL     bool // require SSL for external MySQL
 
 	// Email configuration
-	emailChoice  int  // 0=skip, 1=smtp
-	emailSubStep int  // 0=choice, 1=smtp form
+	emailChoice  int // 0=skip, 1=smtp
+	emailSubStep int // 0=choice, 1=smtp form
 	smtpInputs   []textinput.Model
 	smtpFocusIdx int
 
 	// Storage configuration
-	storageChoice   int  // 0=local, 1=s3, 2=azure
-	storageSubStep  int  // 0=choice, 1=s3/azure form
+	storageChoice   int // 0=local, 1=s3, 2=azure
+	storageSubStep  int // 0=choice, 1=s3/azure form
 	storageInputs   []textinput.Model
 	storageFocusIdx int
 
 	// Cache configuration
-	cacheChoice  int  // 0=apcu, 1=redis-local, 2=redis-remote
-	cacheSubStep int  // 0=choice, 1=remote URL form
+	cacheChoice  int // 0=apcu, 1=redis-local, 2=redis-remote
+	cacheSubStep int // 0=choice, 1=remote URL form
 	redisInput   textinput.Model
 
 	// Progress
@@ -173,13 +187,13 @@ func NewInstallModel() *InstallModel {
 	dni.Width = 30
 
 	m := &InstallModel{
-		step:         stepWelcome,
-		domainInput:  ti,
-		spinner:      s,
-		redisInput:   ri,
-		dsnInput:     di,
-		dbNameInput:  dni,
-		smtpInputs:   newSmtpInputs(),
+		step:          stepWelcome,
+		domainInput:   ti,
+		spinner:       s,
+		redisInput:    ri,
+		dsnInput:      di,
+		dbNameInput:   dni,
+		smtpInputs:    newSmtpInputs(),
 		storageInputs: newS3Inputs(),
 		prereqs: []prereqCheck{
 			{"Docker", "checking", ""},
@@ -190,6 +204,50 @@ func NewInstallModel() *InstallModel {
 	}
 	m.loadDefaults()
 	return m
+}
+
+func (m *InstallModel) selectedProviderID() string {
+	if m.provider < 0 || m.provider >= len(providerChoices) {
+		return providerChoices[0].id
+	}
+
+	return providerChoices[m.provider].id
+}
+
+func dbOptionsForProvider(providerID string) ([]string, []string) {
+	if providerID == "railway" {
+		return railwayDBChoices, railwayDBValues
+	}
+
+	return defaultDBChoices, defaultDBValues
+}
+
+func cacheOptionsForProvider(providerID string) ([]string, []string) {
+	if providerID == "railway" {
+		return railwayCacheChoices, railwayCacheValues
+	}
+
+	return defaultCacheChoices, defaultCacheValues
+}
+
+func selectedValue(values []string, idx int) string {
+	if idx >= 0 && idx < len(values) {
+		return values[idx]
+	}
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func selectedLabel(labels []string, idx int) string {
+	if idx >= 0 && idx < len(labels) {
+		return labels[idx]
+	}
+	if len(labels) == 0 {
+		return ""
+	}
+	return labels[0]
 }
 
 // loadDefaults pre-fills the model from a previously saved deployment config.
@@ -229,17 +287,28 @@ func (m *InstallModel) loadDefaults() {
 	}
 
 	// Database type + pre-fill connection form
-	switch {
-	case dep.DatabaseDSN == "" && dep.LocalDBType == "postgres":
-		m.database = 1 // bundled postgres
-	case dep.DatabaseDSN == "":
-		m.database = 0 // bundled mariadb
-	case strings.HasPrefix(dep.DatabaseDSN, "postgres"):
-		m.database = 3 // external postgres
-	default:
-		m.database = 2 // external mysql
+	if dep.Provider == "railway" {
+		switch {
+		case dep.DatabaseDSN == "":
+			m.database = 0 // railway-managed mysql
+		case strings.HasPrefix(dep.DatabaseDSN, "postgres"):
+			m.database = 2 // external postgres
+		default:
+			m.database = 1 // external mysql
+		}
+	} else {
+		switch {
+		case dep.DatabaseDSN == "" && dep.LocalDBType == "postgres":
+			m.database = 1 // bundled postgres
+		case dep.DatabaseDSN == "":
+			m.database = 0 // bundled mariadb
+		case strings.HasPrefix(dep.DatabaseDSN, "postgres"):
+			m.database = 3 // external postgres
+		default:
+			m.database = 2 // external mysql
+		}
 	}
-	if m.database >= 2 && dep.DatabaseDSN != "" {
+	if dep.DatabaseDSN != "" {
 		m.dbConnMethod = 0 // DSN method since we have a saved string
 		m.dsnInput.SetValue(dep.DatabaseDSN)
 	}
@@ -276,14 +345,26 @@ func (m *InstallModel) loadDefaults() {
 	}
 
 	// Cache
-	switch {
-	case dep.CacheEngine == "redis" && dep.RedisURL != "":
-		m.cacheChoice = 2
-		m.redisInput.SetValue(dep.RedisURL)
-	case dep.CacheEngine == "redis":
-		m.cacheChoice = 1
-	default:
-		m.cacheChoice = 0
+	if dep.Provider == "railway" {
+		switch {
+		case dep.CacheEngine == "redis" && dep.RedisURL != "":
+			m.cacheChoice = 2 // existing redis url
+			m.redisInput.SetValue(dep.RedisURL)
+		case dep.CacheEngine == "redis":
+			m.cacheChoice = 1 // railway managed redis
+		default:
+			m.cacheChoice = 0 // apcu
+		}
+	} else {
+		switch {
+		case dep.CacheEngine == "redis" && dep.RedisURL != "":
+			m.cacheChoice = 2
+			m.redisInput.SetValue(dep.RedisURL)
+		case dep.CacheEngine == "redis":
+			m.cacheChoice = 1
+		default:
+			m.cacheChoice = 0
+		}
 	}
 }
 
@@ -398,7 +479,8 @@ func dsnHasDatabase(dsn string) bool {
 
 // dbComplete transitions from DB config to either the SSL prompt (MySQL) or email step.
 func (m *InstallModel) dbComplete() {
-	if m.database < len(dbValues) && dbValues[m.database] == "mysql" {
+	_, dbValues := dbOptionsForProvider(m.selectedProviderID())
+	if selectedValue(dbValues, m.database) == "mysql" {
 		m.dbSubStep = 5
 		if m.mysqlSSL {
 			m.cursor = 0 // Yes
@@ -584,9 +666,12 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case stepDatabase:
+		_, dbValues := dbOptionsForProvider(m.selectedProviderID())
+		dbValue := selectedValue(dbValues, m.database)
 		switch m.dbSubStep {
 		case 0:
 			// DB type choice
+			dbChoices, _ := dbOptionsForProvider(m.selectedProviderID())
 			switch key {
 			case "up", "k":
 				if m.cursor > 0 {
@@ -598,7 +683,8 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				m.database = m.cursor
-				if strings.HasPrefix(dbValues[m.database], "bundled") {
+				dbValue = selectedValue(dbValues, m.database)
+				if strings.HasPrefix(dbValue, "bundled") || dbValue == "railway-managed-mysql" {
 					m.step = stepEmail
 					m.cursor = 0
 					m.emailChoice = 0
@@ -629,7 +715,7 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if m.dbConnMethod == 0 {
 					// DSN string path
 					m.dbSubStep = 2
-					if dbValues[m.database] == "postgres" {
+					if dbValue == "postgres" {
 						m.dsnInput.Placeholder = "postgres://user:password@host:5432/dbname"
 					} else {
 						m.dsnInput.Placeholder = "mysql://user:password@host:3306/dbname"
@@ -639,7 +725,7 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					// Individual parts path
 					m.dbSubStep = 4
 					m.dbFocusIdx = 0
-					m.dbInputs = newDBInputs(dbValues[m.database])
+					m.dbInputs = newDBInputs(dbValue)
 				}
 			case "esc":
 				m.dbSubStep = 0
@@ -885,6 +971,7 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case stepCache:
+		cacheChoices, cacheValues := cacheOptionsForProvider(m.selectedProviderID())
 		if m.cacheSubStep == 0 {
 			switch key {
 			case "up", "k":
@@ -897,7 +984,7 @@ func (m *InstallModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				m.cacheChoice = m.cursor
-				if cacheValues[m.cacheChoice] == "redis-remote" {
+				if selectedValue(cacheValues, m.cacheChoice) == "redis-remote" {
 					m.cacheSubStep = 1
 					m.redisInput.Focus()
 				} else {
@@ -968,7 +1055,8 @@ func (m *InstallModel) runInstall() tea.Cmd {
 	providerID := providerChoices[m.provider].id
 	channel := channelValues[m.channel]
 	domain := m.domain
-	dbValue := dbValues[m.database]
+	_, dbValues := dbOptionsForProvider(providerID)
+	dbValue := selectedValue(dbValues, m.database)
 
 	// Build LocalDBType for bundled selections
 	var localDBType string
@@ -1035,10 +1123,11 @@ func (m *InstallModel) runInstall() tea.Cmd {
 	}
 
 	// Capture cache config
-	cacheValue := cacheValues[m.cacheChoice]
+	_, cacheValues := cacheOptionsForProvider(providerID)
+	cacheValue := selectedValue(cacheValues, m.cacheChoice)
 	cacheEngine := "apcu"
 	redisURL := ""
-	if cacheValue == "redis-local" {
+	if cacheValue == "redis-local" || cacheValue == "railway-managed-redis" {
 		cacheEngine = "redis"
 	} else if cacheValue == "redis-remote" {
 		cacheEngine = "redis"
@@ -1084,19 +1173,19 @@ func (m *InstallModel) runInstall() tea.Cmd {
 		}
 
 		cfg := &providers.DeployConfig{
-			Name:        "default",
-			Provider:    providerID,
-			Channel:     channel,
-			Domain:      domain,
-			Image:       "ghcr.io/jhandel/kmp",
-			ImageTag:    imageTag,
-			StorageType: storageType,
+			Name:          "default",
+			Provider:      providerID,
+			Channel:       channel,
+			Domain:        domain,
+			Image:         "ghcr.io/jhandel/kmp",
+			ImageTag:      imageTag,
+			StorageType:   storageType,
 			StorageConfig: storageConfig,
-			DatabaseDSN: externalDSN,
-			MySQLSSL:    m.mysqlSSL,
-			LocalDBType: localDBType,
-			CacheEngine: cacheEngine,
-			RedisURL:    redisURL,
+			DatabaseDSN:   externalDSN,
+			MySQLSSL:      m.mysqlSSL,
+			LocalDBType:   localDBType,
+			CacheEngine:   cacheEngine,
+			RedisURL:      redisURL,
 			BackupConfig: providers.BackupConfig{
 				Enabled:       true,
 				Schedule:      "0 3 * * *",
@@ -1108,6 +1197,8 @@ func (m *InstallModel) runInstall() tea.Cmd {
 		switch providerID {
 		case "docker":
 			provider = providers.NewDockerProvider(nil)
+		case "railway":
+			provider = providers.NewRailwayProvider(nil)
 		default:
 			return installDoneMsg{err: fmt.Errorf("provider %q not yet supported — use Docker", providerID)}
 		}
@@ -1154,6 +1245,21 @@ func (m *InstallModel) runPrereqChecks() tea.Cmd {
 					}
 					results = append(results, prereqCheck{prereq.Name, status, detail})
 				}
+			}
+
+		case "railway":
+			p := providers.NewRailwayProvider(nil)
+			for _, prereq := range p.Prerequisites() {
+				status := "pass"
+				detail := prereq.Description
+				if detail == "" {
+					detail = "Available"
+				}
+				if !prereq.Met {
+					status = "fail"
+					detail = prereq.InstallHint
+				}
+				results = append(results, prereqCheck{prereq.Name, status, detail})
 			}
 
 		default:
@@ -1359,8 +1465,10 @@ func (m *InstallModel) viewChannel() string {
 func (m *InstallModel) viewDatabase() string {
 	var s strings.Builder
 
+	dbChoices, dbValues := dbOptionsForProvider(m.selectedProviderID())
+	dbValue := selectedValue(dbValues, m.database)
 	dbLabel := "MySQL"
-	if m.database < len(dbValues) && dbValues[m.database] == "postgres" {
+	if dbValue == "postgres" {
 		dbLabel = "PostgreSQL"
 	}
 
@@ -1399,7 +1507,7 @@ func (m *InstallModel) viewDatabase() string {
 		s.WriteString("  Paste your connection string below:\n\n")
 		s.WriteString("  " + m.dsnInput.View() + "\n\n")
 		s.WriteString(components.SubtleStyle.Render("  Examples:\n"))
-		if dbValues[m.database] == "postgres" {
+		if dbValue == "postgres" {
 			s.WriteString(components.SubtleStyle.Render("    postgres://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname?sslmode=require\n"))
 			s.WriteString(components.SubtleStyle.Render("    postgresql://user:pass@host:5432/dbname\n"))
 		} else {
@@ -1533,6 +1641,7 @@ func (m *InstallModel) viewStorage() string {
 
 func (m *InstallModel) viewCache() string {
 	var s strings.Builder
+	cacheChoices, _ := cacheOptionsForProvider(m.selectedProviderID())
 
 	if m.cacheSubStep == 0 {
 		s.WriteString("  Configure caching:\n\n")
@@ -1562,10 +1671,12 @@ func (m *InstallModel) viewProgress() string {
 	s.WriteString("  Deploying KMP...\n\n")
 
 	// Summary of selections
+	dbChoices, _ := dbOptionsForProvider(m.selectedProviderID())
+	selectedDB := selectedLabel(dbChoices, m.database)
 	s.WriteString(components.SubtleStyle.Render(fmt.Sprintf(
 		"  Provider: %s  |  Domain: %s  |  Channel: %s  |  Database: %s\n\n",
 		providerChoices[m.provider].name, m.domain,
-		channelValues[m.channel], dbValues[m.database],
+		channelValues[m.channel], selectedDB,
 	)))
 
 	for i, step := range progressSteps {
@@ -1583,23 +1694,38 @@ func (m *InstallModel) viewProgress() string {
 
 func (m *InstallModel) viewComplete() string {
 	deployDir := filepath.Join(os.Getenv("HOME"), ".kmp", "deployments", "default")
+	providerID := m.selectedProviderID()
+	dbChoices, _ := dbOptionsForProvider(providerID)
+	selectedDB := selectedLabel(dbChoices, m.database)
 
 	if m.errorMsg != "" {
-		result := fmt.Sprintf(`
-  ❌ Installation failed
-
-  Error: %s
-
-  Troubleshooting:
+		var troubleshooting string
+		if providerID == "docker" {
+			troubleshooting = fmt.Sprintf(`  Troubleshooting:
     • Check Docker is running: docker info
     • Check container logs:
         docker compose -f %s/docker-compose.yml logs app
     • Check all logs:
         docker compose -f %s/docker-compose.yml logs
     • See docs: https://github.com/jhandel/KMP/docs/deployment/
+`, deployDir, deployDir)
+		} else {
+			troubleshooting = `  Troubleshooting:
+    • Check Railway dashboard deploy/runtime logs
+    • Run: kmp logs --follow
+    • Verify Railway variables for selected managed/existing services
+    • See docs: https://github.com/jhandel/KMP/docs/deployment/
+`
+		}
+		result := fmt.Sprintf(`
+  ❌ Installation failed
+
+  Error: %s
+
+%s
 
   Press Enter or q to exit.
-`, m.errorMsg, deployDir, deployDir)
+`, m.errorMsg, troubleshooting)
 		return components.BoxStyle.Render(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Render(result))
 	}
 
@@ -1636,7 +1762,7 @@ func (m *InstallModel) viewComplete() string {
 `, scheme, domain,
 		providerChoices[m.provider].name,
 		channelValues[m.channel],
-		dbValues[m.database],
+		selectedDB,
 		scheme, domain,
 		deployDir)
 
