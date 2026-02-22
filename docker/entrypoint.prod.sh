@@ -35,13 +35,13 @@ return [
     ],
     'Datasources' => [
         'default' => [
-            'url' => env('DATABASE_URL'),
+            'url' => (env('MYSQL_HOST') && env('MYSQL_USERNAME')) ? null : env('DATABASE_URL'),
             // Flags and SSL are configured at container startup by entrypoint.prod.sh
             'flags' => (strpos(env('DATABASE_URL', ''), 'postgres') !== false) ? [\PDO::ATTR_EMULATE_PREPARES => true] : [],
             //__MYSQL_SSL_PLACEHOLDER__
         ],
         'test' => [
-            'url' => env('DATABASE_TEST_URL', env('DATABASE_URL') . '_test'),
+            'url' => (env('MYSQL_HOST') && env('MYSQL_USERNAME')) ? null : env('DATABASE_TEST_URL', env('DATABASE_URL') . '_test'),
         ],
     ],
     'EmailTransport' => [
