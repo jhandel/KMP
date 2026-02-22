@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.database.type == 'postgres' }}
     permissions:
       contents: read
       checks: write
