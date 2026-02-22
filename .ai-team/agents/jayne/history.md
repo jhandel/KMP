@@ -137,3 +137,10 @@ Fixed 13 documentation issues across 12 files by verifying each claim against ac
 📌 Team update (2026-02-22): Railway startup hardening decisions from inbox were merged into a single consolidated entry in `.ai-team/decisions.md`; inbox cleared. — archived by Scribe
 
 📌 Team update (2026-02-22): Railway 502 gateway validation from decision inbox was merged into consolidated Railway startup guidance in `.ai-team/decisions.md`; inbox cleared. — archived by Scribe
+
+### 2026-02-22: Railway blank-page validation gates (favicon loads, body empty)
+
+- **Likely runtime failure mode #1:** app bootstrap/runtime exceptions are hidden when `DEBUG=false` (Railway provider sets this), so `/` can render an effectively blank response while static assets like `/favicon.ico` still serve from Apache.
+- **Likely runtime failure mode #2:** `docker/entrypoint.prod.sh` allows incremental migration/update failures to continue (`|| true` paths), so app can start with schema drift; dynamic pages can fail while static assets continue loading.
+- **Likely runtime failure mode #3:** cache backend mismatch (`CACHE_ENGINE=redis` with unresolved/bad Redis URL) can break Cake cache initialization during request bootstrap; this does not block Apache static file serving.
+- **Testing note:** no existing test harness in this repo covers Railway container runtime behavior (`entrypoint.prod.sh` + Apache + env wiring), so command-level pass/fail gates are the reliable verification layer for this incident pattern.

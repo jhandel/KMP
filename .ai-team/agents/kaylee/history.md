@@ -153,3 +153,8 @@ Fixed two bugs in `GatheringWaiversTable::countGatheringsNeedingWaivers()` that 
 
 - KMP production startup must map Apache's listen port to the runtime `PORT` env var (not hardcode port 80), otherwise Railway can keep the container running but return edge 502 due to upstream port mismatch.
 - `docker/entrypoint.prod.sh` is the safest place to enforce this at boot by rewriting `ports.conf` and `000-default.conf` before launching `apache2-foreground`.
+
+### 2026-02-22: Railway managed MySQL URL precedence and blank-page risk
+
+- In production `app_local.php` generation, when `MYSQL_HOST` + `MYSQL_USERNAME` are present, datasource `url` should be `null` so Cake uses explicit MySQL env fields instead of reparsing `DATABASE_URL`.
+- Railway-managed credentials can contain URL-special characters; when injected into a raw `mysql://user:pass@host/db` string, malformed DSNs can break dynamic Cake requests while Apache still serves static assets.
