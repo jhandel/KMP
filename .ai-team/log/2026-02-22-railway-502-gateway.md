@@ -19,3 +19,6 @@
 ## Outcomes
 - Canonical Railway guidance now includes 502 gateway/port-binding validation in one consolidated decision entry.
 - Decision inbox is clear and ready for new submissions.
+
+## Follow-up (Scribe finalize)
+- Retained latest orchestration spawn logs for Kaylee and Jayne at `.ai-team/orchestration-log/2026-02-22-1858-kaylee.md` and `.ai-team/orchestration-log/2026-02-22-1858-jayne.md`.

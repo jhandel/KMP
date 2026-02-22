@@ -148,3 +148,8 @@ Fixed two bugs in `GatheringWaiversTable::countGatheringsNeedingWaivers()` that 
 - Runtime entrypoint should re-assert Apache MPM state (`disable mpm_event/mpm_worker`, `enable mpm_prefork`) at startup, not only at image build time, to prevent drift-related boot failures.
 
 📌 Team update (2026-02-22): Railway startup hardening decisions from inbox were merged into a single consolidated entry in `.ai-team/decisions.md`; inbox cleared. — archived by Scribe
+
+### 2026-02-22: Railway 502 readiness root cause pattern
+
+- KMP production startup must map Apache's listen port to the runtime `PORT` env var (not hardcode port 80), otherwise Railway can keep the container running but return edge 502 due to upstream port mismatch.
+- `docker/entrypoint.prod.sh` is the safest place to enforce this at boot by rewriting `ports.conf` and `000-default.conf` before launching `apache2-foreground`.
