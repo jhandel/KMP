@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 /**
- * Checks for KMP updates via GitHub API and shows a dismissible banner to admins.
+ * Checks for KMP container updates via GitHub API and shows a dismissible banner to admins.
  * Caches results in sessionStorage for 1 hour to avoid API spam.
  */
 class VersionCheckController extends Controller {
@@ -29,12 +29,22 @@ class VersionCheckController extends Controller {
         }
 
         try {
-            const response = await fetch(`https://api.github.com/repos/${this.repoValue}/releases/latest`)
+            const response = await fetch(`https://api.github.com/repos/${this.repoValue}/releases?per_page=20`)
             if (!response.ok) return
 
-            const release = await response.json()
+            const releases = await response.json()
+            if (!Array.isArray(releases)) return
+
+            // Ignore installer-only releases (installer-v*) and check container tags only.
+            const release = releases.find((item) =>
+                item &&
+                typeof item.tag_name === 'string' &&
+                !item.tag_name.startsWith('installer-v')
+            )
+            if (!release) return
+
             const latestVersion = release.tag_name.replace(/^v/, '')
-            const currentVersion = this.currentValue.trim()
+            const currentVersion = this.currentValue.trim().replace(/^v/, '')
 
             const updateAvailable = latestVersion !== currentVersion
 
