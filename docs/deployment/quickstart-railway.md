@@ -123,6 +123,6 @@ See [Updating & Rollback](updating.md) for full details.
 
 - **Build failures**: Railway deploys pre-built Docker images — ensure the image tag exists at `ghcr.io/jhandel/kmp`
 - **Database connection**: Verify MySQL reference variables resolve correctly in the dashboard
-- **Port binding**: KMP listens on port 8080; Railway detects this automatically via the `PORT` environment variable
+- **Port binding**: KMP binds Apache to Railway's `PORT` environment variable at startup
 
 See [Troubleshooting](troubleshooting.md) for more common issues.

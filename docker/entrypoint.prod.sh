@@ -293,11 +293,20 @@ echo "Ensuring Apache MPM configuration is valid..."
 a2dismod mpm_event mpm_worker >/dev/null 2>&1 || true
 a2enmod mpm_prefork >/dev/null
 
+# Railway (and similar platforms) inject PORT; Apache defaults to 80.
+APACHE_PORT="${PORT:-80}"
+if ! [[ "$APACHE_PORT" =~ ^[0-9]+$ ]]; then
+    echo "WARNING: Invalid PORT value '$APACHE_PORT'; falling back to 80"
+    APACHE_PORT="80"
+fi
+sed -ri "s/^Listen 80$/Listen ${APACHE_PORT}/" /etc/apache2/ports.conf
+sed -ri "s/<VirtualHost \*:80>/<VirtualHost *:${APACHE_PORT}>/" /etc/apache2/sites-available/000-default.conf
+
 # ---------------------------------------------------------------------------
 # 8. Start application
 # ---------------------------------------------------------------------------
 echo "=== KMP Production Container Ready ==="
-echo "  Listening on port 80"
+echo "  Listening on port ${APACHE_PORT}"
 
 # Execute the main command (apache2-foreground) — replaces this process
 exec "$@"
