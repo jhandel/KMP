@@ -1499,8 +1499,8 @@ Completed 13 documentation tasks fixing factual errors across 12 files. Every fi
 
 ### 2026-02-22: Railway runtime startup and migration hardening (consolidated)
 **By:** Jayne, Kaylee
-**What:** Consolidated Railway/Docker startup guidance: keep Redis enabled for normal runtime traffic, but run startup and migration/setup CLI paths with `CACHE_ENGINE=apcu`; rely on explicit MySQL env vars (including port) for startup DB checks; add a bounded SSH readiness loop before Railway migration commands; keep explicit failure output when readiness never succeeds; and enforce/re-assert a single Apache MPM module (`prefork`) by disabling `mpm_event`/`mpm_worker` and enabling `mpm_prefork`.
-**Why:** Production logs and follow-up validation showed coupled startup risks: Redis bootstrap failures surfacing typed-property warnings, `update_database` fallback warnings during empty DB startup, Railway SSH migration failures when services are still waking/sleeping after detached deploys, and Apache startup failures when multiple MPM modules are active. Consolidating these decisions keeps deployment behavior predictable while preserving clear failure signals.
+**What:** Consolidated Railway/Docker startup guidance: keep Redis enabled for normal runtime traffic, but run startup and migration/setup CLI paths with `CACHE_ENGINE=apcu`; rely on explicit MySQL env vars (including port) for startup DB checks; add a bounded SSH readiness loop before Railway migration commands; keep explicit failure output when readiness never succeeds; enforce/re-assert a single Apache MPM module (`prefork`) by disabling `mpm_event`/`mpm_worker` and enabling `mpm_prefork`; and verify runtime listener alignment with Railway `PORT` to avoid edge 502s from port mismatch.
+**Why:** Production logs and follow-up validation showed coupled startup risks: Redis bootstrap failures surfacing typed-property warnings, `update_database` fallback warnings during empty DB startup, Railway SSH migration failures when services are still waking/sleeping after detached deploys, Apache startup failures when multiple MPM modules are active, and likely gateway 502s when Apache remains bound to port 80 while Railway routes to `PORT`. Consolidating these decisions keeps deployment behavior predictable while preserving clear failure signals.
 
 **Verification gates:**
 ```bash
@@ -1518,4 +1518,16 @@ apachectl -M 2>/dev/null | grep -E "mpm_(event|worker|prefork)_module"
 
 # Railway migration retry/readiness behavior is covered by installer test
 cd installer && go test ./internal/providers -run TestRunRailwayMigrationsRetriesTransientSSHFailure -v
+
+# Validate runtime listener matches Railway PORT and not only :80
+railway ssh -s kmp-app -- sh -lc 'echo "PORT=$PORT"; ss -ltn | grep -E ":(${PORT}|80)\\b"'
+
+# Public health should not return gateway 502
+curl -sS -o /dev/null -w '%{http_code}\n' https://<your-domain>/health
+
+# Health response should be app JSON, not gateway HTML
+curl -sS https://<your-domain>/health | head -c 200
+
+# Logs should not show recurring upstream connect/refused loops
+railway logs -s kmp-app | grep -Ei 'bad gateway|upstream|connect|refused' | tail -n 20
 ```

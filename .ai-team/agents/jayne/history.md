@@ -135,3 +135,5 @@ Fixed 13 documentation issues across 12 files by verifying each claim against ac
 - **New installer regression guard:** added `installer/internal/providers/railway_test.go` with a transient-failure fake `railway` binary to verify `runRailwayMigrations` succeeds after an initial SSH failure (retry path exercised).
 
 📌 Team update (2026-02-22): Railway startup hardening decisions from inbox were merged into a single consolidated entry in `.ai-team/decisions.md`; inbox cleared. — archived by Scribe
+
+📌 Team update (2026-02-22): Railway 502 gateway validation from decision inbox was merged into consolidated Railway startup guidance in `.ai-team/decisions.md`; inbox cleared. — archived by Scribe
