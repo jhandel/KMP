@@ -230,9 +230,20 @@ class SystemUpdateController extends Controller {
     async _pollStatus() {
         try {
             const response = await fetch(this.statusUrlValue, {
-                headers: { "Accept": "application/json" }
+                headers: { "Accept": "application/json" },
+                credentials: "same-origin",
+                redirect: "manual"
             })
             const redirectedToLogin = response.redirected && response.url && /\/members\/login/i.test(response.url)
+            const explicitRedirect = response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)
+
+            if (explicitRedirect) {
+                this._setProgress(100, "")
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+                return
+            }
 
             if (redirectedToLogin) {
                 this._setProgress(100, "")
