@@ -18,6 +18,7 @@ import (
 
 	"github.com/jhandel/KMP/installer/internal/config"
 	"github.com/jhandel/KMP/installer/internal/health"
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed templates/docker-compose.yml.tmpl
@@ -42,7 +43,11 @@ func NewDockerProvider(cfg *config.Deployment) *DockerProvider {
 		dir = cfg.ComposeDir
 	}
 	if dir == "" {
-		dir = filepath.Join(config.DefaultConfigDir(), "deployments", "default")
+		if cfg == nil {
+			dir = generateRandomComposeDir()
+		} else {
+			dir = filepath.Join(config.DefaultConfigDir(), "deployments", "default")
+		}
 	}
 	return &DockerProvider{cfg: cfg, dir: dir}
 }
@@ -193,6 +198,13 @@ func (d *DockerProvider) Update(version string) error {
 	if err := replaceEnvValue(envPath, d.cfg.ImageTag, version); err != nil {
 		return fmt.Errorf("updating .env: %w", err)
 	}
+	if _, err := migrateComposeServiceNames(filepath.Join(d.dir, "docker-compose.yml")); err != nil {
+		return fmt.Errorf("updating compose service names: %w", err)
+	}
+	caddyMigrated, err := migrateCaddyUpstream(filepath.Join(d.dir, "Caddyfile"))
+	if err != nil {
+		return fmt.Errorf("updating caddy upstream host: %w", err)
+	}
 
 	previousTag := d.cfg.ImageTag
 	d.cfg.ImageTag = version
@@ -206,6 +218,11 @@ func (d *DockerProvider) Update(version string) error {
 		_ = replaceEnvValue(envPath, version, previousTag)
 		d.cfg.ImageTag = previousTag
 		return fmt.Errorf("docker compose up: %s\n%w", out, err)
+	}
+	if caddyMigrated {
+		if out, err := runDockerCompose(d.dir, "restart", "caddy"); err != nil {
+			return fmt.Errorf("docker compose restart caddy: %s\n%w", out, err)
+		}
 	}
 
 	domain := d.cfg.Domain
@@ -543,6 +560,112 @@ func replaceEnvValue(envPath, oldTag, newTag string) error {
 	}
 	updated := strings.ReplaceAll(string(data), oldTag, newTag)
 	return os.WriteFile(envPath, []byte(updated), 0600)
+}
+
+func generateRandomComposeDir() string {
+	root := filepath.Join(config.DefaultConfigDir(), "deployments")
+	for i := 0; i < 10; i++ {
+		candidate := filepath.Join(root, "kmp-"+generateRandomString(4))
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
+
+	return filepath.Join(root, "kmp-"+generateRandomString(8))
+}
+
+func migrateComposeServiceNames(composePath string) (bool, error) {
+	data, err := os.ReadFile(composePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return false, err
+	}
+
+	services, ok := doc["services"].(map[string]any)
+	if !ok {
+		return false, nil
+	}
+
+	changed := false
+	setContainerName := func(serviceName, containerName string) {
+		raw, exists := services[serviceName]
+		if !exists {
+			return
+		}
+		svc, ok := raw.(map[string]any)
+		if !ok {
+			return
+		}
+		current, _ := svc["container_name"].(string)
+		if current == containerName {
+			return
+		}
+		svc["container_name"] = containerName
+		changed = true
+	}
+
+	setContainerName("app", "kmp-app")
+	setContainerName("db", "kmp-db")
+	setContainerName("redis", "kmp-redis")
+	setContainerName("caddy", "kmp-caddy")
+	setContainerName("kmp-updater", "kmp-updater")
+
+	if raw, exists := services["kmp-updater"]; exists {
+		svc, ok := raw.(map[string]any)
+		if ok {
+			if env, ok := svc["environment"].(map[string]any); ok {
+				current, _ := env["HEALTH_URL"].(string)
+				if current != "http://kmp-app/health" {
+					env["HEALTH_URL"] = "http://kmp-app/health"
+					changed = true
+				}
+			}
+		}
+	}
+
+	if !changed {
+		return false, nil
+	}
+
+	updated, err := yaml.Marshal(doc)
+	if err != nil {
+		return false, err
+	}
+
+	if err := os.WriteFile(composePath, updated, 0644); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func migrateCaddyUpstream(caddyPath string) (bool, error) {
+	data, err := os.ReadFile(caddyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	current := string(data)
+	updated := strings.ReplaceAll(current, "reverse_proxy app:80", "reverse_proxy kmp-app:80")
+	if updated == current {
+		return false, nil
+	}
+
+	if err := os.WriteFile(caddyPath, []byte(updated), 0644); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // readEnvValue reads a KEY=value pair from a .env file and returns the value.
