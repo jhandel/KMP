@@ -16,11 +16,13 @@ class DockerUpdateProvider implements UpdateProviderInterface
 {
     private string $updaterUrl;
     private Client $httpClient;
+    private DeploymentUpdateCapabilityService $capabilityService;
 
     public function __construct()
     {
         $this->updaterUrl = rtrim((string)Configure::read('App.updaterUrl', 'http://kmp-updater:8484'), '/');
         $this->httpClient = new Client(['timeout' => 30]);
+        $this->capabilityService = new DeploymentUpdateCapabilityService();
     }
 
     public function triggerUpdate(string $tag): array
@@ -94,5 +96,16 @@ class DockerUpdateProvider implements UpdateProviderInterface
         } catch (\Throwable $e) {
             return false;
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getCapabilities(): array
+    {
+        $capabilities = $this->capabilityService->getCapabilitiesForProvider('docker');
+        $capabilities['web_update_runtime_available'] = $this->supportsWebUpdate();
+
+        return $capabilities;
     }
 }

@@ -26,7 +26,7 @@ class KmpInstallCommand extends Command
             ->setDescription('Run interactive first-time installation helper for KMP deployment.')
             ->addOption('profile', [
                 'short' => 'p',
-                'help' => 'Deployment profile: auto, vpc, azure, aws, fly, railway',
+                'help' => 'Deployment profile: auto, vpc, azure, aws, fly, railway, shared',
             ])
             ->addOption('database-driver', [
                 'help' => 'Database family: mysql or postgres',
@@ -104,10 +104,10 @@ class KmpInstallCommand extends Command
 
         $profile = $this->normalizeChoice(
             $args->getOption('profile') ?? '',
-            ['auto', 'vpc', 'azure', 'aws', 'fly', 'railway'],
+            ['auto', 'vpc', 'azure', 'aws', 'fly', 'railway', 'shared'],
             'auto',
         );
-        $profile = $io->askChoice('Deployment profile', ['auto', 'vpc', 'azure', 'aws', 'fly', 'railway'], $profile);
+        $profile = $io->askChoice('Deployment profile', ['auto', 'vpc', 'azure', 'aws', 'fly', 'railway', 'shared'], $profile);
 
         $dbDriver = $this->normalizeChoice(
             $args->getOption('database-driver') ?? '',
@@ -264,12 +264,12 @@ class KmpInstallCommand extends Command
     ): array {
         $payload = [
             'KMP_DEPLOY_PROVIDER' => $profile,
+            'DEPLOYMENT_PROVIDER' => $profile,
             'DATABASE_URL' => $databaseUrl,
             'DB_DRIVER' => $databaseDriver,
             'KMP_UPDATE_COMMAND_TIMEOUT' => '1200',
             'KMP_RESTORE_FROM_SNAPSHOT' => 'false',
             'KMP_SNAPSHOTS' => './data/snapshots',
-            'KMP_DEPLOY_PROVIDER' => $profile,
             'Documents.storage.adapter' => $storage,
         ];
 

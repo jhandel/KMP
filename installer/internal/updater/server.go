@@ -12,6 +12,7 @@ import (
 // Config holds the updater sidecar configuration.
 type Config struct {
 	ComposeDir     string
+	ComposeProject string
 	AppServiceName string
 	HealthURL      string
 	ListenAddr     string
@@ -33,11 +34,14 @@ type Server struct {
 	state State
 	mu    sync.Mutex
 
-	runAsync         func(func())
-	readCurrentTagFn func() string
-	updateEnvTagFn   func(string) error
-	dockerComposeFn  func(args ...string) error
-	waitForHealthyFn func(time.Duration) error
+	runAsync          func(func())
+	readCurrentTagFn  func() string
+	updateEnvTagFn    func(string) error
+	dockerComposeFn   func(args ...string) error
+	removeContainerFn func(string) error
+	waitForHealthyFn  func(time.Duration) error
+
+	resolvedComposeProject string
 }
 
 // NewServer creates a new updater server.

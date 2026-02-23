@@ -24,6 +24,7 @@ The interactive wizard will guide you through choosing a platform and configurin
 | Azure | Cloud | Azure DB for MySQL | Automatic | ⭐⭐ Moderate |
 | AWS | Cloud | RDS MySQL | ALB/ACM | ⭐⭐ Moderate |
 | VPS (SSH) | Self-hosted | Bundled MariaDB | Caddy | ⭐⭐ Moderate |
+| Shared hosting (no root) | Traditional web host | Provider-managed or external | Provider-managed | ⭐⭐ Moderate |
 
 ## How It Works
 

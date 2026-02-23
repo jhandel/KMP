@@ -24,6 +24,7 @@ class DeploymentUpdateService
         'aws' => 'AWS',
         'fly' => 'FLY',
         'railway' => 'RAILWAY',
+        'shared' => 'SHARED',
     ];
 
     public function __construct(
@@ -108,6 +109,7 @@ class DeploymentUpdateService
             'aws' => 'AWS ECS / Elastic Beanstalk / EC2',
             'fly' => 'Fly.io',
             'railway' => 'Railway',
+            'shared' => 'Shared hosting (no root)',
         ];
     }
 

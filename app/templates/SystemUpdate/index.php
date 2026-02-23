@@ -6,6 +6,7 @@
  * @var \App\View\AppView $this
  * @var array{version: string, imageTag: string, channel: string, registry: string, provider: string} $currentInfo
  * @var bool $supportsWebUpdate
+ * @var array<string, mixed> $capabilities
  * @var iterable<\App\Model\Entity\SystemUpdate> $recentUpdates
  * @var \App\Model\Entity\SystemUpdate|null $lastSuccess
  */
@@ -77,6 +78,35 @@ $channelColor = $channelColors[$currentInfo['channel']] ?? 'secondary';
                         <div class="alert alert-warning mt-3 mb-0 py-2 px-3">
                             <i class="bi bi-exclamation-triangle"></i>
                             <?= __('Web-triggered updates are not available. Use the CLI installer: {0}', '<code>kmp update</code>') ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if (!empty($capabilities['components']) && is_array($capabilities['components'])): ?>
+                        <?php
+                        $componentLabels = [
+                            'app' => __('App'),
+                            'database_migrations' => __('DB Migrations'),
+                            'database_engine' => __('DB Engine'),
+                            'proxy' => __('Proxy'),
+                            'updater' => __('Updater'),
+                        ];
+                        ?>
+                        <div class="mt-3">
+                            <h6 class="text-muted mb-2"><?= __('Component Update Coverage') ?></h6>
+                            <ul class="list-unstyled small mb-0">
+                                <?php foreach ($capabilities['components'] as $component => $details): ?>
+                                    <?php
+                                    $supported = (bool)($details['supported'] ?? false);
+                                    $mode = (string)($details['mode'] ?? 'n/a');
+                                    $label = $componentLabels[$component] ?? ucwords(str_replace('_', ' ', (string)$component));
+                                    ?>
+                                    <li>
+                                        <i class="bi bi-<?= $supported ? 'check-circle text-success' : 'x-circle text-muted' ?>"></i>
+                                        <?= h($label) ?>
+                                        <span class="text-muted">(<?= h($mode) ?>)</span>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
                         </div>
                     <?php endif; ?>
                 </div>

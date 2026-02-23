@@ -3,7 +3,7 @@ import { Controller } from "@hotwired/stimulus"
 /**
  * Checks for KMP container updates via the server-side registry service
  * and shows a dismissible banner to super-user admins.
- * Caches results in sessionStorage for 1 hour to avoid API spam.
+ * Caches results in sessionStorage for 5 minutes to avoid API spam.
  */
 class VersionCheckController extends Controller {
     static values = {
@@ -18,15 +18,16 @@ class VersionCheckController extends Controller {
     }
 
     async checkForUpdates() {
-        // v2 invalidates old cache entries created before release filtering was fixed.
-        const cacheKey = 'kmp-version-check-v2'
+        // v5 invalidates earlier cache payloads and binds cache to current version.
+        const cacheKey = 'kmp-version-check-v5'
         sessionStorage.removeItem('kmp-version-check')
 
         const cached = sessionStorage.getItem(cacheKey)
         if (cached) {
             try {
                 const data = JSON.parse(cached)
-                if (Date.now() - data.timestamp < 3600000) {
+                // Keep browser cache aligned with server-side cache TTL (5 minutes).
+                if (Date.now() - data.timestamp < 300000 && data.currentVersion === this.currentValue) {
                     if (data.updateAvailable && this.isAppReleaseTag(data.latestVersion)) {
                         this.showBanner(data.latestVersion, data.channel)
                     }
@@ -46,18 +47,31 @@ class VersionCheckController extends Controller {
             const data = await response.json()
             if (!data || !data.current) return
 
-            const currentTag = (data.current.imageTag || '').replace(/^v/, '')
+            const currentTag = (data.current.imageTag || this.currentValue || '').replace(/^v/, '')
             const currentChannel = data.current.channel || 'release'
+            const currentComparable = this.extractComparableVersion(currentTag)
 
-            // Find the latest non-current version in the same channel
+            // Find the latest newer version in the same channel.
             const channelVersions = (data.channels || {})[currentChannel] || []
-            const latest = channelVersions.find(v => !v.isCurrent && this.isAppReleaseTag(v.tag))
+            const latest = channelVersions.find(v => {
+                if (v.isCurrent || !this.isAppReleaseTag(v.tag)) {
+                    return false
+                }
+
+                const candidateComparable = this.extractComparableVersion(v.version || v.tag || '')
+                if (currentComparable && candidateComparable) {
+                    return this.compareComparableVersions(candidateComparable, currentComparable) > 0
+                }
+
+                return true
+            })
 
             const updateAvailable = latest != null
-            const latestVersion = latest ? latest.tag : currentTag
+            const latestVersion = latest ? (latest.version || latest.tag) : currentTag
 
             sessionStorage.setItem(cacheKey, JSON.stringify({
                 timestamp: Date.now(),
+                currentVersion: this.currentValue,
                 updateAvailable,
                 latestVersion,
                 channel: currentChannel
@@ -113,6 +127,32 @@ class VersionCheckController extends Controller {
             return false
         }
         return !tag.startsWith('installer-') && !tag.startsWith('updater-')
+    }
+
+    extractComparableVersion(rawValue) {
+        if (!rawValue || typeof rawValue !== 'string') {
+            return null
+        }
+
+        const value = rawValue.trim().toLowerCase()
+        const match = value.match(/(\d+)\.(\d+)\.(\d+)/)
+        if (!match) {
+            return null
+        }
+
+        return [
+            parseInt(match[1], 10),
+            parseInt(match[2], 10),
+            parseInt(match[3], 10)
+        ]
+    }
+
+    compareComparableVersions(left, right) {
+        for (let i = 0; i < 3; i += 1) {
+            if (left[i] > right[i]) return 1
+            if (left[i] < right[i]) return -1
+        }
+        return 0
     }
 }
 

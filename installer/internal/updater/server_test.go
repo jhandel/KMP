@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -90,6 +91,81 @@ func TestRunUpdateRollsBackOnHealthFailure(t *testing.T) {
 	}
 	if len(envTags) != 2 || envTags[0] != "v1.1.0" || envTags[1] != "v1.0.0" {
 		t.Fatalf("expected env tags [v1.1.0 v1.0.0], got %#v", envTags)
+	}
+}
+
+func TestRunUpdateContinuesWhenEnvWriteFails(t *testing.T) {
+	s := NewServer(Config{AppServiceName: "app", ImageRepo: "ghcr.io/jhandel/kmp"})
+	s.readCurrentTagFn = func() string { return "v1.0.0" }
+	s.updateEnvTagFn = func(string) error { return errors.New("read-only file system") }
+	s.dockerComposeFn = func(args ...string) error { return nil }
+	s.waitForHealthyFn = func(time.Duration) error { return nil }
+
+	s.runUpdate("v1.1.0")
+
+	st := readState(s)
+	if st.Status != "completed" {
+		t.Fatalf("expected completed status, got %q (%s)", st.Status, st.Message)
+	}
+}
+
+func TestRecreateAppContainerStopsAndRemovesBeforeUp(t *testing.T) {
+	s := NewServer(Config{AppServiceName: "app"})
+	var calls [][]string
+	s.dockerComposeFn = func(args ...string) error {
+		calls = append(calls, append([]string{}, args...))
+		return nil
+	}
+
+	if err := s.recreateAppContainer("v1.2.3"); err != nil {
+		t.Fatalf("recreateAppContainer failed: %v", err)
+	}
+
+	expected := [][]string{
+		{"stop", "app"},
+		{"rm", "-f", "app"},
+		{"up", "-d", "--no-deps", "app"},
+	}
+	if !reflect.DeepEqual(calls, expected) {
+		t.Fatalf("expected calls %#v, got %#v", expected, calls)
+	}
+}
+
+func TestRecreateAppContainerRetriesAfterNameConflict(t *testing.T) {
+	s := NewServer(Config{AppServiceName: "app"})
+	var calls [][]string
+	upAttempts := 0
+	s.dockerComposeFn = func(args ...string) error {
+		calls = append(calls, append([]string{}, args...))
+		if len(args) > 0 && args[0] == "up" {
+			upAttempts++
+			if upAttempts == 1 {
+				return errors.New(`exit status 1: The container name "/kmp-app" is already in use by container "abc123"`)
+			}
+		}
+		return nil
+	}
+	var removed string
+	s.removeContainerFn = func(name string) error {
+		removed = name
+		return nil
+	}
+
+	if err := s.recreateAppContainer("v1.2.3"); err != nil {
+		t.Fatalf("recreateAppContainer failed: %v", err)
+	}
+	if removed != "kmp-app" {
+		t.Fatalf("expected removal of kmp-app, got %q", removed)
+	}
+	if upAttempts != 2 {
+		t.Fatalf("expected 2 up attempts, got %d", upAttempts)
+	}
+}
+
+func TestComposeProjectNameUsesConfig(t *testing.T) {
+	s := NewServer(Config{ComposeProject: "kmp-d7d1ec11"})
+	if got := s.composeProjectName(); got != "kmp-d7d1ec11" {
+		t.Fatalf("expected configured compose project, got %q", got)
 	}
 }
 

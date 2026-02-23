@@ -40,6 +40,7 @@ class SystemUpdateController extends AppController
 
         $provider = UpdateProviderFactory::create();
         $supportsWebUpdate = $provider->supportsWebUpdate();
+        $capabilities = $provider->getCapabilities();
 
         $recentUpdates = $this->fetchTable('SystemUpdates')
             ->find()
@@ -58,6 +59,7 @@ class SystemUpdateController extends AppController
         $this->set(compact(
             'currentInfo',
             'supportsWebUpdate',
+            'capabilities',
             'recentUpdates',
             'lastSuccess',
         ));
@@ -106,6 +108,14 @@ class SystemUpdateController extends AppController
             return $this->jsonResponse(['status' => 'error', 'message' => 'No target tag specified'], 400);
         }
 
+        $provider = UpdateProviderFactory::create();
+        if (!$provider->supportsWebUpdate()) {
+            return $this->jsonResponse([
+                'status' => 'error',
+                'message' => 'Web-triggered updates are not supported for this deployment provider.',
+            ], 409);
+        }
+
         $identity = $this->request->getAttribute('identity');
         $currentInfo = (new ContainerRegistryService())->getCurrentInfo();
 
@@ -148,7 +158,6 @@ class SystemUpdateController extends AppController
         $systemUpdatesTable->save($updateRecord);
 
         try {
-            $provider = UpdateProviderFactory::create();
             $result = $provider->triggerUpdate($targetTag);
 
             if ($result['status'] === 'error') {
@@ -187,6 +196,7 @@ class SystemUpdateController extends AppController
 
         $provider = UpdateProviderFactory::create();
         $status = $provider->getStatus();
+        $status['capabilities'] = $provider->getCapabilities();
 
         // Also check the latest update record
         $latestUpdate = $this->fetchTable('SystemUpdates')
@@ -221,6 +231,14 @@ class SystemUpdateController extends AppController
             return $this->jsonResponse(['status' => 'error', 'message' => 'No rollback tag specified'], 400);
         }
 
+        $provider = UpdateProviderFactory::create();
+        if (!$provider->supportsWebUpdate()) {
+            return $this->jsonResponse([
+                'status' => 'error',
+                'message' => 'Web-triggered rollback is not supported for this deployment provider.',
+            ], 409);
+        }
+
         $identity = $this->request->getAttribute('identity');
         $currentInfo = (new ContainerRegistryService())->getCurrentInfo();
 
@@ -237,7 +255,6 @@ class SystemUpdateController extends AppController
         $systemUpdatesTable->save($updateRecord);
 
         try {
-            $provider = UpdateProviderFactory::create();
             $result = $provider->rollback($previousTag);
 
             if ($result['status'] === 'error') {

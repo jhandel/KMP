@@ -84,6 +84,16 @@ Redeploy from the Railway dashboard or CLI:
 railway up
 ```
 
+### Shared Hosting (No Root Access)
+
+Use a manual, least-privilege workflow:
+
+1. Upload the new application release package with your hosting panel/FTP.
+2. Run application database migrations using the hosting-provided job/console tooling (if available).
+3. Verify `/health` responds and key admin workflows load successfully.
+
+Host-managed components (web server/proxy, database engine) are upgraded by your hosting provider, not by KMP.
+
 ## Rollback
 
 If an update causes issues, roll back to the previous version:

@@ -32,7 +32,7 @@ func (s *Server) runUpdate(targetTag string) {
 
 	// Step 1: Pull new image
 	s.setState("pulling", fmt.Sprintf("Pulling %s...", imageRef), 10)
-	if err := s.dockerCompose("pull", s.cfg.AppServiceName); err != nil {
+	if err := s.dockerComposeWithImageTag(targetTag, "pull", s.cfg.AppServiceName); err != nil {
 		s.setState("failed", fmt.Sprintf("Pull failed: %v", err), 0)
 		return
 	}
@@ -40,13 +40,12 @@ func (s *Server) runUpdate(targetTag string) {
 	// Step 2: Update .env
 	s.setState("stopping", "Updating image tag...", 30)
 	if err := s.updateEnvTag(targetTag); err != nil {
-		s.setState("failed", fmt.Sprintf("Failed to update .env: %v", err), 0)
-		return
+		log.Printf("Warning: could not persist KMP_IMAGE_TAG to .env; continuing with runtime override: %v", err)
 	}
 
 	// Step 3: Recreate app container with new image
 	s.setState("starting", "Recreating app container...", 50)
-	if err := s.dockerCompose("up", "-d", "--no-deps", s.cfg.AppServiceName); err != nil {
+	if err := s.recreateAppContainer(targetTag); err != nil {
 		log.Printf("Failed to start new container, rolling back to %s", previousTag)
 		s.rollbackTag(previousTag)
 		return
@@ -67,18 +66,66 @@ func (s *Server) runUpdate(targetTag string) {
 // rollbackTag reverts to a previous image tag.
 func (s *Server) rollbackTag(tag string) {
 	if err := s.updateEnvTag(tag); err != nil {
-		s.setState("failed", fmt.Sprintf("Rollback .env update failed: %v", err), 0)
-		return
+		log.Printf("Warning: could not persist rollback tag to .env; continuing with runtime override: %v", err)
 	}
-	if err := s.dockerCompose("up", "-d", "--no-deps", s.cfg.AppServiceName); err != nil {
+	if err := s.recreateAppContainer(tag); err != nil {
 		s.setState("failed", fmt.Sprintf("Rollback container restart failed: %v", err), 0)
 		return
 	}
 	s.setState("failed", fmt.Sprintf("Rolled back to %s after update failure", tag), 0)
 }
 
+func (s *Server) recreateAppContainer(imageTag string) error {
+	if err := s.dockerCompose("stop", s.cfg.AppServiceName); err != nil {
+		log.Printf("Warning: failed to stop app service before recreate: %v", err)
+	}
+	if err := s.dockerCompose("rm", "-f", s.cfg.AppServiceName); err != nil {
+		log.Printf("Warning: failed to remove app service before recreate: %v", err)
+	}
+	err := s.dockerComposeWithImageTag(imageTag, "up", "-d", "--no-deps", s.cfg.AppServiceName)
+	if err == nil {
+		return nil
+	}
+	if !isContainerNameConflict(err) {
+		return err
+	}
+
+	log.Printf("Detected container name conflict for kmp-app, force-removing and retrying once")
+	if rmErr := s.removeContainerByName("kmp-app"); rmErr != nil {
+		return fmt.Errorf("%v (also failed to remove kmp-app: %w)", err, rmErr)
+	}
+	return s.dockerComposeWithImageTag(imageTag, "up", "-d", "--no-deps", s.cfg.AppServiceName)
+}
+
+func isContainerNameConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "container name") && strings.Contains(msg, "is already in use by container")
+}
+
+func (s *Server) removeContainerByName(name string) error {
+	if s.removeContainerFn != nil {
+		return s.removeContainerFn(name)
+	}
+
+	cmd := exec.Command("docker", "rm", "-f", name)
+	cmd.Env = s.composeEnv()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // dockerCompose runs a docker compose command in the compose directory.
 func (s *Server) dockerCompose(args ...string) error {
+	return s.dockerComposeWithImageTag("", args...)
+}
+
+// dockerComposeWithImageTag runs docker compose with an optional KMP_IMAGE_TAG override.
+func (s *Server) dockerComposeWithImageTag(imageTag string, args ...string) error {
 	if s.dockerComposeFn != nil {
 		return s.dockerComposeFn(args...)
 	}
@@ -86,7 +133,10 @@ func (s *Server) dockerCompose(args ...string) error {
 	fullArgs := append([]string{"compose"}, args...)
 	cmd := exec.Command("docker", fullArgs...)
 	cmd.Dir = s.cfg.ComposeDir
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COMPOSE_PROJECT_NAME=kmp"))
+	cmd.Env = s.composeEnv()
+	if imageTag != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("KMP_IMAGE_TAG=%s", imageTag))
+	}
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -95,10 +145,14 @@ func (s *Server) dockerCompose(args ...string) error {
 	return nil
 }
 
-// readCurrentTag reads the current image tag from .env or docker inspect.
+// readCurrentTag reads the current image tag from the running app container,
+// falling back to .env when inspect data is unavailable.
 func (s *Server) readCurrentTag() string {
 	if s.readCurrentTagFn != nil {
 		return s.readCurrentTagFn()
+	}
+	if runningTag, err := s.readRunningTag(); err == nil && runningTag != "" {
+		return runningTag
 	}
 
 	envPath := filepath.Join(s.cfg.ComposeDir, ".env")
@@ -114,6 +168,74 @@ func (s *Server) readCurrentTag() string {
 		}
 	}
 	return "unknown"
+}
+
+func (s *Server) readRunningTag() (string, error) {
+	inspectCmd := exec.Command("docker", "inspect", "--format", "{{.Config.Image}}", "kmp-app")
+	inspectOut, err := inspectCmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	imageRef := strings.TrimSpace(string(inspectOut))
+	if imageRef == "" {
+		return "", fmt.Errorf("image ref not found")
+	}
+
+	refWithoutDigest := strings.SplitN(imageRef, "@", 2)[0]
+	colonIdx := strings.LastIndex(refWithoutDigest, ":")
+	if colonIdx == -1 || colonIdx < strings.LastIndex(refWithoutDigest, "/") {
+		return "", fmt.Errorf("image tag not found in %q", imageRef)
+	}
+
+	return refWithoutDigest[colonIdx+1:], nil
+}
+
+func (s *Server) composeEnv() []string {
+	return append(os.Environ(), fmt.Sprintf("COMPOSE_PROJECT_NAME=%s", s.composeProjectName()))
+}
+
+func (s *Server) composeProjectName() string {
+	s.mu.Lock()
+	if s.resolvedComposeProject != "" {
+		project := s.resolvedComposeProject
+		s.mu.Unlock()
+		return project
+	}
+	if strings.TrimSpace(s.cfg.ComposeProject) != "" {
+		s.resolvedComposeProject = strings.TrimSpace(s.cfg.ComposeProject)
+		project := s.resolvedComposeProject
+		s.mu.Unlock()
+		return project
+	}
+	s.mu.Unlock()
+
+	project, err := s.inspectComposeProject("kmp-updater")
+	if err == nil && project != "" {
+		s.mu.Lock()
+		s.resolvedComposeProject = project
+		s.mu.Unlock()
+		return project
+	}
+
+	project, err = s.inspectComposeProject("kmp-app")
+	if err == nil && project != "" {
+		s.mu.Lock()
+		s.resolvedComposeProject = project
+		s.mu.Unlock()
+		return project
+	}
+
+	return "kmp"
+}
+
+func (s *Server) inspectComposeProject(containerName string) (string, error) {
+	inspectCmd := exec.Command("docker", "inspect", "--format", "{{ index .Config.Labels \"com.docker.compose.project\" }}", containerName)
+	inspectOut, err := inspectCmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(inspectOut)), nil
 }
 
 // updateEnvTag updates the KMP_IMAGE_TAG in .env to the given tag.

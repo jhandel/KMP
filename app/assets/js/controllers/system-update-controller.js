@@ -17,6 +17,8 @@ class SystemUpdateController extends Controller {
     connect() {
         this._pollTimer = null
         this._modal = null
+        this._completionHandled = false
+        this._restartSignalCount = 0
     }
 
     disconnect() {
@@ -30,12 +32,9 @@ class SystemUpdateController extends Controller {
         this.checkBtnTarget.disabled = true
 
         try {
-            const response = await fetch(this.checkUrlValue, {
+            const data = await this._fetchJson(this.checkUrlValue, {
                 headers: { "Accept": "application/json" }
             })
-            if (!response.ok) throw new Error(`HTTP ${response.status}`)
-
-            const data = await response.json()
             this._renderVersions(data)
         } catch (err) {
             this.errorTarget.textContent = `Failed to check for updates: ${err.message}`
@@ -58,16 +57,15 @@ class SystemUpdateController extends Controller {
         this._setProgress(5, "Creating pre-update backup...")
 
         try {
-            const response = await fetch(this.triggerUrlValue, {
+            const csrfToken = this._getCsrfToken()
+            const data = await this._fetchJson(this.triggerUrlValue, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
-                    "X-CSRF-Token": this._getCsrfToken()
+                    "X-CSRF-Token": csrfToken
                 },
-                body: `tag=${encodeURIComponent(tag)}`
+                body: this._buildFormBody({ tag }, csrfToken)
             })
-
-            const data = await response.json()
 
             if (data.status === "error") {
                 this._setProgress(0, "")
@@ -95,16 +93,15 @@ class SystemUpdateController extends Controller {
         this._setProgress(10, "Initiating rollback...")
 
         try {
-            const response = await fetch(this.rollbackUrlValue, {
+            const csrfToken = this._getCsrfToken()
+            const data = await this._fetchJson(this.rollbackUrlValue, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
-                    "X-CSRF-Token": this._getCsrfToken()
+                    "X-CSRF-Token": csrfToken
                 },
-                body: `tag=${encodeURIComponent(tag)}`
+                body: this._buildFormBody({ tag }, csrfToken)
             })
-
-            const data = await response.json()
 
             if (data.status === "error") {
                 this._setProgress(0, "")
@@ -148,6 +145,9 @@ class SystemUpdateController extends Controller {
 
             for (const v of shown) {
                 const isCurrent = v.isCurrent
+                const versionBadge = v.version
+                    ? `<span class="badge bg-light text-dark border me-2">v${this._escapeHtml(v.version)}</span>`
+                    : ""
                 const currentBadge = isCurrent
                     ? `<span class="badge bg-primary ms-2">Current</span>`
                     : ""
@@ -168,7 +168,7 @@ class SystemUpdateController extends Controller {
 
                 html += `<div class="list-group-item d-flex justify-content-between align-items-center ${isCurrent ? 'list-group-item-light' : ''}">
                     <div>
-                        <code>${this._escapeHtml(v.tag)}</code>${currentBadge}
+                        ${versionBadge}<code>${this._escapeHtml(v.tag)}</code>${currentBadge}
                         ${published}
                         ${notes}
                     </div>
@@ -194,6 +194,8 @@ class SystemUpdateController extends Controller {
         if (!this._modal) {
             this._modal = new bootstrap.Modal(this.progressModalTarget)
         }
+        this._completionHandled = false
+        this._restartSignalCount = 0
         this.progressResultTarget.classList.add("d-none")
         this._modal.show()
     }
@@ -228,22 +230,72 @@ class SystemUpdateController extends Controller {
     async _pollStatus() {
         try {
             const response = await fetch(this.statusUrlValue, {
-                headers: { "Accept": "application/json" }
+                headers: { "Accept": "application/json" },
+                credentials: "same-origin",
+                redirect: "manual"
             })
+            const redirectedToLogin = response.redirected && response.url && /\/members\/login/i.test(response.url)
+            const explicitRedirect = response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)
+
+            if (explicitRedirect) {
+                this._setProgress(100, "")
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+                return
+            }
+
+            if (redirectedToLogin) {
+                this._setProgress(100, "")
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+                return
+            }
+
+            if (response.status === 401 || response.status === 403) {
+                this._setProgress(100, "")
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+                return
+            }
 
             if (!response.ok) {
                 // If we get a non-OK response, the app might be restarting
                 this._setProgress(80, "Application restarting...")
+                if (this._registerRestartSignal() >= 6) {
+                    this._showResult("success",
+                        `<i class="bi bi-check-circle"></i> Update likely completed and app restarted.<br><small>Redirecting to login...</small>`)
+                    this._redirectToLogin()
+                }
+                return
+            }
+
+            const contentType = (response.headers.get("content-type") || "").toLowerCase()
+            if (!contentType.includes("application/json")) {
+                this._setProgress(100, "")
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
                 return
             }
 
             const data = await response.json()
             const record = data.updateRecord || {}
+            const providerStatus = data.status || ""
+            this._restartSignalCount = 0
 
-            if (record.status === "completed" || record.status === "rolled_back") {
+            if (providerStatus === "completed" || record.status === "completed" || record.status === "rolled_back") {
+                const outcome = record.status === "rolled_back" ? "rolled back" : "completed"
                 this._setProgress(100, "")
                 this._showResult("success",
-                    `<i class="bi bi-check-circle"></i> Update ${record.status === "rolled_back" ? "rolled back" : "completed"} successfully!`)
+                    `<i class="bi bi-check-circle"></i> Update ${outcome} successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+            } else if (providerStatus === "failed") {
+                this._setProgress(0, "")
+                this._showResult("danger",
+                    `<i class="bi bi-x-circle"></i> Update failed: ${data.message || record.error_message || "Unknown error"}`)
             } else if (record.status === "failed") {
                 this._setProgress(0, "")
                 this._showResult("danger",
@@ -256,12 +308,76 @@ class SystemUpdateController extends Controller {
         } catch (err) {
             // Network error likely means app is restarting
             this._setProgress(70, "Application may be restarting...")
+            if (this._registerRestartSignal() >= 6) {
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update likely completed and app restarted.<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+            }
         }
     }
 
+    _registerRestartSignal() {
+        this._restartSignalCount += 1
+        return this._restartSignalCount
+    }
+
+    _redirectToLogin() {
+        if (this._completionHandled) {
+            return
+        }
+        this._completionHandled = true
+        setTimeout(() => {
+            if (this._modal) {
+                this._modal.hide()
+            }
+            const root = window.urlRoot || "/"
+            window.location.assign(`${root}members/login`)
+        }, 2000)
+    }
+
     _getCsrfToken() {
-        const meta = document.querySelector('meta[name="csrfToken"]')
-        return meta ? meta.getAttribute("content") : ""
+        const meta = document.querySelector('meta[name="csrf-token"]')
+            || document.querySelector('meta[name="csrfToken"]')
+        if (meta) {
+            return meta.getAttribute("content") || ""
+        }
+        const input = document.querySelector('input[name="_csrfToken"]')
+        return input ? input.value : ""
+    }
+
+    _buildFormBody(params, csrfToken = "") {
+        const body = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            body.append(key, value ?? "")
+        })
+        if (csrfToken) {
+            body.append("_csrfToken", csrfToken)
+        }
+        return body.toString()
+    }
+
+    async _fetchJson(url, options = {}) {
+        const response = await fetch(url, options)
+        const body = await response.text()
+
+        let data = null
+        if (body) {
+            try {
+                data = JSON.parse(body)
+            } catch (err) {
+                const snippet = body.replace(/\s+/g, " ").trim().slice(0, 140)
+                throw new Error(`Server returned non-JSON response (HTTP ${response.status}): ${snippet}`)
+            }
+        } else {
+            data = {}
+        }
+
+        if (!response.ok) {
+            const message = data?.message || data?.error || `HTTP ${response.status}`
+            throw new Error(message)
+        }
+
+        return data
     }
 
     _escapeHtml(str) {

@@ -17,6 +17,7 @@ class RailwayUpdateProvider implements UpdateProviderInterface
     private string $projectId;
     private string $serviceId;
     private Client $httpClient;
+    private DeploymentUpdateCapabilityService $capabilityService;
 
     public function __construct()
     {
@@ -24,6 +25,7 @@ class RailwayUpdateProvider implements UpdateProviderInterface
         $this->projectId = (string)env('RAILWAY_PROJECT_ID', '');
         $this->serviceId = (string)env('RAILWAY_SERVICE_ID', '');
         $this->httpClient = new Client(['timeout' => 30]);
+        $this->capabilityService = new DeploymentUpdateCapabilityService();
     }
 
     public function triggerUpdate(string $tag): array
@@ -113,5 +115,16 @@ GRAPHQL;
     public function supportsWebUpdate(): bool
     {
         return !empty($this->apiToken) && !empty($this->projectId) && !empty($this->serviceId);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getCapabilities(): array
+    {
+        $capabilities = $this->capabilityService->getCapabilitiesForProvider('railway');
+        $capabilities['web_update_runtime_available'] = $this->supportsWebUpdate();
+
+        return $capabilities;
     }
 }
