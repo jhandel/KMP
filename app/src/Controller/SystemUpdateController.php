@@ -69,6 +69,7 @@ class SystemUpdateController extends AppController
     public function check(): Response
     {
         $this->request->allowMethod(['get']);
+        $this->authorizeCurrentUrl();
         $this->requireSuperUser();
 
         $registryService = new ContainerRegistryService();
@@ -97,6 +98,7 @@ class SystemUpdateController extends AppController
     public function trigger(): Response
     {
         $this->request->allowMethod(['post']);
+        $this->authorizeCurrentUrl();
         $this->requireSuperUser();
 
         $targetTag = trim((string)$this->request->getData('tag', ''));
@@ -180,6 +182,7 @@ class SystemUpdateController extends AppController
     public function status(): Response
     {
         $this->request->allowMethod(['get']);
+        $this->authorizeCurrentUrl();
         $this->requireSuperUser();
 
         $provider = UpdateProviderFactory::create();
@@ -210,6 +213,7 @@ class SystemUpdateController extends AppController
     public function rollback(): Response
     {
         $this->request->allowMethod(['post']);
+        $this->authorizeCurrentUrl();
         $this->requireSuperUser();
 
         $previousTag = trim((string)$this->request->getData('tag', ''));
