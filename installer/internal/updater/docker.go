@@ -210,19 +210,32 @@ func (s *Server) composeProjectName() string {
 	}
 	s.mu.Unlock()
 
-	inspectCmd := exec.Command("docker", "inspect", "--format", "{{ index .Config.Labels \"com.docker.compose.project\" }}", "kmp-app")
-	inspectOut, err := inspectCmd.Output()
-	if err == nil {
-		project := strings.TrimSpace(string(inspectOut))
-		if project != "" {
-			s.mu.Lock()
-			s.resolvedComposeProject = project
-			s.mu.Unlock()
-			return project
-		}
+	project, err := s.inspectComposeProject("kmp-updater")
+	if err == nil && project != "" {
+		s.mu.Lock()
+		s.resolvedComposeProject = project
+		s.mu.Unlock()
+		return project
+	}
+
+	project, err = s.inspectComposeProject("kmp-app")
+	if err == nil && project != "" {
+		s.mu.Lock()
+		s.resolvedComposeProject = project
+		s.mu.Unlock()
+		return project
 	}
 
 	return "kmp"
+}
+
+func (s *Server) inspectComposeProject(containerName string) (string, error) {
+	inspectCmd := exec.Command("docker", "inspect", "--format", "{{ index .Config.Labels \"com.docker.compose.project\" }}", containerName)
+	inspectOut, err := inspectCmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(inspectOut)), nil
 }
 
 // updateEnvTag updates the KMP_IMAGE_TAG in .env to the given tag.
