@@ -18,15 +18,16 @@ class VersionCheckController extends Controller {
     }
 
     async checkForUpdates() {
-        // v2 invalidates old cache entries created before release filtering was fixed.
-        const cacheKey = 'kmp-version-check-v2'
+        // v3 invalidates older long-lived cache entries.
+        const cacheKey = 'kmp-version-check-v3'
         sessionStorage.removeItem('kmp-version-check')
 
         const cached = sessionStorage.getItem(cacheKey)
         if (cached) {
             try {
                 const data = JSON.parse(cached)
-                if (Date.now() - data.timestamp < 3600000) {
+                // Keep browser cache aligned with server-side cache TTL (5 minutes).
+                if (Date.now() - data.timestamp < 300000) {
                     if (data.updateAvailable && this.isAppReleaseTag(data.latestVersion)) {
                         this.showBanner(data.latestVersion, data.channel)
                     }

@@ -114,7 +114,7 @@ class ContainerRegistryService
      */
     private function fetchTags(): array
     {
-        $cached = Cache::read(self::CACHE_KEY_TAGS, self::CACHE_CONFIG);
+        $cached = $this->readCachedArray(self::CACHE_KEY_TAGS);
         if ($cached !== null) {
             return $cached;
         }
@@ -126,9 +126,24 @@ class ContainerRegistryService
             $imagePath = $parts[1] ?? 'jhandel/kmp';
 
             $url = "https://{$registryHost}/v2/{$imagePath}/tags/list";
-            $response = $this->httpClient->get($url, [], [
-                'headers' => ['Accept' => 'application/json'],
-            ]);
+            $headers = [
+                'Accept' => 'application/json',
+                'User-Agent' => 'KMP-App',
+            ];
+            $configuredToken = trim((string)env('GHCR_TOKEN', ''));
+            if ($configuredToken !== '') {
+                $headers['Authorization'] = "Bearer {$configuredToken}";
+            }
+
+            $response = $this->httpClient->get($url, [], ['headers' => $headers]);
+            if ($response->getStatusCode() === 401) {
+                $challenge = $response->getHeaderLine('WWW-Authenticate');
+                $token = $this->fetchGhcrAuthToken($challenge);
+                if ($token !== null) {
+                    $headers['Authorization'] = "Bearer {$token}";
+                    $response = $this->httpClient->get($url, [], ['headers' => $headers]);
+                }
+            }
 
             if (!$response->isOk()) {
                 Log::warning("GHCR tag fetch failed: HTTP {$response->getStatusCode()}");
@@ -137,10 +152,13 @@ class ContainerRegistryService
             }
 
             $data = $response->getJson();
-            $tags = $data['tags'] ?? [];
+            $tags = is_array($data['tags'] ?? null) ? $data['tags'] : [];
 
             // Filter out non-app image tags (base images, digests, sidecar/installer tags)
-            $tags = array_filter($tags, function (string $tag) {
+            $tags = array_filter($tags, function (mixed $tag) {
+                if (!is_string($tag)) {
+                    return false;
+                }
                 return !str_starts_with($tag, 'php')
                     && !str_starts_with($tag, 'sha256-')
                     && !str_starts_with($tag, 'sha-')
@@ -150,7 +168,7 @@ class ContainerRegistryService
             $tags = array_values($tags);
             rsort($tags);
 
-            Cache::write(self::CACHE_KEY_TAGS, $tags, self::CACHE_CONFIG);
+            $this->writeCachedArray(self::CACHE_KEY_TAGS, $tags);
 
             return $tags;
         } catch (\Throwable $e) {
@@ -167,7 +185,7 @@ class ContainerRegistryService
      */
     private function fetchReleases(): array
     {
-        $cached = Cache::read(self::CACHE_KEY_RELEASES, self::CACHE_CONFIG);
+        $cached = $this->readCachedArray(self::CACHE_KEY_RELEASES);
         if ($cached !== null) {
             return $cached;
         }
@@ -203,7 +221,7 @@ class ContainerRegistryService
                 ];
             }
 
-            Cache::write(self::CACHE_KEY_RELEASES, $releases, self::CACHE_CONFIG);
+            $this->writeCachedArray(self::CACHE_KEY_RELEASES, $releases);
 
             return $releases;
         } catch (\Throwable $e) {
@@ -238,5 +256,92 @@ class ContainerRegistryService
         }
 
         return 'release';
+    }
+
+    /**
+     * Read cached array values with service-specific TTL control.
+     *
+     * @return array<mixed>|null
+     */
+    private function readCachedArray(string $key): ?array
+    {
+        $cached = Cache::read($key, self::CACHE_CONFIG);
+        if (!is_array($cached)) {
+            return null;
+        }
+
+        if (array_key_exists('cachedAt', $cached) && array_key_exists('value', $cached)) {
+            $cachedAt = (int)$cached['cachedAt'];
+            if ((time() - $cachedAt) > self::CACHE_TTL) {
+                return null;
+            }
+
+            return is_array($cached['value']) ? $cached['value'] : null;
+        }
+
+        // Legacy cache format (plain array). Treat as expired so we can migrate safely.
+        return null;
+    }
+
+    /**
+     * Write cached array values with timestamp for explicit TTL handling.
+     *
+     * @param array<mixed> $value
+     */
+    private function writeCachedArray(string $key, array $value): void
+    {
+        Cache::write($key, [
+            'cachedAt' => time(),
+            'value' => $value,
+        ], self::CACHE_CONFIG);
+    }
+
+    /**
+     * Exchange GHCR Bearer challenge for an access token.
+     */
+    private function fetchGhcrAuthToken(string $challenge): ?string
+    {
+        if (!preg_match('/^Bearer\s+(.+)$/i', trim($challenge), $match)) {
+            return null;
+        }
+
+        $attributes = [];
+        preg_match_all('/([a-zA-Z][a-zA-Z0-9_-]*)="([^"]*)"/', $match[1], $pairs, PREG_SET_ORDER);
+        foreach ($pairs as $pair) {
+            $attributes[strtolower($pair[1])] = $pair[2];
+        }
+
+        $realm = $attributes['realm'] ?? '';
+        if ($realm === '') {
+            return null;
+        }
+
+        $query = [];
+        if (!empty($attributes['service'])) {
+            $query['service'] = $attributes['service'];
+        }
+        if (!empty($attributes['scope'])) {
+            $query['scope'] = $attributes['scope'];
+        }
+
+        $response = $this->httpClient->get($realm, $query, [
+            'headers' => [
+                'Accept' => 'application/json',
+                'User-Agent' => 'KMP-App',
+            ],
+        ]);
+        if (!$response->isOk()) {
+            Log::warning("GHCR token fetch failed: HTTP {$response->getStatusCode()}");
+
+            return null;
+        }
+
+        $tokenPayload = $response->getJson();
+        $token = $tokenPayload['token'] ?? $tokenPayload['access_token'] ?? null;
+        if (!is_string($token) || $token === '') {
+            return null;
+        }
+
+        return $token;
     }
 }
