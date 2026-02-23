@@ -55,13 +55,14 @@ class SystemUpdateController extends Controller {
         this._setProgress(5, "Creating pre-update backup...")
 
         try {
+            const csrfToken = this._getCsrfToken()
             const data = await this._fetchJson(this.triggerUrlValue, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
-                    "X-CSRF-Token": this._getCsrfToken()
+                    "X-CSRF-Token": csrfToken
                 },
-                body: `tag=${encodeURIComponent(tag)}`
+                body: this._buildFormBody({ tag }, csrfToken)
             })
 
             if (data.status === "error") {
@@ -90,13 +91,14 @@ class SystemUpdateController extends Controller {
         this._setProgress(10, "Initiating rollback...")
 
         try {
+            const csrfToken = this._getCsrfToken()
             const data = await this._fetchJson(this.rollbackUrlValue, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
-                    "X-CSRF-Token": this._getCsrfToken()
+                    "X-CSRF-Token": csrfToken
                 },
-                body: `tag=${encodeURIComponent(tag)}`
+                body: this._buildFormBody({ tag }, csrfToken)
             })
 
             if (data.status === "error") {
@@ -256,8 +258,24 @@ class SystemUpdateController extends Controller {
     }
 
     _getCsrfToken() {
-        const meta = document.querySelector('meta[name="csrfToken"]')
-        return meta ? meta.getAttribute("content") : ""
+        const meta = document.querySelector('meta[name="csrf-token"]')
+            || document.querySelector('meta[name="csrfToken"]')
+        if (meta) {
+            return meta.getAttribute("content") || ""
+        }
+        const input = document.querySelector('input[name="_csrfToken"]')
+        return input ? input.value : ""
+    }
+
+    _buildFormBody(params, csrfToken = "") {
+        const body = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            body.append(key, value ?? "")
+        })
+        if (csrfToken) {
+            body.append("_csrfToken", csrfToken)
+        }
+        return body.toString()
     }
 
     async _fetchJson(url, options = {}) {
