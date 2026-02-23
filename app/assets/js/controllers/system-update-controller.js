@@ -230,10 +230,28 @@ class SystemUpdateController extends Controller {
             const response = await fetch(this.statusUrlValue, {
                 headers: { "Accept": "application/json" }
             })
+            const redirectedToLogin = response.redirected && response.url && response.url.includes("/members/login")
+
+            if (redirectedToLogin) {
+                this._setProgress(100, "")
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+                return
+            }
 
             if (!response.ok) {
                 // If we get a non-OK response, the app might be restarting
                 this._setProgress(80, "Application restarting...")
+                return
+            }
+
+            const contentType = (response.headers.get("content-type") || "").toLowerCase()
+            if (!contentType.includes("application/json")) {
+                this._setProgress(100, "")
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
                 return
             }
 
