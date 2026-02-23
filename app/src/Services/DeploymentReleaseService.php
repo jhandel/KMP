@@ -105,6 +105,11 @@ class DeploymentReleaseService
                 continue;
             }
 
+            // Skip non-app releases (installer CLI, updater sidecar)
+            if (str_starts_with($tag, 'installer-') || str_starts_with($tag, 'updater-')) {
+                continue;
+            }
+
             $channel = $this->inferChannel($rawRelease);
             $items[] = [
                 'name' => (string)$name,

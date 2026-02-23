@@ -20,6 +20,7 @@ use Cake\Http\Session;
 class NavigationRegistry
 {
     use StaticConfigTrait;
+    private const NAVIGATION_CACHE_VERSION = 2;
 
     /**
      * @var array [source => ['items' => [...], 'callback' => callable|null]]
@@ -105,6 +106,7 @@ class NavigationRegistry
                 isset($cached['user_id'], $cached['items'])
                 && (int)$cached['user_id'] === (int)$user->id
                 && is_array($cached['items'])
+                && (int)($cached['nav_version'] ?? 0) === self::NAVIGATION_CACHE_VERSION
                 && !self::isCachedNavigationStaleForRestore($cached, $latestRestoreCompletion)
                 && (!$hasRegisteredSources || $cached['items'] !== [])
             ) {
@@ -131,6 +133,7 @@ class NavigationRegistry
             $payload = [
                 'user_id' => (int)$user->id,
                 'items' => $allItems,
+                'nav_version' => self::NAVIGATION_CACHE_VERSION,
                 'generated_at' => (new \DateTimeImmutable('now'))->format(\DateTimeInterface::ATOM),
             ];
             if ($session !== null) {

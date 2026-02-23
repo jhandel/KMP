@@ -1,13 +1,14 @@
 import { Controller } from "@hotwired/stimulus"
 
 /**
- * Checks for KMP container updates via GitHub API and shows a dismissible banner to admins.
+ * Checks for KMP container updates via the server-side registry service
+ * and shows a dismissible banner to super-user admins.
  * Caches results in sessionStorage for 1 hour to avoid API spam.
  */
 class VersionCheckController extends Controller {
     static values = {
         current: String,
-        repo: { type: String, default: "jhandel/KMP" }
+        checkUrl: { type: String, default: "/system-update/check" }
     }
 
     static targets = ["banner"]
@@ -17,53 +18,60 @@ class VersionCheckController extends Controller {
     }
 
     async checkForUpdates() {
-        const cached = sessionStorage.getItem('kmp-version-check')
+        // v2 invalidates old cache entries created before release filtering was fixed.
+        const cacheKey = 'kmp-version-check-v2'
+        sessionStorage.removeItem('kmp-version-check')
+
+        const cached = sessionStorage.getItem(cacheKey)
         if (cached) {
-            const data = JSON.parse(cached)
-            if (Date.now() - data.timestamp < 3600000) {
-                if (data.updateAvailable) {
-                    this.showBanner(data.latestVersion, data.releaseUrl)
+            try {
+                const data = JSON.parse(cached)
+                if (Date.now() - data.timestamp < 3600000) {
+                    if (data.updateAvailable && this.isAppReleaseTag(data.latestVersion)) {
+                        this.showBanner(data.latestVersion, data.channel)
+                    }
+                    return
                 }
-                return
+            } catch (e) {
+                sessionStorage.removeItem(cacheKey)
             }
         }
 
         try {
-            const response = await fetch(`https://api.github.com/repos/${this.repoValue}/releases?per_page=20`)
+            const response = await fetch(this.checkUrlValue, {
+                headers: { "Accept": "application/json" }
+            })
             if (!response.ok) return
 
-            const releases = await response.json()
-            if (!Array.isArray(releases)) return
+            const data = await response.json()
+            if (!data || !data.current) return
 
-            // Ignore installer-only releases (installer-v*) and check container tags only.
-            const release = releases.find((item) =>
-                item &&
-                typeof item.tag_name === 'string' &&
-                !item.tag_name.startsWith('installer-v')
-            )
-            if (!release) return
+            const currentTag = (data.current.imageTag || '').replace(/^v/, '')
+            const currentChannel = data.current.channel || 'release'
 
-            const latestVersion = release.tag_name.replace(/^v/, '')
-            const currentVersion = this.currentValue.trim().replace(/^v/, '')
+            // Find the latest non-current version in the same channel
+            const channelVersions = (data.channels || {})[currentChannel] || []
+            const latest = channelVersions.find(v => !v.isCurrent && this.isAppReleaseTag(v.tag))
 
-            const updateAvailable = latestVersion !== currentVersion
+            const updateAvailable = latest != null
+            const latestVersion = latest ? latest.tag : currentTag
 
-            sessionStorage.setItem('kmp-version-check', JSON.stringify({
+            sessionStorage.setItem(cacheKey, JSON.stringify({
                 timestamp: Date.now(),
                 updateAvailable,
                 latestVersion,
-                releaseUrl: release.html_url
+                channel: currentChannel
             }))
 
             if (updateAvailable) {
-                this.showBanner(latestVersion, release.html_url)
+                this.showBanner(latestVersion, currentChannel)
             }
         } catch (e) {
             console.debug('Version check failed:', e)
         }
     }
 
-    showBanner(latestVersion, releaseUrl) {
+    showBanner(latestVersion, channel) {
         if (this.hasBannerTarget) {
             const wrapper = document.createElement('div')
             wrapper.className = 'alert alert-info alert-dismissible fade show d-flex align-items-center'
@@ -78,22 +86,14 @@ class VersionCheckController extends Controller {
             strong.textContent = 'Update available: '
             content.appendChild(strong)
             content.appendChild(document.createTextNode(
-                `KMP ${latestVersion} is available (you have ${this.currentValue}). Run `
+                `KMP ${latestVersion} is available (you have ${this.currentValue}). `
             ))
-            const code = document.createElement('code')
-            code.textContent = 'kmp update'
-            content.appendChild(code)
-            content.appendChild(document.createTextNode(' on your server to upgrade. '))
 
             const link = document.createElement('a')
-            link.href = releaseUrl
-            link.target = '_blank'
+            link.href = '/system-update'
             link.className = 'alert-link ms-1'
-            link.textContent = 'View changelog →'
-            // Only allow GitHub URLs
-            if (releaseUrl && releaseUrl.startsWith('https://github.com/')) {
-                content.appendChild(link)
-            }
+            link.textContent = 'Go to System Update →'
+            content.appendChild(link)
             wrapper.appendChild(content)
 
             const closeBtn = document.createElement('button')
@@ -106,6 +106,13 @@ class VersionCheckController extends Controller {
             this.bannerTarget.innerHTML = ''
             this.bannerTarget.appendChild(wrapper)
         }
+    }
+
+    isAppReleaseTag(tag) {
+        if (!tag || typeof tag !== 'string') {
+            return false
+        }
+        return !tag.startsWith('installer-') && !tag.startsWith('updater-')
     }
 }
 

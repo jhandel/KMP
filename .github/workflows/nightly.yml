@@ -113,13 +113,16 @@ jobs:
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
             TAGS="nightly-${DATE},nightly"
             PRIMARY="nightly-${DATE}"
+            CHANNEL="nightly"
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             TAGS="dev-${SHORT_SHA},dev"
             PRIMARY="dev-${SHORT_SHA}"
+            CHANNEL="dev"
           else
             # workflow_dispatch: both sets
             TAGS="nightly-${DATE},nightly,dev-${SHORT_SHA},dev"
             PRIMARY="dev-${SHORT_SHA}"
+            CHANNEL="dev"
           fi
 
           # Build full image refs
@@ -130,6 +133,7 @@ jobs:
           done
 
           echo "primary=${PRIMARY}" >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
           printf "tags<<EOF\n${FULL_TAGS}EOF\n" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
@@ -144,6 +148,8 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}
+            APP_VERSION=${{ steps.tags.outputs.primary }}
+            RELEASE_CHANNEL=${{ steps.tags.outputs.channel }}
           cache-from: type=gha,scope=kmp-app
           cache-to: type=gha,mode=max,scope=kmp-app
 

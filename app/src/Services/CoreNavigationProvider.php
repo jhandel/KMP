@@ -232,6 +232,17 @@ class CoreNavigationProvider
             [
                 'type' => 'link',
                 'mergePath' => ['Config'],
+                'label' => 'System Update',
+                'order' => 12,
+                'url' => [
+                    'controller' => 'SystemUpdate',
+                    'action' => 'index',
+                ],
+                'icon' => 'bi-cloud-download',
+            ],
+            [
+                'type' => 'link',
+                'mergePath' => ['Config'],
                 'label' => 'Table Admin',
                 'order' => 15,
                 'url' => [

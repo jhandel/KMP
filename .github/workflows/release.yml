@@ -135,6 +135,7 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}
             APP_VERSION=${{ github.event.release.tag_name }}
+            RELEASE_CHANNEL=${{ steps.channel.outputs.tag }}
           cache-from: type=gha,scope=kmp-app
           cache-to: type=gha,mode=max,scope=kmp-app
 

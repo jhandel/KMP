@@ -195,7 +195,7 @@ echo $this->fetch("tb_flash");
 if (!empty($user) && method_exists($user, 'isSuperUser') && $user->isSuperUser()) : ?>
     <div data-controller="version-check"
          data-version-check-current-value="<?= h(\Cake\Core\Configure::read('App.version', '')) ?>"
-         data-version-check-repo-value="jhandel/KMP">
+         data-version-check-check-url-value="<?= h($this->Url->build(['controller' => 'SystemUpdate', 'action' => 'check'])) ?>">
         <div data-version-check-target="banner"></div>
     </div>
 <?php endif;

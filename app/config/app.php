@@ -126,6 +126,21 @@ return [
 
         /** @var string Application version loaded from version.txt */
         "version" => @file_get_contents(CONFIG . "version.txt") ?: 'unknown',
+
+        /** @var string Container image tag (set at build time or via env) */
+        "imageTag" => env("IMAGE_TAG", trim((string)@file_get_contents(CONFIG . "version.txt")) ?: 'unknown'),
+
+        /** @var string Release channel: release, beta, dev, nightly */
+        "releaseChannel" => env("RELEASE_CHANNEL", trim((string)@file_get_contents(CONFIG . "channel.txt")) ?: 'release'),
+
+        /** @var string Container registry base (no tag) */
+        "containerRegistry" => env("CONTAINER_REGISTRY", "ghcr.io/jhandel/kmp"),
+
+        /** @var string Deployment provider: docker, railway, azure, aws, fly */
+        "deploymentProvider" => env("DEPLOYMENT_PROVIDER", "docker"),
+
+        /** @var string|null Internal URL for the kmp-updater sidecar (Docker only) */
+        "updaterUrl" => env("UPDATER_URL", null),
     ],
 
     /** @see docs/7.1-security-best-practices.md#encryption-and-cryptographic-salt */

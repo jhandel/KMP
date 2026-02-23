@@ -1,0 +1,137 @@
+package updater
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestHandleUpdateRequiresTargetTag(t *testing.T) {
+	s := NewServer(Config{})
+	req := httptest.NewRequest(http.MethodPost, "/updater/update", bytes.NewBufferString(`{}`))
+	rec := httptest.NewRecorder()
+
+	s.handleUpdate(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleUpdateConflictWhenBusy(t *testing.T) {
+	s := NewServer(Config{})
+	s.setState("pulling", "busy", 10)
+
+	req := httptest.NewRequest(http.MethodPost, "/updater/update", bytes.NewBufferString(`{"targetTag":"v1.2.3"}`))
+	rec := httptest.NewRecorder()
+
+	s.handleUpdate(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d", rec.Code)
+	}
+}
+
+func TestHandleUpdateRunsToCompletion(t *testing.T) {
+	s := NewServer(Config{AppServiceName: "app", ImageRepo: "ghcr.io/jhandel/kmp"})
+	s.runAsync = func(fn func()) { fn() }
+	s.readCurrentTagFn = func() string { return "v1.0.0" }
+	s.updateEnvTagFn = func(string) error { return nil }
+	s.dockerComposeFn = func(args ...string) error { return nil }
+	s.waitForHealthyFn = func(time.Duration) error { return nil }
+
+	req := httptest.NewRequest(http.MethodPost, "/updater/update", bytes.NewBufferString(`{"targetTag":"v1.1.0"}`))
+	rec := httptest.NewRecorder()
+
+	s.handleUpdate(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	st := readState(s)
+	if st.Status != "completed" {
+		t.Fatalf("expected completed status, got %q (%s)", st.Status, st.Message)
+	}
+	if st.TargetTag != "v1.1.0" {
+		t.Fatalf("expected target tag v1.1.0, got %q", st.TargetTag)
+	}
+	if st.PreviousTag != "v1.0.0" {
+		t.Fatalf("expected previous tag v1.0.0, got %q", st.PreviousTag)
+	}
+}
+
+func TestRunUpdateRollsBackOnHealthFailure(t *testing.T) {
+	s := NewServer(Config{AppServiceName: "app", ImageRepo: "ghcr.io/jhandel/kmp"})
+	s.readCurrentTagFn = func() string { return "v1.0.0" }
+	var envTags []string
+	s.updateEnvTagFn = func(tag string) error {
+		envTags = append(envTags, tag)
+		return nil
+	}
+	s.dockerComposeFn = func(args ...string) error { return nil }
+	s.waitForHealthyFn = func(time.Duration) error { return errors.New("health failed") }
+
+	s.runUpdate("v1.1.0")
+
+	st := readState(s)
+	if st.Status != "failed" {
+		t.Fatalf("expected failed status, got %q", st.Status)
+	}
+	if !strings.Contains(st.Message, "Rolled back to v1.0.0") {
+		t.Fatalf("expected rollback message, got %q", st.Message)
+	}
+	if len(envTags) != 2 || envTags[0] != "v1.1.0" || envTags[1] != "v1.0.0" {
+		t.Fatalf("expected env tags [v1.1.0 v1.0.0], got %#v", envTags)
+	}
+}
+
+func TestUpdateEnvTagWritesEnvFile(t *testing.T) {
+	tmp := t.TempDir()
+	envPath := filepath.Join(tmp, ".env")
+	if err := os.WriteFile(envPath, []byte("APP_NAME=KMP\nKMP_IMAGE_TAG=v1.0.0\n"), 0644); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	s := NewServer(Config{ComposeDir: tmp})
+	if err := s.updateEnvTag("v1.1.0"); err != nil {
+		t.Fatalf("updateEnvTag failed: %v", err)
+	}
+
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(data), "KMP_IMAGE_TAG=v1.1.0") {
+		t.Fatalf("expected updated tag in env file, got %q", string(data))
+	}
+}
+
+func TestWaitForHealthySuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "ok",
+			"db":     true,
+			"cache":  true,
+		})
+	}))
+	defer ts.Close()
+
+	s := NewServer(Config{HealthURL: ts.URL})
+	if err := s.waitForHealthy(1 * time.Second); err != nil {
+		t.Fatalf("expected healthy response, got error: %v", err)
+	}
+}
+
+func readState(s *Server) State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state
+}

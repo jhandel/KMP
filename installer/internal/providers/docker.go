@@ -255,6 +255,17 @@ func (d *DockerProvider) Status() (*Status, error) {
 		st.DBConnected = hr.DB
 		st.CacheOK = hr.Cache
 		st.Version = hr.Version
+		if hr.ImageTag != "" {
+			st.ImageTag = hr.ImageTag
+		}
+		if hr.Channel != "" {
+			st.Channel = hr.Channel
+		}
+	}
+
+	// Check if kmp-updater sidecar is running
+	if out, err := runDockerCompose(d.dir, "ps", "--status", "running", "--format", "{{.Name}}"); err == nil {
+		st.UpdaterRunning = strings.Contains(out, "kmp-updater")
 	}
 
 	// Try to get uptime from docker compose ps
