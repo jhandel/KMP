@@ -25,6 +25,7 @@ WORKDIR /build
 
 # Layer-cache npm installs separately from app code
 COPY app/package.json app/package-lock.json ./
+COPY app/patches ./patches
 RUN npm ci --no-audit --no-fund
 
 # Copy everything webpack needs
