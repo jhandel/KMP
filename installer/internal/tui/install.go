@@ -1711,6 +1711,11 @@ func (m *InstallModel) viewProgress() string {
 
 func (m *InstallModel) viewComplete() string {
 	deployDir := filepath.Join(os.Getenv("HOME"), ".kmp", "deployments", "default")
+	if cfg, err := config.Load(); err == nil {
+		if dep, ok := cfg.Deployments["default"]; ok && strings.TrimSpace(dep.ComposeDir) != "" {
+			deployDir = dep.ComposeDir
+		}
+	}
 	providerID := m.selectedProviderID()
 	dbChoices, _ := dbOptionsForProvider(providerID)
 	selectedDB := selectedLabel(dbChoices, m.database)
