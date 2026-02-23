@@ -1,1611 +1,5 @@
 (self["webpackChunk"] = self["webpackChunk"] || []).push([["/js/index"],{
 
-/***/ "./assets/js/KMP_utils.js":
-/*!********************************!*\
-  !*** ./assets/js/KMP_utils.js ***!
-  \********************************/
-/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony default export */ __webpack_exports__["default"] = ({
-  urlParam(name) {
-    var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec(window.location.href);
-    var result = null;
-    if (results) {
-      result = decodeURIComponent(results[1]);
-    }
-    return result;
-  },
-  sanitizeString(str) {
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#x27;',
-      "/": '&#x2F;'
-    };
-    const reg = /[&<>"'/]/ig;
-    return str.replace(reg, match => map[match]);
-  },
-  sanitizeUrl(str) {
-    const map = {
-      '<': '%3C',
-      '>': '%3E',
-      '"': '%22',
-      "'": '%27',
-      ' ': '%20'
-    };
-    const reg = /[<>"' ]/ig;
-    return str.replace(reg, match => map[match]);
-  }
-});
-
-/***/ }),
-
-/***/ "./assets/js/controllers/backup-restore-status-controller.js":
-/*!*******************************************************************!*\
-  !*** ./assets/js/controllers/backup-restore-status-controller.js ***!
-  \*******************************************************************/
-/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
-/* provided dependency */ var bootstrap = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
-
-
-/**
- * Polls restore status and drives AJAX restore modal feedback.
- */
-class BackupRestoreStatusController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
-  static values = {
-    url: String,
-    interval: {
-      type: Number,
-      default: 1000
-    },
-    autoReload: {
-      type: Boolean,
-      default: true
-    },
-    terminalWindow: {
-      type: Number,
-      default: 30
-    }
-  };
-  static targets = ["panel", "badge", "message", "details", "modal", "modalBadge", "modalMessage", "modalDetails", "modalSpinner", "modalClose"];
-  connect() {
-    this.reloadScheduled = false;
-    this.hasSeenRunningState = false;
-    this.awaitingFreshRunningState = false;
-    this.restoreRequestInFlight = false;
-    this.currentStatus = null;
-    this.statusRequestInFlight = false;
-    this.modalInstance = this.hasModalTarget ? new bootstrap.Modal(this.modalTarget) : null;
-    this.pollStatus();
-    this.startPolling();
-  }
-  disconnect() {
-    this.stopPolling();
-  }
-  startPolling() {
-    this.stopPolling();
-    this.timer = setInterval(() => this.pollStatus(), this.intervalValue);
-  }
-  stopPolling() {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-  }
-  async submitRestore(event) {
-    event.preventDefault();
-    if (this.restoreRequestInFlight) {
-      return;
-    }
-    const form = event.currentTarget;
-    if (!(form instanceof HTMLFormElement)) {
-      return;
-    }
-    const confirmMessage = form.dataset.confirmMessage || 'Restore this backup and replace all current data?';
-    if (confirmMessage && !window.confirm(confirmMessage)) {
-      return;
-    }
-    const restoreKeyPrompt = form.dataset.restoreKeyPrompt || 'Enter the backup encryption key to continue restore:';
-    const restoreKey = window.prompt(restoreKeyPrompt);
-    if (restoreKey === null) {
-      return;
-    }
-    if (restoreKey.trim() === '') {
-      window.alert('An encryption key is required to restore this backup.');
-      return;
-    }
-    this.reloadScheduled = false;
-    this.awaitingFreshRunningState = true;
-    this.restoreRequestInFlight = true;
-    this.showModal({
-      state: 'running',
-      badgeLabel: 'starting',
-      badgeClass: 'bg-info',
-      message: 'Restore request submitted. Waiting for status updates...',
-      details: 'Preparing restore...',
-      panelClass: 'alert-warning',
-      showSpinner: true
-    });
-    this.setModalClosable(false);
-    const formData = new FormData(form);
-    formData.set('restore_key', restoreKey.trim());
-    try {
-      const response = await fetch(form.action, {
-        method: 'POST',
-        body: formData,
-        credentials: 'same-origin',
-        headers: this.requestHeaders()
-      });
-      const payload = await this.parseJson(response);
-      if (!response.ok || payload?.success === false) {
-        throw new Error(payload?.message || 'Restore request failed.');
-      }
-      this.awaitingFreshRunningState = false;
-      this.hasSeenRunningState = true;
-      const completedStatus = {
-        locked: false,
-        status: 'completed',
-        phase: 'completed',
-        message: payload?.message || 'Restore/import completed.',
-        table_count: payload?.stats?.table_count,
-        tables_processed: payload?.stats?.table_count,
-        row_count: payload?.stats?.row_count,
-        rows_processed: payload?.stats?.row_count,
-        completed_at: new Date().toISOString()
-      };
-      this.render(completedStatus);
-      this.scheduleReload();
-      await this.pollStatus(true);
-    } catch (error) {
-      const failedStatus = {
-        locked: false,
-        status: 'failed',
-        phase: 'failed',
-        message: error instanceof Error ? error.message : 'Restore request failed.',
-        completed_at: new Date().toISOString()
-      };
-      this.render(failedStatus);
-    } finally {
-      this.restoreRequestInFlight = false;
-      this.setModalClosable(true);
-    }
-  }
-  async pollStatus() {
-    if (!this.hasUrlValue) {
-      return;
-    }
-    if (this.statusRequestInFlight) {
-      return;
-    }
-    this.statusRequestInFlight = true;
-    try {
-      const response = await fetch(this.urlValue, {
-        headers: {
-          'Accept': 'application/json'
-        },
-        cache: 'no-store'
-      });
-      if (!response.ok) {
-        return;
-      }
-      const status = await response.json();
-      this.currentStatus = status;
-      this.render(status);
-      this.reloadOnCompletion(status);
-    } catch (error) {
-      console.debug('Backup restore status poll failed:', error);
-    } finally {
-      this.statusRequestInFlight = false;
-    }
-  }
-  render(status) {
-    const normalizedStatus = this.normalizeStatus(status);
-    if (this.hasBadgeTarget) {
-      this.badgeTarget.textContent = normalizedStatus.badgeLabel;
-      this.badgeTarget.className = `badge ${normalizedStatus.badgeClass}`;
-    }
-    if (this.hasMessageTarget) {
-      this.messageTarget.textContent = normalizedStatus.message;
-    }
-    if (this.hasDetailsTarget) {
-      this.detailsTarget.textContent = normalizedStatus.details;
-    }
-    if (this.hasPanelTarget) {
-      this.panelTarget.className = `alert ${normalizedStatus.panelClass} mb-3`;
-    }
-    this.renderModal(normalizedStatus);
-  }
-  reloadOnCompletion(status) {
-    if (!this.autoReloadValue || this.reloadScheduled) {
-      return;
-    }
-    const locked = Boolean(status?.locked);
-    const state = status?.status || 'idle';
-    if (locked || state === 'running') {
-      this.hasSeenRunningState = true;
-      this.awaitingFreshRunningState = false;
-      return;
-    }
-    if (this.awaitingFreshRunningState) {
-      return;
-    }
-    if (!this.hasSeenRunningState) {
-      return;
-    }
-    const normalizedStatus = this.normalizeStatus(status);
-    if (normalizedStatus.state === 'completed') {
-      this.scheduleReload();
-    }
-  }
-  normalizeStatus(status) {
-    const locked = Boolean(status?.locked);
-    const rawState = status?.status || 'idle';
-    const state = !locked && this.isTerminalState(rawState) && !this.isRecentTerminalState(status) ? 'idle' : rawState;
-    const phase = status?.phase || state;
-    const tableCount = Number(status?.table_count || 0);
-    const tablesProcessed = Number(status?.tables_processed || 0);
-    const rowsProcessed = Number(status?.rows_processed || 0);
-    const source = status?.source || '';
-    const currentTable = status?.current_table || '';
-    const message = state === 'idle' ? 'No restore currently running.' : status?.message || 'No restore currently running.';
-    const details = [];
-    if (state !== 'idle' && source) {
-      details.push(`Source: ${source}`);
-    }
-    if (state !== 'idle' && tableCount > 0) {
-      details.push(`Tables: ${tablesProcessed}/${tableCount}`);
-    }
-    if (state !== 'idle' && rowsProcessed > 0) {
-      details.push(`Rows: ${rowsProcessed.toLocaleString()}`);
-    }
-    if (state !== 'idle' && currentTable) {
-      details.push(`Current: ${currentTable}`);
-    }
-    return {
-      state,
-      locked,
-      message,
-      details: details.length > 0 ? details.join(' | ') : 'No active restore.',
-      badgeLabel: locked ? phase : state,
-      badgeClass: this.badgeClass(locked, state),
-      panelClass: this.panelClass(locked, state),
-      showSpinner: locked || state === 'running'
-    };
-  }
-  isTerminalState(state) {
-    return state === 'completed' || state === 'failed' || state === 'interrupted';
-  }
-  isRecentTerminalState(status) {
-    if (!status?.completed_at) {
-      return false;
-    }
-    const completedAt = Date.parse(status.completed_at);
-    if (Number.isNaN(completedAt)) {
-      return false;
-    }
-    return Date.now() - completedAt <= this.terminalWindowValue * 1000;
-  }
-  badgeClass(locked, state) {
-    if (locked || state === 'running') {
-      return 'bg-info';
-    }
-    if (state === 'completed') {
-      return 'bg-success';
-    }
-    if (state === 'failed') {
-      return 'bg-danger';
-    }
-    return 'bg-secondary';
-  }
-  panelClass(locked, state) {
-    if (locked || state === 'running') {
-      return 'alert-warning';
-    }
-    if (state === 'completed') {
-      return 'alert-success';
-    }
-    if (state === 'failed') {
-      return 'alert-danger';
-    }
-    return 'alert-secondary';
-  }
-  renderModal(normalizedStatus) {
-    if (!this.hasModalTarget || !this.modalInstance) {
-      return;
-    }
-    if (this.hasModalBadgeTarget) {
-      this.modalBadgeTarget.textContent = normalizedStatus.badgeLabel;
-      this.modalBadgeTarget.className = `badge ${normalizedStatus.badgeClass}`;
-    }
-    if (this.hasModalMessageTarget) {
-      this.modalMessageTarget.textContent = normalizedStatus.message;
-    }
-    if (this.hasModalDetailsTarget) {
-      this.modalDetailsTarget.textContent = normalizedStatus.details;
-    }
-    if (this.hasModalSpinnerTarget) {
-      this.modalSpinnerTarget.classList.toggle('d-none', !normalizedStatus.showSpinner);
-    }
-    if (this.restoreRequestInFlight || normalizedStatus.showSpinner) {
-      this.modalInstance.show();
-    }
-  }
-  showModal(normalizedStatus) {
-    if (!this.hasModalTarget || !this.modalInstance) {
-      return;
-    }
-    this.modalInstance.show();
-    this.renderModal(normalizedStatus);
-  }
-  setModalClosable(isClosable) {
-    if (!this.hasModalCloseTarget) {
-      return;
-    }
-    this.modalCloseTargets.forEach(button => {
-      button.disabled = !isClosable;
-    });
-  }
-  requestHeaders() {
-    const headers = {
-      'Accept': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest'
-    };
-    const csrfMeta = document.querySelector("meta[name='csrf-token']");
-    if (csrfMeta && csrfMeta.content) {
-      headers['X-CSRF-Token'] = csrfMeta.content;
-    }
-    return headers;
-  }
-  async parseJson(response) {
-    const text = await response.text();
-    if (!text) {
-      return null;
-    }
-    try {
-      return JSON.parse(text);
-    } catch (_error) {
-      return null;
-    }
-  }
-  scheduleReload() {
-    if (this.reloadScheduled) {
-      return;
-    }
-    this.reloadScheduled = true;
-    window.setTimeout(() => window.location.reload(), 1200);
-  }
-}
-if (!window.Controllers) {
-  window.Controllers = {};
-}
-window.Controllers["backup-restore-status"] = BackupRestoreStatusController;
-
-/***/ }),
-
-/***/ "./assets/js/controllers/popover-controller.js":
-/*!*****************************************************!*\
-  !*** ./assets/js/controllers/popover-controller.js ***!
-  \*****************************************************/
-/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
-/* provided dependency */ var bootstrap = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
-
-
-/**
- * Popover Controller
- * 
- * A reusable Stimulus controller for Bootstrap popovers with support for:
- * - HTML content with close buttons
- * - Custom allowList for sanitizer (allows button elements)
- * - Auto-initialization on connect
- * - Proper cleanup on disconnect
- * 
- * Usage:
- * <button type="button" 
- *     data-controller="popover"
- *     data-bs-toggle="popover"
- *     data-bs-trigger="click"
- *     data-bs-html="true"
- *     data-bs-content="<div>Content with <button class='btn-close popover-close-btn'></button></div>">
- *     Open Popover
- * </button>
- */
-class PopoverController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
-  static values = {
-    placement: {
-      type: String,
-      default: "auto"
-    },
-    trigger: {
-      type: String,
-      default: "click"
-    },
-    html: {
-      type: Boolean,
-      default: true
-    },
-    customClass: {
-      type: String,
-      default: ""
-    }
-  };
-  connect() {
-    this.initializePopover();
-    this.setupCloseButtonHandler();
-  }
-  disconnect() {
-    this.removeCloseButtonHandler();
-    this.destroyPopover();
-  }
-  initializePopover() {
-    // Custom allowList to permit button elements in popover content
-    const allowList = Object.assign({}, bootstrap.Popover.Default.allowList);
-    allowList.button = ['type', 'class', 'aria-label'];
-
-    // Get options from data attributes or use defaults
-    const options = {
-      allowList: allowList,
-      placement: this.placementValue,
-      trigger: this.triggerValue,
-      html: this.htmlValue
-    };
-    if (this.customClassValue) {
-      options.customClass = this.customClassValue;
-    }
-
-    // Initialize Bootstrap popover
-    this.popover = new bootstrap.Popover(this.element, options);
-  }
-  destroyPopover() {
-    if (this.popover) {
-      this.popover.dispose();
-      this.popover = null;
-    }
-  }
-  setupCloseButtonHandler() {
-    // Use bound method for proper removal later
-    this.handleCloseClick = this.handleCloseClick.bind(this);
-    document.addEventListener('click', this.handleCloseClick);
-  }
-  removeCloseButtonHandler() {
-    document.removeEventListener('click', this.handleCloseClick);
-  }
-  handleCloseClick(event) {
-    const closeBtn = event.target.closest('.popover .btn-close, .popover .popover-close-btn');
-    if (!closeBtn) return;
-    const popoverElement = closeBtn.closest('.popover');
-    if (!popoverElement) return;
-
-    // Check if this popover belongs to this controller's element
-    const popoverId = popoverElement.id;
-    if (this.element.getAttribute('aria-describedby') !== popoverId) return;
-
-    // Hide the popover
-    if (this.popover) {
-      this.popover.hide();
-    }
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
-  // Action to programmatically show the popover
-  show() {
-    if (this.popover) {
-      this.popover.show();
-    }
-  }
-
-  // Action to programmatically hide the popover
-  hide() {
-    if (this.popover) {
-      this.popover.hide();
-    }
-  }
-
-  // Action to toggle the popover
-  toggle() {
-    if (this.popover) {
-      this.popover.toggle();
-    }
-  }
-}
-
-// Register in global Controllers object
-if (!window.Controllers) {
-  window.Controllers = {};
-}
-window.Controllers["popover"] = PopoverController;
-/* harmony default export */ __webpack_exports__["default"] = (PopoverController);
-
-/***/ }),
-
-/***/ "./assets/js/controllers/qrcode-controller.js":
-/*!****************************************************!*\
-  !*** ./assets/js/controllers/qrcode-controller.js ***!
-  \****************************************************/
-/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
-/* harmony import */ var qrcode__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! qrcode */ "./node_modules/qrcode/lib/browser.js");
-
-
-
-/**
- * QR Code Generator Controller
- * 
- * Generates QR codes dynamically using the qrcode library.
- * Generates the QR code when the modal/container is shown to avoid unnecessary generation.
- * 
- * Usage:
- * <div data-controller="qrcode"
- *      data-qrcode-url-value="https://example.com"
- *      data-qrcode-size-value="256"
- *      data-qrcode-modal-id-value="qrCodeModal">
- *   <div data-qrcode-target="canvas"></div>
- * </div>
- * 
- * Or with a modal:
- * <div class="modal" id="qrCodeModal" data-controller="qrcode" 
- *      data-qrcode-url-value="https://example.com">
- *   <div data-qrcode-target="canvas"></div>
- * </div>
- */
-class QrcodeController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
-  static targets = ["canvas"];
-  static values = {
-    url: String,
-    // The URL to encode in QR code
-    size: {
-      type: Number,
-      default: 256
-    },
-    // QR code size in pixels
-    modalId: String,
-    // Optional modal ID to detect when to generate
-    colorDark: {
-      type: String,
-      default: '#000000'
-    },
-    colorLight: {
-      type: String,
-      default: '#ffffff'
-    },
-    errorCorrectionLevel: {
-      type: String,
-      default: 'H'
-    } // L, M, Q, H
-  };
-
-  // Initialize the generated flag
-  generated = false;
-  connect() {
-    this.generated = false;
-
-    // If modal ID is provided, wait for modal to show
-    if (this.hasModalIdValue) {
-      const modal = document.getElementById(this.modalIdValue);
-      if (modal) {
-        // Store the listener as an instance property
-        this._onModalShown = () => this.generate();
-        modal.addEventListener('shown.bs.modal', this._onModalShown);
-      }
-    } else {
-      // Generate immediately if no modal
-      this.generate();
-    }
-  }
-  disconnect() {
-    // Remove event listener to prevent memory leak
-    if (this.hasModalIdValue && this._onModalShown) {
-      const modal = document.getElementById(this.modalIdValue);
-      if (modal) {
-        modal.removeEventListener('shown.bs.modal', this._onModalShown);
-      }
-    }
-    this.generated = false;
-  }
-
-  /**
-   * Generate the QR code
-   * Returns a Promise that resolves when generation is complete
-   */
-  generate() {
-    // Only generate once
-    if (this.generated) {
-      return Promise.resolve();
-    }
-    if (!this.hasUrlValue) {
-      throw new Error('QR Code: URL value is required');
-    }
-    if (!this.hasCanvasTarget) {
-      throw new Error('QR Code: Canvas target is required');
-    }
-
-    // Clear any existing content
-    this.canvasTarget.innerHTML = '';
-
-    // Create canvas element
-    const canvas = document.createElement('canvas');
-    this.canvasTarget.appendChild(canvas);
-
-    // Return a Promise that resolves when QR code generation is complete
-    return new Promise((resolve, reject) => {
-      qrcode__WEBPACK_IMPORTED_MODULE_1__.toCanvas(canvas, this.urlValue, {
-        width: this.sizeValue,
-        margin: 2,
-        color: {
-          dark: this.colorDarkValue,
-          light: this.colorLightValue
-        },
-        errorCorrectionLevel: this.errorCorrectionLevelValue
-      }, error => {
-        if (error) {
-          this.canvasTarget.innerHTML = '<p class="text-danger">Error generating QR code</p>';
-          reject(error);
-        } else {
-          this.generated = true;
-          resolve();
-        }
-      });
-    });
-  }
-
-  /**
-   * Regenerate the QR code (useful if URL changes)
-   */
-  regenerate() {
-    this.generated = false;
-    this.generate();
-  }
-
-  /**
-   * Download the QR code as PNG
-   */
-  async download() {
-    try {
-      // Wait for generation to complete
-      await this.generate();
-      const canvas = this.canvasTarget.querySelector('canvas');
-      if (!canvas) {
-        console.error('QR Code Controller: Canvas not found');
-        return;
-      }
-
-      // Create download link
-      const link = document.createElement('a');
-      link.download = 'qrcode.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    } catch (error) {
-      console.error('QR Code generation failed:', error);
-    }
-  }
-
-  /**
-   * Copy QR code to clipboard as image
-   */
-  async copyToClipboard() {
-    try {
-      // Wait for generation to complete
-      await this.generate();
-      const canvas = this.canvasTarget.querySelector('canvas');
-      if (!canvas) {
-        console.error('QR Code Controller: Canvas not found');
-        return;
-      }
-
-      // Convert canvas to blob using Promise
-      const blob = await new Promise((resolve, reject) => {
-        canvas.toBlob(blob => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            reject(new Error('Failed to create blob from canvas'));
-          }
-        });
-      });
-
-      // Copy to clipboard
-      const item = new ClipboardItem({
-        'image/png': blob
-      });
-      await navigator.clipboard.write([item]);
-    } catch (error) {
-      console.error('Failed to copy QR code:', error);
-    }
-  }
-}
-
-// Register controller globally
-if (!window.Controllers) {
-  window.Controllers = {};
-}
-window.Controllers["qrcode"] = QrcodeController;
-/* harmony default export */ __webpack_exports__["default"] = (QrcodeController);
-
-/***/ }),
-
-/***/ "./assets/js/controllers/security-debug-controller.js":
-/*!************************************************************!*\
-  !*** ./assets/js/controllers/security-debug-controller.js ***!
-  \************************************************************/
-/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
-
-
-/**
- * Security Debug Controller
- * 
- * Handles the display and interaction of security debug information in debug mode.
- * Provides toggle functionality to show/hide detailed security information including
- * user policies and authorization check logs.
- * 
- * Features:
- * - Toggle visibility of security debug panel
- * - Smooth slide animations
- * - Persistent state during page session
- * - AJAX loading of security information on first view
- * 
- * HTML Structure:
- * ```html
- * <div data-controller="security-debug">
- *   <button data-action="click->security-debug#toggle" data-security-debug-target="toggleBtn">
- *     Show Security Info
- *   </button>
- *   <div data-security-debug-target="panel" style="display: none;">
- *     <!-- Security info content -->
- *   </div>
- * </div>
- * ```
- */
-class SecurityDebugController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
-  static targets = ["panel", "toggleBtn"];
-
-  /**
-   * Initialize controller
-   */
-  initialize() {
-    this.isVisible = false;
-  }
-
-  /**
-   * Toggle the visibility of the security debug panel
-   */
-  toggle(event) {
-    event.preventDefault();
-    if (this.isVisible) {
-      this.hide();
-    } else {
-      this.show();
-    }
-  }
-
-  /**
-   * Show the security debug panel
-   */
-  show() {
-    this.panelTarget.style.display = 'block';
-    this.isVisible = true;
-    if (this.hasToggleBtnTarget) {
-      this.toggleBtnTarget.textContent = 'Hide Security Info';
-    }
-
-    // Smooth scroll to panel
-    setTimeout(() => {
-      this.panelTarget.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest'
-      });
-    }, 100);
-  }
-
-  /**
-   * Hide the security debug panel
-   */
-  hide() {
-    this.panelTarget.style.display = 'none';
-    this.isVisible = false;
-    if (this.hasToggleBtnTarget) {
-      this.toggleBtnTarget.textContent = 'Show Security Info';
-    }
-  }
-}
-
-// Add to global controllers registry
-if (!window.Controllers) {
-  window.Controllers = {};
-}
-window.Controllers["security-debug"] = SecurityDebugController;
-
-/***/ }),
-
-/***/ "./assets/js/controllers/timezone-input-controller.js":
-/*!************************************************************!*\
-  !*** ./assets/js/controllers/timezone-input-controller.js ***!
-  \************************************************************/
-/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
-
-
-/**
- * Timezone Input Controller
- *
- * Automatically converts datetime-local inputs between user's local timezone
- * and UTC storage. Converts UTC values to local time on page load, and converts
- * back to UTC before form submission.
- *
- * See /docs/10.3.2-timezone-input-controller.md for complete documentation.
- *
- * @example
- * <form data-controller="timezone-input">
- *   <input type="datetime-local"
- *          name="start_date"
- *          data-timezone-input-target="datetimeInput"
- *          data-utc-value="2025-03-15T14:30:00Z">
- * </form>
- */
-class TimezoneInputController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
-  static targets = ["datetimeInput", "notice"];
-  static values = {
-    timezone: String,
-    showNotice: {
-      type: Boolean,
-      default: true
-    }
-  };
-
-  /**
-   * Initialize controller - detect timezone and convert UTC to local time
-   */
-  connect() {
-    // Get or detect timezone
-    this.timezone = this.hasTimezoneValue ? this.timezoneValue : KMP_Timezone.detectTimezone();
-
-    // Convert all UTC values to local time for display
-    this.convertUtcToLocal();
-
-    // Show timezone notice if requested
-    if (this.showNoticeValue && this.hasNoticeTarget) {
-      this.updateNotice();
-    }
-
-    // Cache bound event handlers for proper cleanup
-    this._handleSubmit = this.handleSubmit.bind(this);
-    this._handleReset = this.handleReset.bind(this);
-
-    // Attach submit handler
-    this.element.addEventListener('submit', this._handleSubmit);
-
-    // Attach reset handler
-    this.element.addEventListener('reset', this._handleReset);
-  }
-
-  /**
-   * Convert UTC values to local timezone for input display
-   * Stores original and local values in data attributes for reset
-   */
-  convertUtcToLocal() {
-    this.datetimeInputTargets.forEach(input => {
-      const utcValue = input.dataset.utcValue;
-      if (utcValue) {
-        // Convert UTC to local time for input
-        const localValue = KMP_Timezone.toLocalInput(utcValue, this.timezone);
-        input.value = localValue;
-
-        // Store original UTC value for reference
-        input.dataset.originalUtc = utcValue;
-
-        // Store converted local value for reset
-        input.dataset.localValue = localValue;
-      }
-    });
-  }
-
-  /**
-   * Update timezone notice elements
-   */
-  updateNotice() {
-    const abbr = KMP_Timezone.getAbbreviation(this.timezone);
-    const noticeText = `Times shown in ${this.timezone} (${abbr})`;
-    this.noticeTargets.forEach(notice => {
-      while (notice.firstChild) {
-        notice.removeChild(notice.firstChild);
-      }
-      const icon = document.createElement('i');
-      icon.classList.add('bi', 'bi-clock');
-      notice.appendChild(icon);
-      notice.appendChild(document.createTextNode(` ${noticeText}`));
-    });
-  }
-
-  /**
-   * Handle form submission - convert local times to UTC and create hidden inputs
-   * @param {Event} event
-   */
-  handleSubmit(event) {
-    this.datetimeInputTargets.forEach(input => {
-      if (input.value) {
-        // Convert local time to UTC
-        const utcValue = KMP_Timezone.toUTC(input.value, this.timezone);
-
-        // Store original local value for potential reset
-        input.dataset.submittedLocal = input.value;
-        // Only proceed when conversion succeeds
-        if (utcValue) {
-          delete input.dataset.timezoneConversionFailed;
-
-          // If the original input is already disabled from a previous submit, skip
-          if (input.disabled) {
-            return;
-          }
-
-          // Remove any prior hidden UTC inputs for this field
-          const existingHidden = this.element.querySelectorAll(`input[name="${CSS.escape(input.name)}"][data-timezone-converted="true"]`);
-          existingHidden.forEach(el => el.remove());
-
-          // Create hidden input with UTC value
-          const hiddenInput = document.createElement('input');
-          hiddenInput.type = 'hidden';
-          hiddenInput.name = input.name;
-          hiddenInput.value = utcValue;
-          hiddenInput.dataset.timezoneConverted = 'true';
-
-          // Disable original input so it doesn't submit
-          input.disabled = true;
-
-          // Add hidden input to form
-          this.element.appendChild(hiddenInput);
-        } else {
-          input.dataset.timezoneConversionFailed = 'true';
-        }
-      }
-    });
-  }
-
-  /**
-   * Handle form reset - remove hidden inputs and restore original local values
-   * @param {Event} event
-   */
-  handleReset(event) {
-    // Remove any hidden UTC inputs
-    const hiddenInputs = this.element.querySelectorAll('input[data-timezone-converted="true"]');
-    hiddenInputs.forEach(input => input.remove());
-
-    // Re-enable and restore datetime inputs
-    this.datetimeInputTargets.forEach(input => {
-      input.disabled = false;
-      delete input.dataset.timezoneConversionFailed;
-
-      // Restore to original local value
-      if (input.dataset.localValue) {
-        setTimeout(() => {
-          input.value = input.dataset.localValue;
-        }, 0);
-      }
-    });
-  }
-
-  /**
-   * Manually update timezone and re-convert all values
-   * @param {string} newTimezone - IANA timezone identifier
-   */
-  updateTimezone(newTimezone) {
-    this.timezone = newTimezone;
-
-    // Re-convert all values with new timezone
-    this.convertUtcToLocal();
-
-    // Update notice if shown
-    if (this.showNoticeValue && this.hasNoticeTarget) {
-      this.updateNotice();
-    }
-  }
-
-  /**
-   * Get current timezone being used
-   * @returns {string} Current IANA timezone identifier
-   */
-  getTimezone() {
-    return this.timezone;
-  }
-
-  /**
-   * Cleanup on disconnect - remove event listeners and prevent memory leaks
-   */
-  disconnect() {
-    // Remove event listeners using cached references
-    if (this._handleSubmit) {
-      this.element.removeEventListener('submit', this._handleSubmit);
-      this._handleSubmit = null;
-    }
-    if (this._handleReset) {
-      this.element.removeEventListener('reset', this._handleReset);
-      this._handleReset = null;
-    }
-  }
-}
-
-// Add to global controllers registry
-if (!window.Controllers) {
-  window.Controllers = {};
-}
-window.Controllers["timezone-input"] = TimezoneInputController;
-
-/***/ }),
-
-/***/ "./assets/js/index.js":
-/*!****************************!*\
-  !*** ./assets/js/index.js ***!
-  \****************************/
-/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
-/* harmony import */ var _hotwired_turbo__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! @hotwired/turbo */ "./node_modules/@hotwired/turbo/dist/turbo.es2017-esm.js");
-/* harmony import */ var bootstrap__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
-/* harmony import */ var _KMP_utils_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./KMP_utils.js */ "./assets/js/KMP_utils.js");
-/* harmony import */ var _timezone_utils_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./timezone-utils.js */ "./assets/js/timezone-utils.js");
-/* harmony import */ var _controllers_qrcode_controller_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./controllers/qrcode-controller.js */ "./assets/js/controllers/qrcode-controller.js");
-/* harmony import */ var _controllers_timezone_input_controller_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./controllers/timezone-input-controller.js */ "./assets/js/controllers/timezone-input-controller.js");
-/* harmony import */ var _controllers_security_debug_controller_js__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./controllers/security-debug-controller.js */ "./assets/js/controllers/security-debug-controller.js");
-/* harmony import */ var _controllers_popover_controller_js__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./controllers/popover-controller.js */ "./assets/js/controllers/popover-controller.js");
-/* harmony import */ var _controllers_backup_restore_status_controller_js__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./controllers/backup-restore-status-controller.js */ "./assets/js/controllers/backup-restore-status-controller.js");
-/* provided dependency */ var bootstrap = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
-// export for others scripts to use
-
-
-
-
-
-
-// Import controllers
-
-
-
-
-
-
-// Disable Turbo Drive (automatic navigation) but keep Turbo Frames working
-_hotwired_turbo__WEBPACK_IMPORTED_MODULE_1__.session.drive = false;
-
-//window.$ = $;
-//window.jQuery = jQuery;
-window.KMP_utils = _KMP_utils_js__WEBPACK_IMPORTED_MODULE_3__["default"];
-const stimulusApp = _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Application.start();
-window.Stimulus = stimulusApp;
-
-// load all the controllers that have registered in the window.Controllers object
-for (const controller in window.Controllers) {
-  stimulusApp.register(controller, window.Controllers[controller]);
-}
-
-//activate boostrap tooltips
-const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
-
-// Re-initialize tooltips after Turbo renders (for dynamically loaded content)
-// Note: Popovers are handled by the popover Stimulus controller
-document.addEventListener('turbo:render', () => {
-  // Initialize new tooltips
-  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
-    if (!bootstrap.Tooltip.getInstance(el)) {
-      new bootstrap.Tooltip(el);
-    }
-  });
-});
-
-/***/ }),
-
-/***/ "./assets/js/timezone-utils.js":
-/*!*************************************!*\
-  !*** ./assets/js/timezone-utils.js ***!
-  \*************************************/
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @babel/runtime/helpers/objectSpread2 */ "./node_modules/@babel/runtime/helpers/esm/objectSpread2.js");
-/* module decorator */ module = __webpack_require__.hmd(module);
-
-/**
- * KMP Timezone Utilities
- *
- * Client-side timezone handling for the KMP application. Provides utilities for
- * detecting user timezone, formatting dates/times, and converting between timezones
- * for datetime inputs and displays.
- *
- * See /docs/10.3.1-timezone-utils-api.md for complete API documentation and usage examples.
- *
- * @namespace KMP_Timezone
- */
-const KMP_Timezone = {
-  /**
-   * Detect user's timezone from browser using Intl.DateTimeFormat
-   * @returns {string} IANA timezone identifier (e.g., "America/Chicago")
-   */
-  detectTimezone() {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } catch (e) {
-      console.warn('Could not detect timezone, defaulting to UTC', e);
-      return 'UTC';
-    }
-  },
-  /**
-   * Get timezone from element data attribute or detect from browser
-   * @param {HTMLElement} element - Element with optional data-timezone attribute
-   * @returns {string} Timezone identifier
-   */
-  getTimezone(element) {
-    if (element && element.dataset && element.dataset.timezone) {
-      return element.dataset.timezone;
-    }
-    return this.detectTimezone();
-  },
-  /**
-   * Convert UTC datetime to user's timezone for display
-   * @param {string|Date} utcDateTime - UTC datetime string or Date object
-   * @param {string} timezone - Target timezone (default: detected)
-   * @param {object} options - Intl.DateTimeFormat options
-   * @returns {string} Formatted datetime string in local timezone
-   */
-  formatDateTime(utcDateTime, timezone = null, options = null) {
-    if (!utcDateTime) return '';
-    timezone = timezone || this.detectTimezone();
-
-    // Parse the datetime
-    const date = typeof utcDateTime === 'string' ? new Date(utcDateTime) : utcDateTime;
-    if (isNaN(date.getTime())) {
-      console.error('Invalid datetime:', utcDateTime);
-      return '';
-    }
-
-    // Default options
-    const defaultOptions = {
-      timeZone: timezone,
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    };
-    const formatOptions = options ? (0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, defaultOptions), options) : defaultOptions;
-    try {
-      return new Intl.DateTimeFormat('en-US', formatOptions).format(date);
-    } catch (e) {
-      console.error('Error formatting datetime:', e);
-      return date.toLocaleString();
-    }
-  },
-  /**
-   * Format date only (no time)
-   * @param {string|Date} utcDateTime - UTC datetime string or Date object
-   * @param {string} timezone - Target timezone (default: detected)
-   * @param {object} options - Intl.DateTimeFormat options
-   * @returns {string} Formatted date string
-   */
-  formatDate(utcDateTime, timezone = null, options = null) {
-    if (!utcDateTime) return '';
-    timezone = timezone || this.detectTimezone();
-    const date = typeof utcDateTime === 'string' ? new Date(utcDateTime) : utcDateTime;
-    const defaultOptions = {
-      timeZone: timezone,
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    };
-    const formatOptions = options ? (0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, defaultOptions), options) : defaultOptions;
-    try {
-      return new Intl.DateTimeFormat('en-US', formatOptions).format(date);
-    } catch (e) {
-      console.error('Error formatting date:', e);
-      return date.toLocaleDateString();
-    }
-  },
-  /**
-   * Format time only (no date)
-   * @param {string|Date} utcDateTime - UTC datetime string or Date object
-   * @param {string} timezone - Target timezone (default: detected)
-   * @param {object} options - Intl.DateTimeFormat options
-   * @returns {string} Formatted time string
-   */
-  formatTime(utcDateTime, timezone = null, options = null) {
-    if (!utcDateTime) return '';
-    timezone = timezone || this.detectTimezone();
-    const date = typeof utcDateTime === 'string' ? new Date(utcDateTime) : utcDateTime;
-    const defaultOptions = {
-      timeZone: timezone,
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    };
-    const formatOptions = options ? (0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, defaultOptions), options) : defaultOptions;
-    try {
-      return new Intl.DateTimeFormat('en-US', formatOptions).format(date);
-    } catch (e) {
-      console.error('Error formatting time:', e);
-      return date.toLocaleTimeString();
-    }
-  },
-  /**
-   * Convert UTC datetime to HTML5 datetime-local format in user's timezone
-   * @param {string|Date} utcDateTime - UTC datetime
-   * @param {string} timezone - Target timezone (default: detected)
-   * @returns {string} Datetime in YYYY-MM-DDTHH:mm format (local time)
-   */
-  toLocalInput(utcDateTime, timezone = null) {
-    if (!utcDateTime) return '';
-    timezone = timezone || this.detectTimezone();
-    const date = typeof utcDateTime === 'string' ? new Date(utcDateTime) : utcDateTime;
-    if (isNaN(date.getTime())) {
-      console.error('Invalid datetime for input:', utcDateTime);
-      return '';
-    }
-    try {
-      // Get date parts in the target timezone
-      const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-      const parts = formatter.formatToParts(date);
-      const dateParts = {};
-      parts.forEach(part => {
-        if (part.type !== 'literal') {
-          dateParts[part.type] = part.value;
-        }
-      });
-
-      // Format as YYYY-MM-DDTHH:mm
-      return `${dateParts.year}-${dateParts.month}-${dateParts.day}T${dateParts.hour}:${dateParts.minute}`;
-    } catch (e) {
-      console.error('Error converting to local input:', e);
-      return '';
-    }
-  },
-  /**
-   * Convert datetime-local input value (local time) to UTC for storage
-   * @param {string} localDateTime - Datetime in YYYY-MM-DDTHH:mm or YYYY-MM-DD HH:mm:ss format
-   * @param {string} timezone - Source timezone (default: detected)
-   * @returns {string} ISO 8601 UTC datetime string
-   */
-  toUTC(localDateTime, timezone = null) {
-    if (!localDateTime) return '';
-    timezone = timezone || this.detectTimezone();
-    try {
-      // Parse the local datetime string
-      // Format: YYYY-MM-DDTHH:mm or YYYY-MM-DD HH:mm:ss
-      const dateStr = localDateTime.replace(' ', 'T');
-
-      // Create a date string with timezone offset
-      // We'll use a hack: create date in target timezone by building ISO string
-      const parts = dateStr.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
-      if (!parts) {
-        console.error('Invalid datetime format:', localDateTime);
-        return '';
-      }
-      const [, year, month, day, hour, minute, second = '00'] = parts;
-
-      // Create a formatter to get timezone offset
-      const tempDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
-
-      // Format in target timezone to get the actual date/time
-      const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-        timeZoneName: 'short'
-      });
-
-      // Create date assuming it's in the target timezone
-      // This is tricky - we need to find the UTC time that produces this local time
-      const localString = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
-
-      // Use a more reliable method: temporarily set to target timezone
-      const utcDate = new Date(localString + 'Z'); // Treat as UTC first
-      const offset = this.getTimezoneOffset(timezone, utcDate);
-
-      // Adjust by the offset to get the correct UTC time
-      const adjustedDate = new Date(utcDate.getTime() - offset * 60000);
-      return adjustedDate.toISOString();
-    } catch (e) {
-      console.error('Error converting to UTC:', e);
-      return '';
-    }
-  },
-  /**
-   * Get timezone offset in minutes for a specific timezone and date
-   * @param {string} timezone - IANA timezone identifier
-   * @param {Date} date - Date to calculate offset for (handles DST)
-   * @returns {number} Offset in minutes
-   */
-  getTimezoneOffset(timezone, date = new Date()) {
-    try {
-      // Get UTC time
-      const utcDate = new Date(date.toLocaleString('en-US', {
-        timeZone: 'UTC'
-      }));
-
-      // Get time in target timezone
-      const tzDate = new Date(date.toLocaleString('en-US', {
-        timeZone: timezone
-      }));
-
-      // Calculate difference in minutes
-      return (tzDate.getTime() - utcDate.getTime()) / 60000;
-    } catch (e) {
-      console.error('Error getting timezone offset:', e);
-      return 0;
-    }
-  },
-  /**
-   * Get timezone abbreviation (e.g., CDT, EST, PST)
-   * @param {string} timezone - IANA timezone identifier
-   * @param {Date} date - Date for DST calculation (default: now)
-   * @returns {string} Timezone abbreviation
-   */
-  getAbbreviation(timezone = null, date = new Date()) {
-    timezone = timezone || this.detectTimezone();
-    try {
-      const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        timeZoneName: 'short'
-      });
-      const parts = formatter.formatToParts(date);
-      const abbr = parts.find(part => part.type === 'timeZoneName');
-      return abbr ? abbr.value : '';
-    } catch (e) {
-      console.error('Error getting timezone abbreviation:', e);
-      return '';
-    }
-  },
-  /**
-   * Initialize timezone conversion for all datetime inputs on page
-   * Finds inputs with data-utc-value and converts to local time
-   * @param {HTMLElement} container - Container to search in (default: document)
-   */
-  initializeDatetimeInputs(container = document) {
-    const inputs = container.querySelectorAll('input[type="datetime-local"][data-utc-value]');
-    inputs.forEach(input => {
-      const utcValue = input.dataset.utcValue;
-      const timezone = this.getTimezone(input);
-      if (utcValue) {
-        input.value = this.toLocalInput(utcValue, timezone);
-      }
-    });
-  },
-  /**
-   * Convert all datetime-local inputs to UTC before form submission
-   * Creates hidden inputs with UTC values, disables originals
-   * @param {HTMLFormElement} form - Form element
-   * @param {string} timezone - Timezone to use for conversion (default: detected)
-   */
-  convertFormDatetimesToUTC(form, timezone = null) {
-    timezone = timezone || this.detectTimezone();
-    const inputs = form.querySelectorAll('input[type="datetime-local"]');
-    inputs.forEach(input => {
-      if (input.value) {
-        // Store original value in case needed
-        input.dataset.originalValue = input.value;
-
-        // Convert to UTC
-        const utcValue = this.toUTC(input.value, timezone);
-
-        // Only proceed if conversion was successful
-        if (utcValue) {
-          // Create hidden input with UTC value
-          const hiddenInput = document.createElement('input');
-          hiddenInput.type = 'hidden';
-          hiddenInput.name = input.name;
-          hiddenInput.value = utcValue;
-
-          // Disable original input so it doesn't submit
-          input.disabled = true;
-
-          // Add hidden input to form
-          form.appendChild(hiddenInput);
-        } else {
-          // Conversion failed - preserve original value and flag error
-          console.error('Failed to convert datetime to UTC:', input.value);
-          input.dataset.conversionError = 'true';
-          // Original input remains enabled with user's value
-        }
-      }
-    });
-  }
-};
-
-// Export for module systems
-if ( true && module.exports) {
-  module.exports = KMP_Timezone;
-}
-
-// Make available globally
-if (typeof window !== 'undefined') {
-  window.KMP_Timezone = KMP_Timezone;
-}
-
-// Auto-initialize on DOM ready
-if (typeof document !== 'undefined') {
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      KMP_Timezone.initializeDatetimeInputs();
-    });
-  } else {
-    // DOM already loaded
-    KMP_Timezone.initializeDatetimeInputs();
-  }
-}
-
-/***/ }),
-
-/***/ "./node_modules/@babel/runtime/helpers/esm/defineProperty.js":
-/*!*******************************************************************!*\
-  !*** ./node_modules/@babel/runtime/helpers/esm/defineProperty.js ***!
-  \*******************************************************************/
-/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": function() { return /* binding */ _defineProperty; }
-/* harmony export */ });
-/* harmony import */ var _toPropertyKey_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./toPropertyKey.js */ "./node_modules/@babel/runtime/helpers/esm/toPropertyKey.js");
-
-function _defineProperty(e, r, t) {
-  return (r = (0,_toPropertyKey_js__WEBPACK_IMPORTED_MODULE_0__["default"])(r)) in e ? Object.defineProperty(e, r, {
-    value: t,
-    enumerable: !0,
-    configurable: !0,
-    writable: !0
-  }) : e[r] = t, e;
-}
-
-
-/***/ }),
-
-/***/ "./node_modules/@babel/runtime/helpers/esm/objectSpread2.js":
-/*!******************************************************************!*\
-  !*** ./node_modules/@babel/runtime/helpers/esm/objectSpread2.js ***!
-  \******************************************************************/
-/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": function() { return /* binding */ _objectSpread2; }
-/* harmony export */ });
-/* harmony import */ var _defineProperty_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./defineProperty.js */ "./node_modules/@babel/runtime/helpers/esm/defineProperty.js");
-
-function ownKeys(e, r) {
-  var t = Object.keys(e);
-  if (Object.getOwnPropertySymbols) {
-    var o = Object.getOwnPropertySymbols(e);
-    r && (o = o.filter(function (r) {
-      return Object.getOwnPropertyDescriptor(e, r).enumerable;
-    })), t.push.apply(t, o);
-  }
-  return t;
-}
-function _objectSpread2(e) {
-  for (var r = 1; r < arguments.length; r++) {
-    var t = null != arguments[r] ? arguments[r] : {};
-    r % 2 ? ownKeys(Object(t), !0).forEach(function (r) {
-      (0,_defineProperty_js__WEBPACK_IMPORTED_MODULE_0__["default"])(e, r, t[r]);
-    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) {
-      Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r));
-    });
-  }
-  return e;
-}
-
-
-/***/ }),
-
-/***/ "./node_modules/@babel/runtime/helpers/esm/toPrimitive.js":
-/*!****************************************************************!*\
-  !*** ./node_modules/@babel/runtime/helpers/esm/toPrimitive.js ***!
-  \****************************************************************/
-/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": function() { return /* binding */ toPrimitive; }
-/* harmony export */ });
-/* harmony import */ var _typeof_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./typeof.js */ "./node_modules/@babel/runtime/helpers/esm/typeof.js");
-
-function toPrimitive(t, r) {
-  if ("object" != (0,_typeof_js__WEBPACK_IMPORTED_MODULE_0__["default"])(t) || !t) return t;
-  var e = t[Symbol.toPrimitive];
-  if (void 0 !== e) {
-    var i = e.call(t, r || "default");
-    if ("object" != (0,_typeof_js__WEBPACK_IMPORTED_MODULE_0__["default"])(i)) return i;
-    throw new TypeError("@@toPrimitive must return a primitive value.");
-  }
-  return ("string" === r ? String : Number)(t);
-}
-
-
-/***/ }),
-
-/***/ "./node_modules/@babel/runtime/helpers/esm/toPropertyKey.js":
-/*!******************************************************************!*\
-  !*** ./node_modules/@babel/runtime/helpers/esm/toPropertyKey.js ***!
-  \******************************************************************/
-/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": function() { return /* binding */ toPropertyKey; }
-/* harmony export */ });
-/* harmony import */ var _typeof_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./typeof.js */ "./node_modules/@babel/runtime/helpers/esm/typeof.js");
-/* harmony import */ var _toPrimitive_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./toPrimitive.js */ "./node_modules/@babel/runtime/helpers/esm/toPrimitive.js");
-
-
-function toPropertyKey(t) {
-  var i = (0,_toPrimitive_js__WEBPACK_IMPORTED_MODULE_1__["default"])(t, "string");
-  return "symbol" == (0,_typeof_js__WEBPACK_IMPORTED_MODULE_0__["default"])(i) ? i : i + "";
-}
-
-
-/***/ }),
-
-/***/ "./node_modules/@babel/runtime/helpers/esm/typeof.js":
-/*!***********************************************************!*\
-  !*** ./node_modules/@babel/runtime/helpers/esm/typeof.js ***!
-  \***********************************************************/
-/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "default": function() { return /* binding */ _typeof; }
-/* harmony export */ });
-function _typeof(o) {
-  "@babel/helpers - typeof";
-
-  return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) {
-    return typeof o;
-  } : function (o) {
-    return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o;
-  }, _typeof(o);
-}
-
-
-/***/ }),
-
 /***/ "./node_modules/@popperjs/core/lib/createPopper.js":
 /*!*********************************************************!*\
   !*** ./node_modules/@popperjs/core/lib/createPopper.js ***!
@@ -4589,6 +2983,1475 @@ function within(min, value, max) {
 function withinMaxClamp(min, value, max) {
   var v = within(min, value, max);
   return v > max ? max : v;
+}
+
+/***/ }),
+
+/***/ "./assets/js/KMP_utils.js":
+/*!********************************!*\
+  !*** ./assets/js/KMP_utils.js ***!
+  \********************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony default export */ __webpack_exports__["default"] = ({
+  urlParam(name) {
+    var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec(window.location.href);
+    var result = null;
+    if (results) {
+      result = decodeURIComponent(results[1]);
+    }
+    return result;
+  },
+  sanitizeString(str) {
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#x27;',
+      "/": '&#x2F;'
+    };
+    const reg = /[&<>"'/]/ig;
+    return str.replace(reg, match => map[match]);
+  },
+  sanitizeUrl(str) {
+    const map = {
+      '<': '%3C',
+      '>': '%3E',
+      '"': '%22',
+      "'": '%27',
+      ' ': '%20'
+    };
+    const reg = /[<>"' ]/ig;
+    return str.replace(reg, match => map[match]);
+  }
+});
+
+/***/ }),
+
+/***/ "./assets/js/controllers/backup-restore-status-controller.js":
+/*!*******************************************************************!*\
+  !*** ./assets/js/controllers/backup-restore-status-controller.js ***!
+  \*******************************************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
+/* provided dependency */ var bootstrap = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
+
+
+/**
+ * Polls restore status and drives AJAX restore modal feedback.
+ */
+class BackupRestoreStatusController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
+  static values = {
+    url: String,
+    interval: {
+      type: Number,
+      default: 1000
+    },
+    autoReload: {
+      type: Boolean,
+      default: true
+    },
+    terminalWindow: {
+      type: Number,
+      default: 30
+    }
+  };
+  static targets = ["panel", "badge", "message", "details", "modal", "modalBadge", "modalMessage", "modalDetails", "modalSpinner", "modalClose"];
+  connect() {
+    this.reloadScheduled = false;
+    this.hasSeenRunningState = false;
+    this.awaitingFreshRunningState = false;
+    this.restoreRequestInFlight = false;
+    this.currentStatus = null;
+    this.statusRequestInFlight = false;
+    this.modalInstance = this.hasModalTarget ? new bootstrap.Modal(this.modalTarget) : null;
+    this.pollStatus();
+    this.startPolling();
+  }
+  disconnect() {
+    this.stopPolling();
+  }
+  startPolling() {
+    this.stopPolling();
+    this.timer = setInterval(() => this.pollStatus(), this.intervalValue);
+  }
+  stopPolling() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+  async submitRestore(event) {
+    event.preventDefault();
+    if (this.restoreRequestInFlight) {
+      return;
+    }
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    const confirmMessage = form.dataset.confirmMessage || 'Restore this backup and replace all current data?';
+    if (confirmMessage && !window.confirm(confirmMessage)) {
+      return;
+    }
+    const restoreKeyPrompt = form.dataset.restoreKeyPrompt || 'Enter the backup encryption key to continue restore:';
+    const restoreKey = window.prompt(restoreKeyPrompt);
+    if (restoreKey === null) {
+      return;
+    }
+    if (restoreKey.trim() === '') {
+      window.alert('An encryption key is required to restore this backup.');
+      return;
+    }
+    this.reloadScheduled = false;
+    this.awaitingFreshRunningState = true;
+    this.restoreRequestInFlight = true;
+    this.showModal({
+      state: 'running',
+      badgeLabel: 'starting',
+      badgeClass: 'bg-info',
+      message: 'Restore request submitted. Waiting for status updates...',
+      details: 'Preparing restore...',
+      panelClass: 'alert-warning',
+      showSpinner: true
+    });
+    this.setModalClosable(false);
+    const formData = new FormData(form);
+    formData.set('restore_key', restoreKey.trim());
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin',
+        headers: this.requestHeaders()
+      });
+      const payload = await this.parseJson(response);
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || 'Restore request failed.');
+      }
+      this.awaitingFreshRunningState = false;
+      this.hasSeenRunningState = true;
+      const completedStatus = {
+        locked: false,
+        status: 'completed',
+        phase: 'completed',
+        message: payload?.message || 'Restore/import completed.',
+        table_count: payload?.stats?.table_count,
+        tables_processed: payload?.stats?.table_count,
+        row_count: payload?.stats?.row_count,
+        rows_processed: payload?.stats?.row_count,
+        completed_at: new Date().toISOString()
+      };
+      this.render(completedStatus);
+      this.scheduleReload();
+      await this.pollStatus(true);
+    } catch (error) {
+      const failedStatus = {
+        locked: false,
+        status: 'failed',
+        phase: 'failed',
+        message: error instanceof Error ? error.message : 'Restore request failed.',
+        completed_at: new Date().toISOString()
+      };
+      this.render(failedStatus);
+    } finally {
+      this.restoreRequestInFlight = false;
+      this.setModalClosable(true);
+    }
+  }
+  async pollStatus() {
+    if (!this.hasUrlValue) {
+      return;
+    }
+    if (this.statusRequestInFlight) {
+      return;
+    }
+    this.statusRequestInFlight = true;
+    try {
+      const response = await fetch(this.urlValue, {
+        headers: {
+          'Accept': 'application/json'
+        },
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        return;
+      }
+      const status = await response.json();
+      this.currentStatus = status;
+      this.render(status);
+      this.reloadOnCompletion(status);
+    } catch (error) {
+      console.debug('Backup restore status poll failed:', error);
+    } finally {
+      this.statusRequestInFlight = false;
+    }
+  }
+  render(status) {
+    const normalizedStatus = this.normalizeStatus(status);
+    if (this.hasBadgeTarget) {
+      this.badgeTarget.textContent = normalizedStatus.badgeLabel;
+      this.badgeTarget.className = `badge ${normalizedStatus.badgeClass}`;
+    }
+    if (this.hasMessageTarget) {
+      this.messageTarget.textContent = normalizedStatus.message;
+    }
+    if (this.hasDetailsTarget) {
+      this.detailsTarget.textContent = normalizedStatus.details;
+    }
+    if (this.hasPanelTarget) {
+      this.panelTarget.className = `alert ${normalizedStatus.panelClass} mb-3`;
+    }
+    this.renderModal(normalizedStatus);
+  }
+  reloadOnCompletion(status) {
+    if (!this.autoReloadValue || this.reloadScheduled) {
+      return;
+    }
+    const locked = Boolean(status?.locked);
+    const state = status?.status || 'idle';
+    if (locked || state === 'running') {
+      this.hasSeenRunningState = true;
+      this.awaitingFreshRunningState = false;
+      return;
+    }
+    if (this.awaitingFreshRunningState) {
+      return;
+    }
+    if (!this.hasSeenRunningState) {
+      return;
+    }
+    const normalizedStatus = this.normalizeStatus(status);
+    if (normalizedStatus.state === 'completed') {
+      this.scheduleReload();
+    }
+  }
+  normalizeStatus(status) {
+    const locked = Boolean(status?.locked);
+    const rawState = status?.status || 'idle';
+    const state = !locked && this.isTerminalState(rawState) && !this.isRecentTerminalState(status) ? 'idle' : rawState;
+    const phase = status?.phase || state;
+    const tableCount = Number(status?.table_count || 0);
+    const tablesProcessed = Number(status?.tables_processed || 0);
+    const rowsProcessed = Number(status?.rows_processed || 0);
+    const source = status?.source || '';
+    const currentTable = status?.current_table || '';
+    const message = state === 'idle' ? 'No restore currently running.' : status?.message || 'No restore currently running.';
+    const details = [];
+    if (state !== 'idle' && source) {
+      details.push(`Source: ${source}`);
+    }
+    if (state !== 'idle' && tableCount > 0) {
+      details.push(`Tables: ${tablesProcessed}/${tableCount}`);
+    }
+    if (state !== 'idle' && rowsProcessed > 0) {
+      details.push(`Rows: ${rowsProcessed.toLocaleString()}`);
+    }
+    if (state !== 'idle' && currentTable) {
+      details.push(`Current: ${currentTable}`);
+    }
+    return {
+      state,
+      locked,
+      message,
+      details: details.length > 0 ? details.join(' | ') : 'No active restore.',
+      badgeLabel: locked ? phase : state,
+      badgeClass: this.badgeClass(locked, state),
+      panelClass: this.panelClass(locked, state),
+      showSpinner: locked || state === 'running'
+    };
+  }
+  isTerminalState(state) {
+    return state === 'completed' || state === 'failed' || state === 'interrupted';
+  }
+  isRecentTerminalState(status) {
+    if (!status?.completed_at) {
+      return false;
+    }
+    const completedAt = Date.parse(status.completed_at);
+    if (Number.isNaN(completedAt)) {
+      return false;
+    }
+    return Date.now() - completedAt <= this.terminalWindowValue * 1000;
+  }
+  badgeClass(locked, state) {
+    if (locked || state === 'running') {
+      return 'bg-info';
+    }
+    if (state === 'completed') {
+      return 'bg-success';
+    }
+    if (state === 'failed') {
+      return 'bg-danger';
+    }
+    return 'bg-secondary';
+  }
+  panelClass(locked, state) {
+    if (locked || state === 'running') {
+      return 'alert-warning';
+    }
+    if (state === 'completed') {
+      return 'alert-success';
+    }
+    if (state === 'failed') {
+      return 'alert-danger';
+    }
+    return 'alert-secondary';
+  }
+  renderModal(normalizedStatus) {
+    if (!this.hasModalTarget || !this.modalInstance) {
+      return;
+    }
+    if (this.hasModalBadgeTarget) {
+      this.modalBadgeTarget.textContent = normalizedStatus.badgeLabel;
+      this.modalBadgeTarget.className = `badge ${normalizedStatus.badgeClass}`;
+    }
+    if (this.hasModalMessageTarget) {
+      this.modalMessageTarget.textContent = normalizedStatus.message;
+    }
+    if (this.hasModalDetailsTarget) {
+      this.modalDetailsTarget.textContent = normalizedStatus.details;
+    }
+    if (this.hasModalSpinnerTarget) {
+      this.modalSpinnerTarget.classList.toggle('d-none', !normalizedStatus.showSpinner);
+    }
+    if (this.restoreRequestInFlight || normalizedStatus.showSpinner) {
+      this.modalInstance.show();
+    }
+  }
+  showModal(normalizedStatus) {
+    if (!this.hasModalTarget || !this.modalInstance) {
+      return;
+    }
+    this.modalInstance.show();
+    this.renderModal(normalizedStatus);
+  }
+  setModalClosable(isClosable) {
+    if (!this.hasModalCloseTarget) {
+      return;
+    }
+    this.modalCloseTargets.forEach(button => {
+      button.disabled = !isClosable;
+    });
+  }
+  requestHeaders() {
+    const headers = {
+      'Accept': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    };
+    const csrfMeta = document.querySelector("meta[name='csrf-token']");
+    if (csrfMeta && csrfMeta.content) {
+      headers['X-CSRF-Token'] = csrfMeta.content;
+    }
+    return headers;
+  }
+  async parseJson(response) {
+    const text = await response.text();
+    if (!text) {
+      return null;
+    }
+    try {
+      return JSON.parse(text);
+    } catch (_error) {
+      return null;
+    }
+  }
+  scheduleReload() {
+    if (this.reloadScheduled) {
+      return;
+    }
+    this.reloadScheduled = true;
+    window.setTimeout(() => window.location.reload(), 1200);
+  }
+}
+if (!window.Controllers) {
+  window.Controllers = {};
+}
+window.Controllers["backup-restore-status"] = BackupRestoreStatusController;
+
+/***/ }),
+
+/***/ "./assets/js/controllers/popover-controller.js":
+/*!*****************************************************!*\
+  !*** ./assets/js/controllers/popover-controller.js ***!
+  \*****************************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
+/* provided dependency */ var bootstrap = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
+
+
+/**
+ * Popover Controller
+ * 
+ * A reusable Stimulus controller for Bootstrap popovers with support for:
+ * - HTML content with close buttons
+ * - Custom allowList for sanitizer (allows button elements)
+ * - Auto-initialization on connect
+ * - Proper cleanup on disconnect
+ * 
+ * Usage:
+ * <button type="button" 
+ *     data-controller="popover"
+ *     data-bs-toggle="popover"
+ *     data-bs-trigger="click"
+ *     data-bs-html="true"
+ *     data-bs-content="<div>Content with <button class='btn-close popover-close-btn'></button></div>">
+ *     Open Popover
+ * </button>
+ */
+class PopoverController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
+  static values = {
+    placement: {
+      type: String,
+      default: "auto"
+    },
+    trigger: {
+      type: String,
+      default: "click"
+    },
+    html: {
+      type: Boolean,
+      default: true
+    },
+    customClass: {
+      type: String,
+      default: ""
+    }
+  };
+  connect() {
+    this.initializePopover();
+    this.setupCloseButtonHandler();
+  }
+  disconnect() {
+    this.removeCloseButtonHandler();
+    this.destroyPopover();
+  }
+  initializePopover() {
+    // Custom allowList to permit button elements in popover content
+    const allowList = Object.assign({}, bootstrap.Popover.Default.allowList);
+    allowList.button = ['type', 'class', 'aria-label'];
+
+    // Get options from data attributes or use defaults
+    const options = {
+      allowList: allowList,
+      placement: this.placementValue,
+      trigger: this.triggerValue,
+      html: this.htmlValue
+    };
+    if (this.customClassValue) {
+      options.customClass = this.customClassValue;
+    }
+
+    // Initialize Bootstrap popover
+    this.popover = new bootstrap.Popover(this.element, options);
+  }
+  destroyPopover() {
+    if (this.popover) {
+      this.popover.dispose();
+      this.popover = null;
+    }
+  }
+  setupCloseButtonHandler() {
+    // Use bound method for proper removal later
+    this.handleCloseClick = this.handleCloseClick.bind(this);
+    document.addEventListener('click', this.handleCloseClick);
+  }
+  removeCloseButtonHandler() {
+    document.removeEventListener('click', this.handleCloseClick);
+  }
+  handleCloseClick(event) {
+    const closeBtn = event.target.closest('.popover .btn-close, .popover .popover-close-btn');
+    if (!closeBtn) return;
+    const popoverElement = closeBtn.closest('.popover');
+    if (!popoverElement) return;
+
+    // Check if this popover belongs to this controller's element
+    const popoverId = popoverElement.id;
+    if (this.element.getAttribute('aria-describedby') !== popoverId) return;
+
+    // Hide the popover
+    if (this.popover) {
+      this.popover.hide();
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  // Action to programmatically show the popover
+  show() {
+    if (this.popover) {
+      this.popover.show();
+    }
+  }
+
+  // Action to programmatically hide the popover
+  hide() {
+    if (this.popover) {
+      this.popover.hide();
+    }
+  }
+
+  // Action to toggle the popover
+  toggle() {
+    if (this.popover) {
+      this.popover.toggle();
+    }
+  }
+}
+
+// Register in global Controllers object
+if (!window.Controllers) {
+  window.Controllers = {};
+}
+window.Controllers["popover"] = PopoverController;
+/* harmony default export */ __webpack_exports__["default"] = (PopoverController);
+
+/***/ }),
+
+/***/ "./assets/js/controllers/qrcode-controller.js":
+/*!****************************************************!*\
+  !*** ./assets/js/controllers/qrcode-controller.js ***!
+  \****************************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
+/* harmony import */ var qrcode__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! qrcode */ "./node_modules/qrcode/lib/browser.js");
+
+
+
+/**
+ * QR Code Generator Controller
+ * 
+ * Generates QR codes dynamically using the qrcode library.
+ * Generates the QR code when the modal/container is shown to avoid unnecessary generation.
+ * 
+ * Usage:
+ * <div data-controller="qrcode"
+ *      data-qrcode-url-value="https://example.com"
+ *      data-qrcode-size-value="256"
+ *      data-qrcode-modal-id-value="qrCodeModal">
+ *   <div data-qrcode-target="canvas"></div>
+ * </div>
+ * 
+ * Or with a modal:
+ * <div class="modal" id="qrCodeModal" data-controller="qrcode" 
+ *      data-qrcode-url-value="https://example.com">
+ *   <div data-qrcode-target="canvas"></div>
+ * </div>
+ */
+class QrcodeController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
+  static targets = ["canvas"];
+  static values = {
+    url: String,
+    // The URL to encode in QR code
+    size: {
+      type: Number,
+      default: 256
+    },
+    // QR code size in pixels
+    modalId: String,
+    // Optional modal ID to detect when to generate
+    colorDark: {
+      type: String,
+      default: '#000000'
+    },
+    colorLight: {
+      type: String,
+      default: '#ffffff'
+    },
+    errorCorrectionLevel: {
+      type: String,
+      default: 'H'
+    } // L, M, Q, H
+  };
+
+  // Initialize the generated flag
+  generated = false;
+  connect() {
+    this.generated = false;
+
+    // If modal ID is provided, wait for modal to show
+    if (this.hasModalIdValue) {
+      const modal = document.getElementById(this.modalIdValue);
+      if (modal) {
+        // Store the listener as an instance property
+        this._onModalShown = () => this.generate();
+        modal.addEventListener('shown.bs.modal', this._onModalShown);
+      }
+    } else {
+      // Generate immediately if no modal
+      this.generate();
+    }
+  }
+  disconnect() {
+    // Remove event listener to prevent memory leak
+    if (this.hasModalIdValue && this._onModalShown) {
+      const modal = document.getElementById(this.modalIdValue);
+      if (modal) {
+        modal.removeEventListener('shown.bs.modal', this._onModalShown);
+      }
+    }
+    this.generated = false;
+  }
+
+  /**
+   * Generate the QR code
+   * Returns a Promise that resolves when generation is complete
+   */
+  generate() {
+    // Only generate once
+    if (this.generated) {
+      return Promise.resolve();
+    }
+    if (!this.hasUrlValue) {
+      throw new Error('QR Code: URL value is required');
+    }
+    if (!this.hasCanvasTarget) {
+      throw new Error('QR Code: Canvas target is required');
+    }
+
+    // Clear any existing content
+    this.canvasTarget.innerHTML = '';
+
+    // Create canvas element
+    const canvas = document.createElement('canvas');
+    this.canvasTarget.appendChild(canvas);
+
+    // Return a Promise that resolves when QR code generation is complete
+    return new Promise((resolve, reject) => {
+      qrcode__WEBPACK_IMPORTED_MODULE_1__.toCanvas(canvas, this.urlValue, {
+        width: this.sizeValue,
+        margin: 2,
+        color: {
+          dark: this.colorDarkValue,
+          light: this.colorLightValue
+        },
+        errorCorrectionLevel: this.errorCorrectionLevelValue
+      }, error => {
+        if (error) {
+          this.canvasTarget.innerHTML = '<p class="text-danger">Error generating QR code</p>';
+          reject(error);
+        } else {
+          this.generated = true;
+          resolve();
+        }
+      });
+    });
+  }
+
+  /**
+   * Regenerate the QR code (useful if URL changes)
+   */
+  regenerate() {
+    this.generated = false;
+    this.generate();
+  }
+
+  /**
+   * Download the QR code as PNG
+   */
+  async download() {
+    try {
+      // Wait for generation to complete
+      await this.generate();
+      const canvas = this.canvasTarget.querySelector('canvas');
+      if (!canvas) {
+        console.error('QR Code Controller: Canvas not found');
+        return;
+      }
+
+      // Create download link
+      const link = document.createElement('a');
+      link.download = 'qrcode.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (error) {
+      console.error('QR Code generation failed:', error);
+    }
+  }
+
+  /**
+   * Copy QR code to clipboard as image
+   */
+  async copyToClipboard() {
+    try {
+      // Wait for generation to complete
+      await this.generate();
+      const canvas = this.canvasTarget.querySelector('canvas');
+      if (!canvas) {
+        console.error('QR Code Controller: Canvas not found');
+        return;
+      }
+
+      // Convert canvas to blob using Promise
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(blob => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Failed to create blob from canvas'));
+          }
+        });
+      });
+
+      // Copy to clipboard
+      const item = new ClipboardItem({
+        'image/png': blob
+      });
+      await navigator.clipboard.write([item]);
+    } catch (error) {
+      console.error('Failed to copy QR code:', error);
+    }
+  }
+}
+
+// Register controller globally
+if (!window.Controllers) {
+  window.Controllers = {};
+}
+window.Controllers["qrcode"] = QrcodeController;
+/* harmony default export */ __webpack_exports__["default"] = (QrcodeController);
+
+/***/ }),
+
+/***/ "./assets/js/controllers/security-debug-controller.js":
+/*!************************************************************!*\
+  !*** ./assets/js/controllers/security-debug-controller.js ***!
+  \************************************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
+
+
+/**
+ * Security Debug Controller
+ * 
+ * Handles the display and interaction of security debug information in debug mode.
+ * Provides toggle functionality to show/hide detailed security information including
+ * user policies and authorization check logs.
+ * 
+ * Features:
+ * - Toggle visibility of security debug panel
+ * - Smooth slide animations
+ * - Persistent state during page session
+ * - AJAX loading of security information on first view
+ * 
+ * HTML Structure:
+ * ```html
+ * <div data-controller="security-debug">
+ *   <button data-action="click->security-debug#toggle" data-security-debug-target="toggleBtn">
+ *     Show Security Info
+ *   </button>
+ *   <div data-security-debug-target="panel" style="display: none;">
+ *     <!-- Security info content -->
+ *   </div>
+ * </div>
+ * ```
+ */
+class SecurityDebugController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
+  static targets = ["panel", "toggleBtn"];
+
+  /**
+   * Initialize controller
+   */
+  initialize() {
+    this.isVisible = false;
+  }
+
+  /**
+   * Toggle the visibility of the security debug panel
+   */
+  toggle(event) {
+    event.preventDefault();
+    if (this.isVisible) {
+      this.hide();
+    } else {
+      this.show();
+    }
+  }
+
+  /**
+   * Show the security debug panel
+   */
+  show() {
+    this.panelTarget.style.display = 'block';
+    this.isVisible = true;
+    if (this.hasToggleBtnTarget) {
+      this.toggleBtnTarget.textContent = 'Hide Security Info';
+    }
+
+    // Smooth scroll to panel
+    setTimeout(() => {
+      this.panelTarget.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      });
+    }, 100);
+  }
+
+  /**
+   * Hide the security debug panel
+   */
+  hide() {
+    this.panelTarget.style.display = 'none';
+    this.isVisible = false;
+    if (this.hasToggleBtnTarget) {
+      this.toggleBtnTarget.textContent = 'Show Security Info';
+    }
+  }
+}
+
+// Add to global controllers registry
+if (!window.Controllers) {
+  window.Controllers = {};
+}
+window.Controllers["security-debug"] = SecurityDebugController;
+
+/***/ }),
+
+/***/ "./assets/js/controllers/timezone-input-controller.js":
+/*!************************************************************!*\
+  !*** ./assets/js/controllers/timezone-input-controller.js ***!
+  \************************************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
+
+
+/**
+ * Timezone Input Controller
+ *
+ * Automatically converts datetime-local inputs between user's local timezone
+ * and UTC storage. Converts UTC values to local time on page load, and converts
+ * back to UTC before form submission.
+ *
+ * See /docs/10.3.2-timezone-input-controller.md for complete documentation.
+ *
+ * @example
+ * <form data-controller="timezone-input">
+ *   <input type="datetime-local"
+ *          name="start_date"
+ *          data-timezone-input-target="datetimeInput"
+ *          data-utc-value="2025-03-15T14:30:00Z">
+ * </form>
+ */
+class TimezoneInputController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Controller {
+  static targets = ["datetimeInput", "notice"];
+  static values = {
+    timezone: String,
+    showNotice: {
+      type: Boolean,
+      default: true
+    }
+  };
+
+  /**
+   * Initialize controller - detect timezone and convert UTC to local time
+   */
+  connect() {
+    // Get or detect timezone
+    this.timezone = this.hasTimezoneValue ? this.timezoneValue : KMP_Timezone.detectTimezone();
+
+    // Convert all UTC values to local time for display
+    this.convertUtcToLocal();
+
+    // Show timezone notice if requested
+    if (this.showNoticeValue && this.hasNoticeTarget) {
+      this.updateNotice();
+    }
+
+    // Cache bound event handlers for proper cleanup
+    this._handleSubmit = this.handleSubmit.bind(this);
+    this._handleReset = this.handleReset.bind(this);
+
+    // Attach submit handler
+    this.element.addEventListener('submit', this._handleSubmit);
+
+    // Attach reset handler
+    this.element.addEventListener('reset', this._handleReset);
+  }
+
+  /**
+   * Convert UTC values to local timezone for input display
+   * Stores original and local values in data attributes for reset
+   */
+  convertUtcToLocal() {
+    this.datetimeInputTargets.forEach(input => {
+      const utcValue = input.dataset.utcValue;
+      if (utcValue) {
+        // Convert UTC to local time for input
+        const localValue = KMP_Timezone.toLocalInput(utcValue, this.timezone);
+        input.value = localValue;
+
+        // Store original UTC value for reference
+        input.dataset.originalUtc = utcValue;
+
+        // Store converted local value for reset
+        input.dataset.localValue = localValue;
+      }
+    });
+  }
+
+  /**
+   * Update timezone notice elements
+   */
+  updateNotice() {
+    const abbr = KMP_Timezone.getAbbreviation(this.timezone);
+    const noticeText = `Times shown in ${this.timezone} (${abbr})`;
+    this.noticeTargets.forEach(notice => {
+      while (notice.firstChild) {
+        notice.removeChild(notice.firstChild);
+      }
+      const icon = document.createElement('i');
+      icon.classList.add('bi', 'bi-clock');
+      notice.appendChild(icon);
+      notice.appendChild(document.createTextNode(` ${noticeText}`));
+    });
+  }
+
+  /**
+   * Handle form submission - convert local times to UTC and create hidden inputs
+   * @param {Event} event
+   */
+  handleSubmit(event) {
+    this.datetimeInputTargets.forEach(input => {
+      if (input.value) {
+        // Convert local time to UTC
+        const utcValue = KMP_Timezone.toUTC(input.value, this.timezone);
+
+        // Store original local value for potential reset
+        input.dataset.submittedLocal = input.value;
+        // Only proceed when conversion succeeds
+        if (utcValue) {
+          delete input.dataset.timezoneConversionFailed;
+
+          // If the original input is already disabled from a previous submit, skip
+          if (input.disabled) {
+            return;
+          }
+
+          // Remove any prior hidden UTC inputs for this field
+          const existingHidden = this.element.querySelectorAll(`input[name="${CSS.escape(input.name)}"][data-timezone-converted="true"]`);
+          existingHidden.forEach(el => el.remove());
+
+          // Create hidden input with UTC value
+          const hiddenInput = document.createElement('input');
+          hiddenInput.type = 'hidden';
+          hiddenInput.name = input.name;
+          hiddenInput.value = utcValue;
+          hiddenInput.dataset.timezoneConverted = 'true';
+
+          // Disable original input so it doesn't submit
+          input.disabled = true;
+
+          // Add hidden input to form
+          this.element.appendChild(hiddenInput);
+        } else {
+          input.dataset.timezoneConversionFailed = 'true';
+        }
+      }
+    });
+  }
+
+  /**
+   * Handle form reset - remove hidden inputs and restore original local values
+   * @param {Event} event
+   */
+  handleReset(event) {
+    // Remove any hidden UTC inputs
+    const hiddenInputs = this.element.querySelectorAll('input[data-timezone-converted="true"]');
+    hiddenInputs.forEach(input => input.remove());
+
+    // Re-enable and restore datetime inputs
+    this.datetimeInputTargets.forEach(input => {
+      input.disabled = false;
+      delete input.dataset.timezoneConversionFailed;
+
+      // Restore to original local value
+      if (input.dataset.localValue) {
+        setTimeout(() => {
+          input.value = input.dataset.localValue;
+        }, 0);
+      }
+    });
+  }
+
+  /**
+   * Manually update timezone and re-convert all values
+   * @param {string} newTimezone - IANA timezone identifier
+   */
+  updateTimezone(newTimezone) {
+    this.timezone = newTimezone;
+
+    // Re-convert all values with new timezone
+    this.convertUtcToLocal();
+
+    // Update notice if shown
+    if (this.showNoticeValue && this.hasNoticeTarget) {
+      this.updateNotice();
+    }
+  }
+
+  /**
+   * Get current timezone being used
+   * @returns {string} Current IANA timezone identifier
+   */
+  getTimezone() {
+    return this.timezone;
+  }
+
+  /**
+   * Cleanup on disconnect - remove event listeners and prevent memory leaks
+   */
+  disconnect() {
+    // Remove event listeners using cached references
+    if (this._handleSubmit) {
+      this.element.removeEventListener('submit', this._handleSubmit);
+      this._handleSubmit = null;
+    }
+    if (this._handleReset) {
+      this.element.removeEventListener('reset', this._handleReset);
+      this._handleReset = null;
+    }
+  }
+}
+
+// Add to global controllers registry
+if (!window.Controllers) {
+  window.Controllers = {};
+}
+window.Controllers["timezone-input"] = TimezoneInputController;
+
+/***/ }),
+
+/***/ "./assets/js/index.js":
+/*!****************************!*\
+  !*** ./assets/js/index.js ***!
+  \****************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @hotwired/stimulus */ "./node_modules/@hotwired/stimulus/dist/stimulus.js");
+/* harmony import */ var _hotwired_turbo__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! @hotwired/turbo */ "./node_modules/@hotwired/turbo/dist/turbo.es2017-esm.js");
+/* harmony import */ var bootstrap__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
+/* harmony import */ var _KMP_utils_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./KMP_utils.js */ "./assets/js/KMP_utils.js");
+/* harmony import */ var _timezone_utils_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./timezone-utils.js */ "./assets/js/timezone-utils.js");
+/* harmony import */ var _controllers_qrcode_controller_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./controllers/qrcode-controller.js */ "./assets/js/controllers/qrcode-controller.js");
+/* harmony import */ var _controllers_timezone_input_controller_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./controllers/timezone-input-controller.js */ "./assets/js/controllers/timezone-input-controller.js");
+/* harmony import */ var _controllers_security_debug_controller_js__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./controllers/security-debug-controller.js */ "./assets/js/controllers/security-debug-controller.js");
+/* harmony import */ var _controllers_popover_controller_js__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./controllers/popover-controller.js */ "./assets/js/controllers/popover-controller.js");
+/* harmony import */ var _controllers_backup_restore_status_controller_js__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./controllers/backup-restore-status-controller.js */ "./assets/js/controllers/backup-restore-status-controller.js");
+/* provided dependency */ var bootstrap = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
+// export for others scripts to use
+
+
+
+
+
+
+// Import controllers
+
+
+
+
+
+
+// Disable Turbo Drive (automatic navigation) but keep Turbo Frames working
+_hotwired_turbo__WEBPACK_IMPORTED_MODULE_1__.session.drive = false;
+
+//window.$ = $;
+//window.jQuery = jQuery;
+window.KMP_utils = _KMP_utils_js__WEBPACK_IMPORTED_MODULE_3__["default"];
+const stimulusApp = _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Application.start();
+window.Stimulus = stimulusApp;
+
+// load all the controllers that have registered in the window.Controllers object
+for (const controller in window.Controllers) {
+  stimulusApp.register(controller, window.Controllers[controller]);
+}
+
+//activate boostrap tooltips
+const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+
+// Re-initialize tooltips after Turbo renders (for dynamically loaded content)
+// Note: Popovers are handled by the popover Stimulus controller
+document.addEventListener('turbo:render', () => {
+  // Initialize new tooltips
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+    if (!bootstrap.Tooltip.getInstance(el)) {
+      new bootstrap.Tooltip(el);
+    }
+  });
+});
+
+/***/ }),
+
+/***/ "./assets/js/timezone-utils.js":
+/*!*************************************!*\
+  !*** ./assets/js/timezone-utils.js ***!
+  \*************************************/
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @babel/runtime/helpers/objectSpread2 */ "./node_modules/@babel/runtime/helpers/esm/objectSpread2.js");
+/* module decorator */ module = __webpack_require__.hmd(module);
+
+/**
+ * KMP Timezone Utilities
+ *
+ * Client-side timezone handling for the KMP application. Provides utilities for
+ * detecting user timezone, formatting dates/times, and converting between timezones
+ * for datetime inputs and displays.
+ *
+ * See /docs/10.3.1-timezone-utils-api.md for complete API documentation and usage examples.
+ *
+ * @namespace KMP_Timezone
+ */
+const KMP_Timezone = {
+  /**
+   * Detect user's timezone from browser using Intl.DateTimeFormat
+   * @returns {string} IANA timezone identifier (e.g., "America/Chicago")
+   */
+  detectTimezone() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch (e) {
+      console.warn('Could not detect timezone, defaulting to UTC', e);
+      return 'UTC';
+    }
+  },
+  /**
+   * Get timezone from element data attribute or detect from browser
+   * @param {HTMLElement} element - Element with optional data-timezone attribute
+   * @returns {string} Timezone identifier
+   */
+  getTimezone(element) {
+    if (element && element.dataset && element.dataset.timezone) {
+      return element.dataset.timezone;
+    }
+    return this.detectTimezone();
+  },
+  /**
+   * Convert UTC datetime to user's timezone for display
+   * @param {string|Date} utcDateTime - UTC datetime string or Date object
+   * @param {string} timezone - Target timezone (default: detected)
+   * @param {object} options - Intl.DateTimeFormat options
+   * @returns {string} Formatted datetime string in local timezone
+   */
+  formatDateTime(utcDateTime, timezone = null, options = null) {
+    if (!utcDateTime) return '';
+    timezone = timezone || this.detectTimezone();
+
+    // Parse the datetime
+    const date = typeof utcDateTime === 'string' ? new Date(utcDateTime) : utcDateTime;
+    if (isNaN(date.getTime())) {
+      console.error('Invalid datetime:', utcDateTime);
+      return '';
+    }
+
+    // Default options
+    const defaultOptions = {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    };
+    const formatOptions = options ? (0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, defaultOptions), options) : defaultOptions;
+    try {
+      return new Intl.DateTimeFormat('en-US', formatOptions).format(date);
+    } catch (e) {
+      console.error('Error formatting datetime:', e);
+      return date.toLocaleString();
+    }
+  },
+  /**
+   * Format date only (no time)
+   * @param {string|Date} utcDateTime - UTC datetime string or Date object
+   * @param {string} timezone - Target timezone (default: detected)
+   * @param {object} options - Intl.DateTimeFormat options
+   * @returns {string} Formatted date string
+   */
+  formatDate(utcDateTime, timezone = null, options = null) {
+    if (!utcDateTime) return '';
+    timezone = timezone || this.detectTimezone();
+    const date = typeof utcDateTime === 'string' ? new Date(utcDateTime) : utcDateTime;
+    const defaultOptions = {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    };
+    const formatOptions = options ? (0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, defaultOptions), options) : defaultOptions;
+    try {
+      return new Intl.DateTimeFormat('en-US', formatOptions).format(date);
+    } catch (e) {
+      console.error('Error formatting date:', e);
+      return date.toLocaleDateString();
+    }
+  },
+  /**
+   * Format time only (no date)
+   * @param {string|Date} utcDateTime - UTC datetime string or Date object
+   * @param {string} timezone - Target timezone (default: detected)
+   * @param {object} options - Intl.DateTimeFormat options
+   * @returns {string} Formatted time string
+   */
+  formatTime(utcDateTime, timezone = null, options = null) {
+    if (!utcDateTime) return '';
+    timezone = timezone || this.detectTimezone();
+    const date = typeof utcDateTime === 'string' ? new Date(utcDateTime) : utcDateTime;
+    const defaultOptions = {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    };
+    const formatOptions = options ? (0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])((0,_babel_runtime_helpers_objectSpread2__WEBPACK_IMPORTED_MODULE_0__["default"])({}, defaultOptions), options) : defaultOptions;
+    try {
+      return new Intl.DateTimeFormat('en-US', formatOptions).format(date);
+    } catch (e) {
+      console.error('Error formatting time:', e);
+      return date.toLocaleTimeString();
+    }
+  },
+  /**
+   * Convert UTC datetime to HTML5 datetime-local format in user's timezone
+   * @param {string|Date} utcDateTime - UTC datetime
+   * @param {string} timezone - Target timezone (default: detected)
+   * @returns {string} Datetime in YYYY-MM-DDTHH:mm format (local time)
+   */
+  toLocalInput(utcDateTime, timezone = null) {
+    if (!utcDateTime) return '';
+    timezone = timezone || this.detectTimezone();
+    const date = typeof utcDateTime === 'string' ? new Date(utcDateTime) : utcDateTime;
+    if (isNaN(date.getTime())) {
+      console.error('Invalid datetime for input:', utcDateTime);
+      return '';
+    }
+    try {
+      // Get date parts in the target timezone
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const parts = formatter.formatToParts(date);
+      const dateParts = {};
+      parts.forEach(part => {
+        if (part.type !== 'literal') {
+          dateParts[part.type] = part.value;
+        }
+      });
+
+      // Format as YYYY-MM-DDTHH:mm
+      return `${dateParts.year}-${dateParts.month}-${dateParts.day}T${dateParts.hour}:${dateParts.minute}`;
+    } catch (e) {
+      console.error('Error converting to local input:', e);
+      return '';
+    }
+  },
+  /**
+   * Convert datetime-local input value (local time) to UTC for storage
+   * @param {string} localDateTime - Datetime in YYYY-MM-DDTHH:mm or YYYY-MM-DD HH:mm:ss format
+   * @param {string} timezone - Source timezone (default: detected)
+   * @returns {string} ISO 8601 UTC datetime string
+   */
+  toUTC(localDateTime, timezone = null) {
+    if (!localDateTime) return '';
+    timezone = timezone || this.detectTimezone();
+    try {
+      // Parse the local datetime string
+      // Format: YYYY-MM-DDTHH:mm or YYYY-MM-DD HH:mm:ss
+      const dateStr = localDateTime.replace(' ', 'T');
+
+      // Create a date string with timezone offset
+      // We'll use a hack: create date in target timezone by building ISO string
+      const parts = dateStr.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (!parts) {
+        console.error('Invalid datetime format:', localDateTime);
+        return '';
+      }
+      const [, year, month, day, hour, minute, second = '00'] = parts;
+
+      // Create a formatter to get timezone offset
+      const tempDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
+
+      // Format in target timezone to get the actual date/time
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZoneName: 'short'
+      });
+
+      // Create date assuming it's in the target timezone
+      // This is tricky - we need to find the UTC time that produces this local time
+      const localString = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+
+      // Use a more reliable method: temporarily set to target timezone
+      const utcDate = new Date(localString + 'Z'); // Treat as UTC first
+      const offset = this.getTimezoneOffset(timezone, utcDate);
+
+      // Adjust by the offset to get the correct UTC time
+      const adjustedDate = new Date(utcDate.getTime() - offset * 60000);
+      return adjustedDate.toISOString();
+    } catch (e) {
+      console.error('Error converting to UTC:', e);
+      return '';
+    }
+  },
+  /**
+   * Get timezone offset in minutes for a specific timezone and date
+   * @param {string} timezone - IANA timezone identifier
+   * @param {Date} date - Date to calculate offset for (handles DST)
+   * @returns {number} Offset in minutes
+   */
+  getTimezoneOffset(timezone, date = new Date()) {
+    try {
+      // Get UTC time
+      const utcDate = new Date(date.toLocaleString('en-US', {
+        timeZone: 'UTC'
+      }));
+
+      // Get time in target timezone
+      const tzDate = new Date(date.toLocaleString('en-US', {
+        timeZone: timezone
+      }));
+
+      // Calculate difference in minutes
+      return (tzDate.getTime() - utcDate.getTime()) / 60000;
+    } catch (e) {
+      console.error('Error getting timezone offset:', e);
+      return 0;
+    }
+  },
+  /**
+   * Get timezone abbreviation (e.g., CDT, EST, PST)
+   * @param {string} timezone - IANA timezone identifier
+   * @param {Date} date - Date for DST calculation (default: now)
+   * @returns {string} Timezone abbreviation
+   */
+  getAbbreviation(timezone = null, date = new Date()) {
+    timezone = timezone || this.detectTimezone();
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        timeZoneName: 'short'
+      });
+      const parts = formatter.formatToParts(date);
+      const abbr = parts.find(part => part.type === 'timeZoneName');
+      return abbr ? abbr.value : '';
+    } catch (e) {
+      console.error('Error getting timezone abbreviation:', e);
+      return '';
+    }
+  },
+  /**
+   * Initialize timezone conversion for all datetime inputs on page
+   * Finds inputs with data-utc-value and converts to local time
+   * @param {HTMLElement} container - Container to search in (default: document)
+   */
+  initializeDatetimeInputs(container = document) {
+    const inputs = container.querySelectorAll('input[type="datetime-local"][data-utc-value]');
+    inputs.forEach(input => {
+      const utcValue = input.dataset.utcValue;
+      const timezone = this.getTimezone(input);
+      if (utcValue) {
+        input.value = this.toLocalInput(utcValue, timezone);
+      }
+    });
+  },
+  /**
+   * Convert all datetime-local inputs to UTC before form submission
+   * Creates hidden inputs with UTC values, disables originals
+   * @param {HTMLFormElement} form - Form element
+   * @param {string} timezone - Timezone to use for conversion (default: detected)
+   */
+  convertFormDatetimesToUTC(form, timezone = null) {
+    timezone = timezone || this.detectTimezone();
+    const inputs = form.querySelectorAll('input[type="datetime-local"]');
+    inputs.forEach(input => {
+      if (input.value) {
+        // Store original value in case needed
+        input.dataset.originalValue = input.value;
+
+        // Convert to UTC
+        const utcValue = this.toUTC(input.value, timezone);
+
+        // Only proceed if conversion was successful
+        if (utcValue) {
+          // Create hidden input with UTC value
+          const hiddenInput = document.createElement('input');
+          hiddenInput.type = 'hidden';
+          hiddenInput.name = input.name;
+          hiddenInput.value = utcValue;
+
+          // Disable original input so it doesn't submit
+          input.disabled = true;
+
+          // Add hidden input to form
+          form.appendChild(hiddenInput);
+        } else {
+          // Conversion failed - preserve original value and flag error
+          console.error('Failed to convert datetime to UTC:', input.value);
+          input.dataset.conversionError = 'true';
+          // Original input remains enabled with user's value
+        }
+      }
+    });
+  }
+};
+
+// Export for module systems
+if ( true && module.exports) {
+  module.exports = KMP_Timezone;
+}
+
+// Make available globally
+if (typeof window !== 'undefined') {
+  window.KMP_Timezone = KMP_Timezone;
+}
+
+// Auto-initialize on DOM ready
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      KMP_Timezone.initializeDatetimeInputs();
+    });
+  } else {
+    // DOM already loaded
+    KMP_Timezone.initializeDatetimeInputs();
+  }
 }
 
 /***/ }),
@@ -7646,6 +7509,143 @@ exports.qrToImageData = function qrToImageData (imgData, qr, opts) {
       imgData[posDst] = pxColor.a
     }
   }
+}
+
+
+/***/ }),
+
+/***/ "./node_modules/@babel/runtime/helpers/esm/defineProperty.js":
+/*!*******************************************************************!*\
+  !*** ./node_modules/@babel/runtime/helpers/esm/defineProperty.js ***!
+  \*******************************************************************/
+/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": function() { return /* binding */ _defineProperty; }
+/* harmony export */ });
+/* harmony import */ var _toPropertyKey_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./toPropertyKey.js */ "./node_modules/@babel/runtime/helpers/esm/toPropertyKey.js");
+
+function _defineProperty(e, r, t) {
+  return (r = (0,_toPropertyKey_js__WEBPACK_IMPORTED_MODULE_0__["default"])(r)) in e ? Object.defineProperty(e, r, {
+    value: t,
+    enumerable: !0,
+    configurable: !0,
+    writable: !0
+  }) : e[r] = t, e;
+}
+
+
+/***/ }),
+
+/***/ "./node_modules/@babel/runtime/helpers/esm/objectSpread2.js":
+/*!******************************************************************!*\
+  !*** ./node_modules/@babel/runtime/helpers/esm/objectSpread2.js ***!
+  \******************************************************************/
+/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": function() { return /* binding */ _objectSpread2; }
+/* harmony export */ });
+/* harmony import */ var _defineProperty_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./defineProperty.js */ "./node_modules/@babel/runtime/helpers/esm/defineProperty.js");
+
+function ownKeys(e, r) {
+  var t = Object.keys(e);
+  if (Object.getOwnPropertySymbols) {
+    var o = Object.getOwnPropertySymbols(e);
+    r && (o = o.filter(function (r) {
+      return Object.getOwnPropertyDescriptor(e, r).enumerable;
+    })), t.push.apply(t, o);
+  }
+  return t;
+}
+function _objectSpread2(e) {
+  for (var r = 1; r < arguments.length; r++) {
+    var t = null != arguments[r] ? arguments[r] : {};
+    r % 2 ? ownKeys(Object(t), !0).forEach(function (r) {
+      (0,_defineProperty_js__WEBPACK_IMPORTED_MODULE_0__["default"])(e, r, t[r]);
+    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) {
+      Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r));
+    });
+  }
+  return e;
+}
+
+
+/***/ }),
+
+/***/ "./node_modules/@babel/runtime/helpers/esm/toPrimitive.js":
+/*!****************************************************************!*\
+  !*** ./node_modules/@babel/runtime/helpers/esm/toPrimitive.js ***!
+  \****************************************************************/
+/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": function() { return /* binding */ toPrimitive; }
+/* harmony export */ });
+/* harmony import */ var _typeof_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./typeof.js */ "./node_modules/@babel/runtime/helpers/esm/typeof.js");
+
+function toPrimitive(t, r) {
+  if ("object" != (0,_typeof_js__WEBPACK_IMPORTED_MODULE_0__["default"])(t) || !t) return t;
+  var e = t[Symbol.toPrimitive];
+  if (void 0 !== e) {
+    var i = e.call(t, r || "default");
+    if ("object" != (0,_typeof_js__WEBPACK_IMPORTED_MODULE_0__["default"])(i)) return i;
+    throw new TypeError("@@toPrimitive must return a primitive value.");
+  }
+  return ("string" === r ? String : Number)(t);
+}
+
+
+/***/ }),
+
+/***/ "./node_modules/@babel/runtime/helpers/esm/toPropertyKey.js":
+/*!******************************************************************!*\
+  !*** ./node_modules/@babel/runtime/helpers/esm/toPropertyKey.js ***!
+  \******************************************************************/
+/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": function() { return /* binding */ toPropertyKey; }
+/* harmony export */ });
+/* harmony import */ var _typeof_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./typeof.js */ "./node_modules/@babel/runtime/helpers/esm/typeof.js");
+/* harmony import */ var _toPrimitive_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./toPrimitive.js */ "./node_modules/@babel/runtime/helpers/esm/toPrimitive.js");
+
+
+function toPropertyKey(t) {
+  var i = (0,_toPrimitive_js__WEBPACK_IMPORTED_MODULE_1__["default"])(t, "string");
+  return "symbol" == (0,_typeof_js__WEBPACK_IMPORTED_MODULE_0__["default"])(i) ? i : i + "";
+}
+
+
+/***/ }),
+
+/***/ "./node_modules/@babel/runtime/helpers/esm/typeof.js":
+/*!***********************************************************!*\
+  !*** ./node_modules/@babel/runtime/helpers/esm/typeof.js ***!
+  \***********************************************************/
+/***/ (function(__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": function() { return /* binding */ _typeof; }
+/* harmony export */ });
+function _typeof(o) {
+  "@babel/helpers - typeof";
+
+  return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) {
+    return typeof o;
+  } : function (o) {
+    return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o;
+  }, _typeof(o);
 }
 
 

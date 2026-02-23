@@ -2625,7 +2625,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   morphChildren: function() { return /* binding */ morphChildren; },
 /* harmony export */   morphElements: function() { return /* binding */ morphElements; },
 /* harmony export */   morphTurboFrameElements: function() { return /* binding */ morphTurboFrameElements; },
-/* harmony export */   navigator: function() { return /* binding */ navigator; },
+/* harmony export */   navigator: function() { return /* binding */ sessionNavigator; },
 /* harmony export */   registerAdapter: function() { return /* binding */ registerAdapter; },
 /* harmony export */   renderStreamMessage: function() { return /* binding */ renderStreamMessage; },
 /* harmony export */   session: function() { return /* binding */ session; },
@@ -2636,7 +2636,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   visit: function() { return /* binding */ visit; }
 /* harmony export */ });
 /*!
-Turbo 8.0.21
+Turbo 8.0.23
 Copyright © 2026 37signals LLC
  */
 const FrameLoadingStyle = {
@@ -8822,7 +8822,9 @@ const deprecatedLocationPropertyDescriptors = {
 };
 
 const session = new Session(recentRequests);
-const { cache, navigator } = session;
+
+// Rename `navigator` to avoid shadowing `window.navigator`
+const { cache, navigator: sessionNavigator } = session;
 
 /**
  * Starts the main session.
@@ -8947,14 +8949,14 @@ function morphTurboFrameElements(currentFrame, newFrame) {
 
 var Turbo = /*#__PURE__*/Object.freeze({
   __proto__: null,
-  navigator: navigator,
-  session: session,
-  cache: cache,
   PageRenderer: PageRenderer,
   PageSnapshot: PageSnapshot,
   FrameRenderer: FrameRenderer,
   fetch: fetchWithTurboHeaders,
   config: config,
+  session: session,
+  cache: cache,
+  navigator: sessionNavigator,
   start: start,
   registerAdapter: registerAdapter,
   visit: visit,
