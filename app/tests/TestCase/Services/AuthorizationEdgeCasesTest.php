@@ -38,6 +38,7 @@ class AuthorizationEdgeCasesTest extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->skipIfPostgres('AuthorizationEdgeCasesTest requires MySQL dev seed member fixtures');
         $this->Members = $this->getTableLocator()->get('Members');
         $this->MemberRoles = $this->getTableLocator()->get('MemberRoles');
         $this->Warrants = $this->getTableLocator()->get('Warrants');
