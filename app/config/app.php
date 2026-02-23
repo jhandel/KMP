@@ -136,8 +136,8 @@ return [
         /** @var string Container registry base (no tag) */
         "containerRegistry" => env("CONTAINER_REGISTRY", "ghcr.io/jhandel/kmp"),
 
-        /** @var string Deployment provider: docker, railway, azure, aws, fly */
-        "deploymentProvider" => env("DEPLOYMENT_PROVIDER", "docker"),
+        /** @var string Deployment provider: docker, railway, azure, aws, fly, vpc, shared */
+        "deploymentProvider" => env("DEPLOYMENT_PROVIDER", env("KMP_DEPLOY_PROVIDER", "docker")),
 
         /** @var string|null Internal URL for the kmp-updater sidecar (Docker only) */
         "updaterUrl" => env("UPDATER_URL", null),

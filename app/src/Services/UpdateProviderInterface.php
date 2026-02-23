@@ -34,4 +34,11 @@ interface UpdateProviderInterface
      * Check if this provider supports web-triggered updates.
      */
     public function supportsWebUpdate(): bool;
+
+    /**
+     * Describe update component capabilities for this provider.
+     *
+     * @return array<string, mixed>
+     */
+    public function getCapabilities(): array;
 }

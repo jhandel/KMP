@@ -16,11 +16,18 @@ class UpdateProviderFactory
      */
     public static function create(): UpdateProviderInterface
     {
-        $provider = trim((string)Configure::read('App.deploymentProvider', 'docker'));
+        $provider = strtolower(trim((string)Configure::read('App.deploymentProvider', 'docker')));
+        $provider = match ($provider) {
+            'vpc' => 'docker',
+            'shared-hosting', 'shared_hosting', 'sharedhosting' => 'shared',
+            default => $provider,
+        };
 
         return match ($provider) {
             'railway' => new RailwayUpdateProvider(),
-            default => new DockerUpdateProvider(),
+            'docker' => new DockerUpdateProvider(),
+            'shared' => new SharedHostingUpdateProvider(),
+            default => new ManualUpdateProvider($provider),
         };
     }
 }
