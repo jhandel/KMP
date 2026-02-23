@@ -17,6 +17,7 @@ class SystemUpdateController extends Controller {
     connect() {
         this._pollTimer = null
         this._modal = null
+        this._completionHandled = false
     }
 
     disconnect() {
@@ -192,6 +193,7 @@ class SystemUpdateController extends Controller {
         if (!this._modal) {
             this._modal = new bootstrap.Modal(this.progressModalTarget)
         }
+        this._completionHandled = false
         this.progressResultTarget.classList.add("d-none")
         this._modal.show()
     }
@@ -237,11 +239,18 @@ class SystemUpdateController extends Controller {
 
             const data = await response.json()
             const record = data.updateRecord || {}
+            const providerStatus = data.status || ""
 
-            if (record.status === "completed" || record.status === "rolled_back") {
+            if (providerStatus === "completed" || record.status === "completed" || record.status === "rolled_back") {
+                const outcome = record.status === "rolled_back" ? "rolled back" : "completed"
                 this._setProgress(100, "")
                 this._showResult("success",
-                    `<i class="bi bi-check-circle"></i> Update ${record.status === "rolled_back" ? "rolled back" : "completed"} successfully!`)
+                    `<i class="bi bi-check-circle"></i> Update ${outcome} successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+            } else if (providerStatus === "failed") {
+                this._setProgress(0, "")
+                this._showResult("danger",
+                    `<i class="bi bi-x-circle"></i> Update failed: ${data.message || record.error_message || "Unknown error"}`)
             } else if (record.status === "failed") {
                 this._setProgress(0, "")
                 this._showResult("danger",
@@ -255,6 +264,20 @@ class SystemUpdateController extends Controller {
             // Network error likely means app is restarting
             this._setProgress(70, "Application may be restarting...")
         }
+    }
+
+    _redirectToLogin() {
+        if (this._completionHandled) {
+            return
+        }
+        this._completionHandled = true
+        setTimeout(() => {
+            if (this._modal) {
+                this._modal.hide()
+            }
+            const root = window.urlRoot || "/"
+            window.location.assign(`${root}members/login`)
+        }, 2000)
     }
 
     _getCsrfToken() {
