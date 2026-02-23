@@ -122,11 +122,11 @@ if (SeedManager::isPostgres('test')) {
 
     // Seed DB-agnostic authorization edge-case records used by service tests.
     $members = [
-        [1, 'Admin von Admin', 'Admin', 'von', 'admin@test.com', 'verified', '2100-01-01', 1, 1980],
-        [2871, 'Agatha Local MoAS Demoer', 'Agatha', 'Demoer', 'agatha@ampdemo.com', 'verified', '2100-01-01', 1, 2000],
-        [2872, 'Bryce Local Seneschal Demoer', 'Bryce', 'Demoer', 'bryce@ampdemo.com', 'verified', '2100-01-01', 1, 2001],
-        [2874, 'Devon Regional Armored Demoer', 'Devon', 'Demoer', 'devon@ampdemo.com', 'verified', '2100-01-01', 1, 2002],
-        [2875, 'Eirik Kingdom Seneschal Demoer', 'Eirik', 'Demoer', 'eirik@ampdemo.com', 'verified', '2100-01-01', 1, 2004],
+        [1, 'Admin von Admin', 'Admin', 'von', 'admin@test.com', 'verified', '2100-01-01', true, 1980],
+        [2871, 'Agatha Local MoAS Demoer', 'Agatha', 'Demoer', 'agatha@ampdemo.com', 'verified', '2100-01-01', true, 2000],
+        [2872, 'Bryce Local Seneschal Demoer', 'Bryce', 'Demoer', 'bryce@ampdemo.com', 'verified', '2100-01-01', true, 2001],
+        [2874, 'Devon Regional Armored Demoer', 'Devon', 'Demoer', 'devon@ampdemo.com', 'verified', '2100-01-01', true, 2002],
+        [2875, 'Eirik Kingdom Seneschal Demoer', 'Eirik', 'Demoer', 'eirik@ampdemo.com', 'verified', '2100-01-01', true, 2004],
     ];
     foreach ($members as [$id, $scaName, $firstName, $lastName, $email, $status, $membershipExpiresOn, $warrantable, $birthYear]) {
         $conn->execute(
@@ -150,19 +150,19 @@ if (SeedManager::isPostgres('test')) {
 
     $conn->execute(
         "INSERT INTO roles (id, name, is_system, created, modified, created_by, modified_by)
-         VALUES (9001, 'Edge Case Role', 0, ?, ?, 1, 1)
+         VALUES (9001, 'Edge Case Role', false, ?, ?, 1, 1)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, modified = EXCLUDED.modified, modified_by = EXCLUDED.modified_by",
         [$now, $now]
     );
     $conn->execute(
         "INSERT INTO roles (id, name, is_system, created, modified, created_by, modified_by)
-         VALUES (9002, 'Edge Case Active Role', 0, ?, ?, 1, 1)
+         VALUES (9002, 'Edge Case Active Role', false, ?, ?, 1, 1)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, modified = EXCLUDED.modified, modified_by = EXCLUDED.modified_by",
         [$now, $now]
     );
     $conn->execute(
         "INSERT INTO permissions (id, name, is_system, is_super_user, scoping_rule, created, modified, created_by, modified_by)
-         VALUES (9901, 'Edge Case Test Permission', 0, 0, 'Global', ?, ?, 1, 1)
+         VALUES (9901, 'Edge Case Test Permission', false, false, 'Global', ?, ?, 1, 1)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, modified = EXCLUDED.modified, modified_by = EXCLUDED.modified_by",
         [$now, $now]
     );
