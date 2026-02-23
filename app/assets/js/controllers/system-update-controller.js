@@ -18,6 +18,7 @@ class SystemUpdateController extends Controller {
         this._pollTimer = null
         this._modal = null
         this._completionHandled = false
+        this._restartSignalCount = 0
     }
 
     disconnect() {
@@ -194,6 +195,7 @@ class SystemUpdateController extends Controller {
             this._modal = new bootstrap.Modal(this.progressModalTarget)
         }
         this._completionHandled = false
+        this._restartSignalCount = 0
         this.progressResultTarget.classList.add("d-none")
         this._modal.show()
     }
@@ -230,9 +232,17 @@ class SystemUpdateController extends Controller {
             const response = await fetch(this.statusUrlValue, {
                 headers: { "Accept": "application/json" }
             })
-            const redirectedToLogin = response.redirected && response.url && response.url.includes("/members/login")
+            const redirectedToLogin = response.redirected && response.url && /\/members\/login/i.test(response.url)
 
             if (redirectedToLogin) {
+                this._setProgress(100, "")
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+                return
+            }
+
+            if (response.status === 401 || response.status === 403) {
                 this._setProgress(100, "")
                 this._showResult("success",
                     `<i class="bi bi-check-circle"></i> Update completed successfully!<br><small>Redirecting to login...</small>`)
@@ -243,6 +253,11 @@ class SystemUpdateController extends Controller {
             if (!response.ok) {
                 // If we get a non-OK response, the app might be restarting
                 this._setProgress(80, "Application restarting...")
+                if (this._registerRestartSignal() >= 6) {
+                    this._showResult("success",
+                        `<i class="bi bi-check-circle"></i> Update likely completed and app restarted.<br><small>Redirecting to login...</small>`)
+                    this._redirectToLogin()
+                }
                 return
             }
 
@@ -258,6 +273,7 @@ class SystemUpdateController extends Controller {
             const data = await response.json()
             const record = data.updateRecord || {}
             const providerStatus = data.status || ""
+            this._restartSignalCount = 0
 
             if (providerStatus === "completed" || record.status === "completed" || record.status === "rolled_back") {
                 const outcome = record.status === "rolled_back" ? "rolled back" : "completed"
@@ -281,7 +297,17 @@ class SystemUpdateController extends Controller {
         } catch (err) {
             // Network error likely means app is restarting
             this._setProgress(70, "Application may be restarting...")
+            if (this._registerRestartSignal() >= 6) {
+                this._showResult("success",
+                    `<i class="bi bi-check-circle"></i> Update likely completed and app restarted.<br><small>Redirecting to login...</small>`)
+                this._redirectToLogin()
+            }
         }
+    }
+
+    _registerRestartSignal() {
+        this._restartSignalCount += 1
+        return this._restartSignalCount
     }
 
     _redirectToLogin() {
