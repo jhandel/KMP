@@ -131,6 +131,37 @@ func TestRecreateAppContainerStopsAndRemovesBeforeUp(t *testing.T) {
 	}
 }
 
+func TestRecreateAppContainerRetriesAfterNameConflict(t *testing.T) {
+	s := NewServer(Config{AppServiceName: "app"})
+	var calls [][]string
+	upAttempts := 0
+	s.dockerComposeFn = func(args ...string) error {
+		calls = append(calls, append([]string{}, args...))
+		if len(args) > 0 && args[0] == "up" {
+			upAttempts++
+			if upAttempts == 1 {
+				return errors.New(`exit status 1: The container name "/kmp-app" is already in use by container "abc123"`)
+			}
+		}
+		return nil
+	}
+	var removed string
+	s.removeContainerFn = func(name string) error {
+		removed = name
+		return nil
+	}
+
+	if err := s.recreateAppContainer("v1.2.3"); err != nil {
+		t.Fatalf("recreateAppContainer failed: %v", err)
+	}
+	if removed != "kmp-app" {
+		t.Fatalf("expected removal of kmp-app, got %q", removed)
+	}
+	if upAttempts != 2 {
+		t.Fatalf("expected 2 up attempts, got %d", upAttempts)
+	}
+}
+
 func TestUpdateEnvTagWritesEnvFile(t *testing.T) {
 	tmp := t.TempDir()
 	envPath := filepath.Join(tmp, ".env")

@@ -33,11 +33,12 @@ type Server struct {
 	state State
 	mu    sync.Mutex
 
-	runAsync         func(func())
-	readCurrentTagFn func() string
-	updateEnvTagFn   func(string) error
-	dockerComposeFn  func(args ...string) error
-	waitForHealthyFn func(time.Duration) error
+	runAsync          func(func())
+	readCurrentTagFn  func() string
+	updateEnvTagFn    func(string) error
+	dockerComposeFn   func(args ...string) error
+	removeContainerFn func(string) error
+	waitForHealthyFn  func(time.Duration) error
 }
 
 // NewServer creates a new updater server.

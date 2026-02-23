@@ -82,7 +82,41 @@ func (s *Server) recreateAppContainer(imageTag string) error {
 	if err := s.dockerCompose("rm", "-f", s.cfg.AppServiceName); err != nil {
 		log.Printf("Warning: failed to remove app service before recreate: %v", err)
 	}
+	err := s.dockerComposeWithImageTag(imageTag, "up", "-d", "--no-deps", s.cfg.AppServiceName)
+	if err == nil {
+		return nil
+	}
+	if !isContainerNameConflict(err) {
+		return err
+	}
+
+	log.Printf("Detected container name conflict for kmp-app, force-removing and retrying once")
+	if rmErr := s.removeContainerByName("kmp-app"); rmErr != nil {
+		return fmt.Errorf("%v (also failed to remove kmp-app: %w)", err, rmErr)
+	}
 	return s.dockerComposeWithImageTag(imageTag, "up", "-d", "--no-deps", s.cfg.AppServiceName)
+}
+
+func isContainerNameConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "container name") && strings.Contains(msg, "is already in use by container")
+}
+
+func (s *Server) removeContainerByName(name string) error {
+	if s.removeContainerFn != nil {
+		return s.removeContainerFn(name)
+	}
+
+	cmd := exec.Command("docker", "rm", "-f", name)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("COMPOSE_PROJECT_NAME=kmp"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // dockerCompose runs a docker compose command in the compose directory.
