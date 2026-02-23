@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +106,28 @@ func TestRunUpdateContinuesWhenEnvWriteFails(t *testing.T) {
 	st := readState(s)
 	if st.Status != "completed" {
 		t.Fatalf("expected completed status, got %q (%s)", st.Status, st.Message)
+	}
+}
+
+func TestRecreateAppContainerStopsAndRemovesBeforeUp(t *testing.T) {
+	s := NewServer(Config{AppServiceName: "app"})
+	var calls [][]string
+	s.dockerComposeFn = func(args ...string) error {
+		calls = append(calls, append([]string{}, args...))
+		return nil
+	}
+
+	if err := s.recreateAppContainer("v1.2.3"); err != nil {
+		t.Fatalf("recreateAppContainer failed: %v", err)
+	}
+
+	expected := [][]string{
+		{"stop", "app"},
+		{"rm", "-f", "app"},
+		{"up", "-d", "--no-deps", "app"},
+	}
+	if !reflect.DeepEqual(calls, expected) {
+		t.Fatalf("expected calls %#v, got %#v", expected, calls)
 	}
 }
 

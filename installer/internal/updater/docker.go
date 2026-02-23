@@ -45,7 +45,7 @@ func (s *Server) runUpdate(targetTag string) {
 
 	// Step 3: Recreate app container with new image
 	s.setState("starting", "Recreating app container...", 50)
-	if err := s.dockerComposeWithImageTag(targetTag, "up", "-d", "--no-deps", s.cfg.AppServiceName); err != nil {
+	if err := s.recreateAppContainer(targetTag); err != nil {
 		log.Printf("Failed to start new container, rolling back to %s", previousTag)
 		s.rollbackTag(previousTag)
 		return
@@ -68,11 +68,21 @@ func (s *Server) rollbackTag(tag string) {
 	if err := s.updateEnvTag(tag); err != nil {
 		log.Printf("Warning: could not persist rollback tag to .env; continuing with runtime override: %v", err)
 	}
-	if err := s.dockerComposeWithImageTag(tag, "up", "-d", "--no-deps", s.cfg.AppServiceName); err != nil {
+	if err := s.recreateAppContainer(tag); err != nil {
 		s.setState("failed", fmt.Sprintf("Rollback container restart failed: %v", err), 0)
 		return
 	}
 	s.setState("failed", fmt.Sprintf("Rolled back to %s after update failure", tag), 0)
+}
+
+func (s *Server) recreateAppContainer(imageTag string) error {
+	if err := s.dockerCompose("stop", s.cfg.AppServiceName); err != nil {
+		log.Printf("Warning: failed to stop app service before recreate: %v", err)
+	}
+	if err := s.dockerCompose("rm", "-f", s.cfg.AppServiceName); err != nil {
+		log.Printf("Warning: failed to remove app service before recreate: %v", err)
+	}
+	return s.dockerComposeWithImageTag(imageTag, "up", "-d", "--no-deps", s.cfg.AppServiceName)
 }
 
 // dockerCompose runs a docker compose command in the compose directory.
