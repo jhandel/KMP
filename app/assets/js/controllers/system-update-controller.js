@@ -30,12 +30,9 @@ class SystemUpdateController extends Controller {
         this.checkBtnTarget.disabled = true
 
         try {
-            const response = await fetch(this.checkUrlValue, {
+            const data = await this._fetchJson(this.checkUrlValue, {
                 headers: { "Accept": "application/json" }
             })
-            if (!response.ok) throw new Error(`HTTP ${response.status}`)
-
-            const data = await response.json()
             this._renderVersions(data)
         } catch (err) {
             this.errorTarget.textContent = `Failed to check for updates: ${err.message}`
@@ -58,7 +55,7 @@ class SystemUpdateController extends Controller {
         this._setProgress(5, "Creating pre-update backup...")
 
         try {
-            const response = await fetch(this.triggerUrlValue, {
+            const data = await this._fetchJson(this.triggerUrlValue, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
@@ -66,8 +63,6 @@ class SystemUpdateController extends Controller {
                 },
                 body: `tag=${encodeURIComponent(tag)}`
             })
-
-            const data = await response.json()
 
             if (data.status === "error") {
                 this._setProgress(0, "")
@@ -95,7 +90,7 @@ class SystemUpdateController extends Controller {
         this._setProgress(10, "Initiating rollback...")
 
         try {
-            const response = await fetch(this.rollbackUrlValue, {
+            const data = await this._fetchJson(this.rollbackUrlValue, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
@@ -103,8 +98,6 @@ class SystemUpdateController extends Controller {
                 },
                 body: `tag=${encodeURIComponent(tag)}`
             })
-
-            const data = await response.json()
 
             if (data.status === "error") {
                 this._setProgress(0, "")
@@ -265,6 +258,30 @@ class SystemUpdateController extends Controller {
     _getCsrfToken() {
         const meta = document.querySelector('meta[name="csrfToken"]')
         return meta ? meta.getAttribute("content") : ""
+    }
+
+    async _fetchJson(url, options = {}) {
+        const response = await fetch(url, options)
+        const body = await response.text()
+
+        let data = null
+        if (body) {
+            try {
+                data = JSON.parse(body)
+            } catch (err) {
+                const snippet = body.replace(/\s+/g, " ").trim().slice(0, 140)
+                throw new Error(`Server returned non-JSON response (HTTP ${response.status}): ${snippet}`)
+            }
+        } else {
+            data = {}
+        }
+
+        if (!response.ok) {
+            const message = data?.message || data?.error || `HTTP ${response.status}`
+            throw new Error(message)
+        }
+
+        return data
     }
 
     _escapeHtml(str) {
