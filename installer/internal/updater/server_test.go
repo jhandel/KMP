@@ -93,6 +93,21 @@ func TestRunUpdateRollsBackOnHealthFailure(t *testing.T) {
 	}
 }
 
+func TestRunUpdateContinuesWhenEnvWriteFails(t *testing.T) {
+	s := NewServer(Config{AppServiceName: "app", ImageRepo: "ghcr.io/jhandel/kmp"})
+	s.readCurrentTagFn = func() string { return "v1.0.0" }
+	s.updateEnvTagFn = func(string) error { return errors.New("read-only file system") }
+	s.dockerComposeFn = func(args ...string) error { return nil }
+	s.waitForHealthyFn = func(time.Duration) error { return nil }
+
+	s.runUpdate("v1.1.0")
+
+	st := readState(s)
+	if st.Status != "completed" {
+		t.Fatalf("expected completed status, got %q (%s)", st.Status, st.Message)
+	}
+}
+
 func TestUpdateEnvTagWritesEnvFile(t *testing.T) {
 	tmp := t.TempDir()
 	envPath := filepath.Join(tmp, ".env")
