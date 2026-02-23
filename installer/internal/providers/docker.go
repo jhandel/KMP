@@ -620,6 +620,20 @@ func migrateComposeServiceNames(composePath string) (bool, error) {
 	if raw, exists := services["kmp-updater"]; exists {
 		svc, ok := raw.(map[string]any)
 		if ok {
+			if volumes, ok := svc["volumes"].([]any); ok {
+				for i, entry := range volumes {
+					vol, ok := entry.(string)
+					if !ok {
+						continue
+					}
+					updated := strings.Replace(vol, ":/deploy:ro", ":/deploy", 1)
+					if updated != vol {
+						volumes[i] = updated
+						changed = true
+					}
+				}
+				svc["volumes"] = volumes
+			}
 			if env, ok := svc["environment"].(map[string]any); ok {
 				current, _ := env["HEALTH_URL"].(string)
 				if current != "http://kmp-app/health" {

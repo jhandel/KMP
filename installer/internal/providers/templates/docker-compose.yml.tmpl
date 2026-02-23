@@ -102,7 +102,7 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - .:/deploy:ro
+      - .:/deploy
     environment:
       COMPOSE_DIR: /deploy
       APP_SERVICE_NAME: app
