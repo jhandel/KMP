@@ -4,7 +4,6 @@
 services:
   app:
     image: {{.Image}}:{{.ImageTag}}
-    container_name: kmp-app
     restart: unless-stopped
 {{if or (ne .DatabaseType "external") .UseRedis}}
     depends_on:
@@ -33,7 +32,6 @@ services:
 {{if eq .DatabaseType "bundled-mariadb"}}
   db:
     image: mariadb:11
-    container_name: kmp-db
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -52,7 +50,6 @@ services:
 {{if eq .DatabaseType "bundled-postgres"}}
   db:
     image: postgres:16-alpine
-    container_name: kmp-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -70,7 +67,6 @@ services:
 {{if .UseRedis}}
   redis:
     image: redis:7-alpine
-    container_name: kmp-redis
     restart: unless-stopped
     command: redis-server --save 60 1 --loglevel warning{{if .RedisPassword}} --requirepass ${REDIS_PASSWORD}{{end}}
     volumes:
@@ -83,7 +79,6 @@ services:
 {{end}}
   caddy:
     image: caddy:2-alpine
-    container_name: kmp-caddy
     restart: unless-stopped
     ports:
       - "80:80"
@@ -98,7 +93,6 @@ services:
 
   kmp-updater:
     image: ghcr.io/jhandel/kmp-updater:latest
-    container_name: kmp-updater
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -106,7 +100,7 @@ services:
     environment:
       COMPOSE_DIR: /deploy
       APP_SERVICE_NAME: app
-      HEALTH_URL: http://kmp-app/health
+      HEALTH_URL: http://app/health
       IMAGE_REPO: {{.Image}}
     expose:
       - "8484"
