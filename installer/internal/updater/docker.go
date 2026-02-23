@@ -111,7 +111,7 @@ func (s *Server) removeContainerByName(name string) error {
 	}
 
 	cmd := exec.Command("docker", "rm", "-f", name)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COMPOSE_PROJECT_NAME=kmp"))
+	cmd.Env = s.composeEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %s", err, strings.TrimSpace(string(out)))
@@ -133,7 +133,7 @@ func (s *Server) dockerComposeWithImageTag(imageTag string, args ...string) erro
 	fullArgs := append([]string{"compose"}, args...)
 	cmd := exec.Command("docker", fullArgs...)
 	cmd.Dir = s.cfg.ComposeDir
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COMPOSE_PROJECT_NAME=kmp"))
+	cmd.Env = s.composeEnv()
 	if imageTag != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("KMP_IMAGE_TAG=%s", imageTag))
 	}
@@ -171,20 +171,7 @@ func (s *Server) readCurrentTag() string {
 }
 
 func (s *Server) readRunningTag() (string, error) {
-	psCmd := exec.Command("docker", "compose", "ps", "-q", s.cfg.AppServiceName)
-	psCmd.Dir = s.cfg.ComposeDir
-	psCmd.Env = append(os.Environ(), fmt.Sprintf("COMPOSE_PROJECT_NAME=kmp"))
-	psOut, err := psCmd.Output()
-	if err != nil {
-		return "", err
-	}
-
-	containerID := strings.TrimSpace(string(psOut))
-	if containerID == "" {
-		return "", fmt.Errorf("container id not found")
-	}
-
-	inspectCmd := exec.Command("docker", "inspect", "--format", "{{.Config.Image}}", containerID)
+	inspectCmd := exec.Command("docker", "inspect", "--format", "{{.Config.Image}}", "kmp-app")
 	inspectOut, err := inspectCmd.Output()
 	if err != nil {
 		return "", err
@@ -202,6 +189,40 @@ func (s *Server) readRunningTag() (string, error) {
 	}
 
 	return refWithoutDigest[colonIdx+1:], nil
+}
+
+func (s *Server) composeEnv() []string {
+	return append(os.Environ(), fmt.Sprintf("COMPOSE_PROJECT_NAME=%s", s.composeProjectName()))
+}
+
+func (s *Server) composeProjectName() string {
+	s.mu.Lock()
+	if s.resolvedComposeProject != "" {
+		project := s.resolvedComposeProject
+		s.mu.Unlock()
+		return project
+	}
+	if strings.TrimSpace(s.cfg.ComposeProject) != "" {
+		s.resolvedComposeProject = strings.TrimSpace(s.cfg.ComposeProject)
+		project := s.resolvedComposeProject
+		s.mu.Unlock()
+		return project
+	}
+	s.mu.Unlock()
+
+	inspectCmd := exec.Command("docker", "inspect", "--format", "{{ index .Config.Labels \"com.docker.compose.project\" }}", "kmp-app")
+	inspectOut, err := inspectCmd.Output()
+	if err == nil {
+		project := strings.TrimSpace(string(inspectOut))
+		if project != "" {
+			s.mu.Lock()
+			s.resolvedComposeProject = project
+			s.mu.Unlock()
+			return project
+		}
+	}
+
+	return "kmp"
 }
 
 // updateEnvTag updates the KMP_IMAGE_TAG in .env to the given tag.

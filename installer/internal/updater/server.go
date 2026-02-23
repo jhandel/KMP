@@ -12,6 +12,7 @@ import (
 // Config holds the updater sidecar configuration.
 type Config struct {
 	ComposeDir     string
+	ComposeProject string
 	AppServiceName string
 	HealthURL      string
 	ListenAddr     string
@@ -39,6 +40,8 @@ type Server struct {
 	dockerComposeFn   func(args ...string) error
 	removeContainerFn func(string) error
 	waitForHealthyFn  func(time.Duration) error
+
+	resolvedComposeProject string
 }
 
 // NewServer creates a new updater server.

@@ -162,6 +162,13 @@ func TestRecreateAppContainerRetriesAfterNameConflict(t *testing.T) {
 	}
 }
 
+func TestComposeProjectNameUsesConfig(t *testing.T) {
+	s := NewServer(Config{ComposeProject: "kmp-d7d1ec11"})
+	if got := s.composeProjectName(); got != "kmp-d7d1ec11" {
+		t.Fatalf("expected configured compose project, got %q", got)
+	}
+}
+
 func TestUpdateEnvTagWritesEnvFile(t *testing.T) {
 	tmp := t.TempDir()
 	envPath := filepath.Join(tmp, ".env")

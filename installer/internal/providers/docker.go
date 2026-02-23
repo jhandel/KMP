@@ -129,33 +129,34 @@ func (d *DockerProvider) Install(cfg *DeployConfig) error {
 
 	// Template data shared across all templates
 	data := templateData{
-		Image:          cfg.Image,
-		ImageTag:       cfg.ImageTag,
-		Domain:         cfg.Domain,
-		RequireHttps:   requireHttps(cfg.Domain),
-		DatabaseType:   dbType,
-		DatabaseDSN:    cfg.DatabaseDSN,
-		MySQLSSL:       cfg.MySQLSSL,
-		SecuritySalt:   generateRandomString(32),
-		DBRootPassword: generateRandomString(16),
-		DBPassword:     generateRandomString(16),
-		SMTPHost:  valueOrDefault(cfg.StorageConfig["smtp_host"], ""),
-		SMTPPort:  valueOrDefault(cfg.StorageConfig["smtp_port"], "587"),
-		SMTPUser:  valueOrDefault(cfg.StorageConfig["smtp_user"], ""),
-		SMTPPass:  valueOrDefault(cfg.StorageConfig["smtp_pass"], ""),
-		EmailFrom: valueOrDefault(cfg.StorageConfig["email_from"], "noreply@localhost"),
+		Image:                 cfg.Image,
+		ImageTag:              cfg.ImageTag,
+		ComposeProjectName:    filepath.Base(d.dir),
+		Domain:                cfg.Domain,
+		RequireHttps:          requireHttps(cfg.Domain),
+		DatabaseType:          dbType,
+		DatabaseDSN:           cfg.DatabaseDSN,
+		MySQLSSL:              cfg.MySQLSSL,
+		SecuritySalt:          generateRandomString(32),
+		DBRootPassword:        generateRandomString(16),
+		DBPassword:            generateRandomString(16),
+		SMTPHost:              valueOrDefault(cfg.StorageConfig["smtp_host"], ""),
+		SMTPPort:              valueOrDefault(cfg.StorageConfig["smtp_port"], "587"),
+		SMTPUser:              valueOrDefault(cfg.StorageConfig["smtp_user"], ""),
+		SMTPPass:              valueOrDefault(cfg.StorageConfig["smtp_pass"], ""),
+		EmailFrom:             valueOrDefault(cfg.StorageConfig["email_from"], "noreply@localhost"),
 		StorageType:           cfg.StorageType,
 		AzureConnectionString: cfg.StorageConfig["azure_connection_string"],
 		AzureContainer:        valueOrDefault(cfg.StorageConfig["azure_container"], "documents"),
-		S3Bucket:   cfg.StorageConfig["s3_bucket"],
-		S3Region:   valueOrDefault(cfg.StorageConfig["s3_region"], "us-east-1"),
-		S3Key:      cfg.StorageConfig["s3_key"],
-		S3Secret:   cfg.StorageConfig["s3_secret"],
-		S3Endpoint: cfg.StorageConfig["s3_endpoint"],
-		CacheEngine:   cacheEngine,
-		UseRedis:      useRedis,
-		RedisURL:      redisURL,
-		RedisPassword: redisPassword,
+		S3Bucket:              cfg.StorageConfig["s3_bucket"],
+		S3Region:              valueOrDefault(cfg.StorageConfig["s3_region"], "us-east-1"),
+		S3Key:                 cfg.StorageConfig["s3_key"],
+		S3Secret:              cfg.StorageConfig["s3_secret"],
+		S3Endpoint:            cfg.StorageConfig["s3_endpoint"],
+		CacheEngine:           cacheEngine,
+		UseRedis:              useRedis,
+		RedisURL:              redisURL,
+		RedisPassword:         redisPassword,
 	}
 
 	// Write .env
@@ -459,16 +460,17 @@ func (d *DockerProvider) Destroy() error {
 
 // templateData holds values interpolated into the embedded templates.
 type templateData struct {
-	Image          string
-	ImageTag       string
-	Domain         string
-	RequireHttps   bool   // false for localhost/IP installs that serve over plain HTTP
-	DatabaseType   string // "bundled-mariadb", "bundled-postgres", or "external"
-	DatabaseDSN    string
-	MySQLSSL       bool
-	SecuritySalt   string
-	DBRootPassword string
-	DBPassword     string
+	Image              string
+	ImageTag           string
+	ComposeProjectName string
+	Domain             string
+	RequireHttps       bool   // false for localhost/IP installs that serve over plain HTTP
+	DatabaseType       string // "bundled-mariadb", "bundled-postgres", or "external"
+	DatabaseDSN        string
+	MySQLSSL           bool
+	SecuritySalt       string
+	DBRootPassword     string
+	DBPassword         string
 	// Email
 	SMTPHost  string
 	SMTPPort  string
@@ -620,6 +622,7 @@ func migrateComposeServiceNames(composePath string) (bool, error) {
 	if raw, exists := services["kmp-updater"]; exists {
 		svc, ok := raw.(map[string]any)
 		if ok {
+			defaultProject := filepath.Base(filepath.Dir(composePath))
 			if volumes, ok := svc["volumes"].([]any); ok {
 				for i, entry := range volumes {
 					vol, ok := entry.(string)
@@ -635,6 +638,11 @@ func migrateComposeServiceNames(composePath string) (bool, error) {
 				svc["volumes"] = volumes
 			}
 			if env, ok := svc["environment"].(map[string]any); ok {
+				currentProject, _ := env["COMPOSE_PROJECT_NAME"].(string)
+				if currentProject == "" && defaultProject != "" {
+					env["COMPOSE_PROJECT_NAME"] = defaultProject
+					changed = true
+				}
 				current, _ := env["HEALTH_URL"].(string)
 				if current != "http://kmp-app/health" {
 					env["HEALTH_URL"] = "http://kmp-app/health"
