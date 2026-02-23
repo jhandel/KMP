@@ -35,7 +35,7 @@ class ContainerRegistryService
     /**
      * Get available image tags from GHCR, enriched with release metadata.
      *
-     * @return array<int, array{tag: string, channel: string, published: string|null, releaseNotes: string|null, isCurrent: bool}>
+     * @return array<int, array{tag: string, version: string|null, channel: string, published: string|null, releaseNotes: string|null, isCurrent: bool}>
      */
     public function getAvailableVersions(): array
     {
@@ -56,6 +56,7 @@ class ContainerRegistryService
 
             $versions[] = [
                 'tag' => $tag,
+                'version' => $this->extractVersionFromTag($tag),
                 'channel' => $channel,
                 'published' => $release['published'] ?? null,
                 'releaseNotes' => $release['body'] ?? null,
@@ -64,13 +65,29 @@ class ContainerRegistryService
             ];
         }
 
-        // Sort: current channel first, then by tag descending
+        // Sort current first, then explicit semantic versions, then published/tag fallback.
         usort($versions, function ($a, $b) {
             if ($a['isCurrent'] !== $b['isCurrent']) {
                 return $a['isCurrent'] ? -1 : 1;
             }
 
-            return version_compare($b['tag'], $a['tag']);
+            $aVersion = $a['version'] ?? null;
+            $bVersion = $b['version'] ?? null;
+            if (is_string($aVersion) && is_string($bVersion)) {
+                $versionComparison = version_compare($bVersion, $aVersion);
+                if ($versionComparison !== 0) {
+                    return $versionComparison;
+                }
+            } elseif (is_string($aVersion) xor is_string($bVersion)) {
+                return is_string($aVersion) ? -1 : 1;
+            }
+
+            $publishedComparison = strcmp((string)($b['published'] ?? ''), (string)($a['published'] ?? ''));
+            if ($publishedComparison !== 0) {
+                return $publishedComparison;
+            }
+
+            return strcmp($b['tag'], $a['tag']);
         });
 
         return $versions;
@@ -256,6 +273,23 @@ class ContainerRegistryService
         }
 
         return 'release';
+    }
+
+    /**
+     * Extract semantic version metadata from image tags when present.
+     */
+    private function extractVersionFromTag(string $tag): ?string
+    {
+        $trimmedTag = trim($tag);
+        if (preg_match('/^v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z\.-]+)?)$/', $trimmedTag, $matches)) {
+            return $matches[1];
+        }
+
+        if (preg_match('/^(?:dev|nightly|beta|release)-v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z\.-]+)?)$/i', $trimmedTag, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
     }
 
     /**

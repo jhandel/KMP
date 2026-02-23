@@ -148,6 +148,9 @@ class SystemUpdateController extends Controller {
 
             for (const v of shown) {
                 const isCurrent = v.isCurrent
+                const versionBadge = v.version
+                    ? `<span class="badge bg-light text-dark border me-2">v${this._escapeHtml(v.version)}</span>`
+                    : ""
                 const currentBadge = isCurrent
                     ? `<span class="badge bg-primary ms-2">Current</span>`
                     : ""
@@ -168,7 +171,7 @@ class SystemUpdateController extends Controller {
 
                 html += `<div class="list-group-item d-flex justify-content-between align-items-center ${isCurrent ? 'list-group-item-light' : ''}">
                     <div>
-                        <code>${this._escapeHtml(v.tag)}</code>${currentBadge}
+                        ${versionBadge}<code>${this._escapeHtml(v.tag)}</code>${currentBadge}
                         ${published}
                         ${notes}
                     </div>

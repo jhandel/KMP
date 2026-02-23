@@ -3,7 +3,7 @@ import { Controller } from "@hotwired/stimulus"
 /**
  * Checks for KMP container updates via the server-side registry service
  * and shows a dismissible banner to super-user admins.
- * Caches results in sessionStorage for 1 hour to avoid API spam.
+ * Caches results in sessionStorage for 5 minutes to avoid API spam.
  */
 class VersionCheckController extends Controller {
     static values = {
@@ -18,8 +18,8 @@ class VersionCheckController extends Controller {
     }
 
     async checkForUpdates() {
-        // v3 invalidates older long-lived cache entries.
-        const cacheKey = 'kmp-version-check-v3'
+        // v4 invalidates earlier cache payloads that stored tag-only latest values.
+        const cacheKey = 'kmp-version-check-v4'
         sessionStorage.removeItem('kmp-version-check')
 
         const cached = sessionStorage.getItem(cacheKey)
@@ -55,7 +55,7 @@ class VersionCheckController extends Controller {
             const latest = channelVersions.find(v => !v.isCurrent && this.isAppReleaseTag(v.tag))
 
             const updateAvailable = latest != null
-            const latestVersion = latest ? latest.tag : currentTag
+            const latestVersion = latest ? (latest.version || latest.tag) : currentTag
 
             sessionStorage.setItem(cacheKey, JSON.stringify({
                 timestamp: Date.now(),

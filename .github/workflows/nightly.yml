@@ -103,39 +103,6 @@ jobs:
       - name: Copy production dockerignore
         run: cp docker/.dockerignore.prod .dockerignore
 
-      - name: Determine tags
-        id: tags
-        run: |
-          DATE=$(date -u +'%Y-%m-%d')
-          SHORT_SHA=${GITHUB_SHA::7}
-          TAGS=""
-
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            TAGS="nightly-${DATE},nightly"
-            PRIMARY="nightly-${DATE}"
-            CHANNEL="nightly"
-          elif [[ "${{ github.event_name }}" == "push" ]]; then
-            TAGS="dev-${SHORT_SHA},dev"
-            PRIMARY="dev-${SHORT_SHA}"
-            CHANNEL="dev"
-          else
-            # workflow_dispatch: both sets
-            TAGS="nightly-${DATE},nightly,dev-${SHORT_SHA},dev"
-            PRIMARY="dev-${SHORT_SHA}"
-            CHANNEL="dev"
-          fi
-
-          # Build full image refs
-          FULL_TAGS=""
-          IFS=',' read -ra PARTS <<< "$TAGS"
-          for t in "${PARTS[@]}"; do
-            FULL_TAGS="${FULL_TAGS}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${t}\n"
-          done
-
-          echo "primary=${PRIMARY}" >> "$GITHUB_OUTPUT"
-          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
-          printf "tags<<EOF\n${FULL_TAGS}EOF\n" >> "$GITHUB_OUTPUT"
-
       - name: Set app semantic version
         id: app-version
         run: |
@@ -153,6 +120,40 @@ jobs:
           APP_VERSION="${MAJOR}.${MINOR}.${GITHUB_RUN_NUMBER}"
           echo "$APP_VERSION" > app/config/version.txt
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Determine tags
+        id: tags
+        run: |
+          DATE=$(date -u +'%Y-%m-%d')
+          SHORT_SHA=${GITHUB_SHA::7}
+          APP_VERSION="${{ steps.app-version.outputs.app_version }}"
+          TAGS=""
+
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            TAGS="nightly-${DATE},nightly,nightly-${APP_VERSION}"
+            PRIMARY="nightly-${DATE}"
+            CHANNEL="nightly"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            TAGS="dev-${SHORT_SHA},dev,dev-${APP_VERSION}"
+            PRIMARY="dev-${SHORT_SHA}"
+            CHANNEL="dev"
+          else
+            # workflow_dispatch: both sets
+            TAGS="nightly-${DATE},nightly,nightly-${APP_VERSION},dev-${SHORT_SHA},dev,dev-${APP_VERSION}"
+            PRIMARY="dev-${SHORT_SHA}"
+            CHANNEL="dev"
+          fi
+
+          # Build full image refs
+          FULL_TAGS=""
+          IFS=',' read -ra PARTS <<< "$TAGS"
+          for t in "${PARTS[@]}"; do
+            FULL_TAGS="${FULL_TAGS}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${t}\n"
+          done
+
+          echo "primary=${PRIMARY}" >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+          printf "tags<<EOF\n${FULL_TAGS}EOF\n" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         id: build
