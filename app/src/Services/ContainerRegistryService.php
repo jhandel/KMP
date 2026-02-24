@@ -21,6 +21,8 @@ class ContainerRegistryService
     private const CACHE_KEY_RELEASES = 'container_registry_releases';
     private const CACHE_CONFIG = 'default';
     private const CACHE_TTL = 300; // 5 minutes
+    private const TAGS_PAGE_SIZE = 100;
+    private const TAGS_MAX_PAGES = 40;
 
     private string $registry;
     private string $ghRepo;
@@ -136,8 +138,7 @@ class ContainerRegistryService
             $parts = explode('/', $this->registry, 2);
             $registryHost = $parts[0] ?? 'ghcr.io';
             $imagePath = $parts[1] ?? 'jhandel/kmp';
-
-            $url = "https://{$registryHost}/v2/{$imagePath}/tags/list";
+            $url = "https://{$registryHost}/v2/{$imagePath}/tags/list?n=" . self::TAGS_PAGE_SIZE;
             $headers = [
                 'Accept' => 'application/json',
                 'User-Agent' => 'KMP-App',
@@ -146,25 +147,48 @@ class ContainerRegistryService
             if ($configuredToken !== '') {
                 $headers['Authorization'] = "Bearer {$configuredToken}";
             }
+            $allTags = [];
+            $seen = [];
+            $pageCount = 0;
 
-            $response = $this->httpClient->get($url, [], ['headers' => $headers]);
-            if ($response->getStatusCode() === 401) {
-                $challenge = $response->getHeaderLine('WWW-Authenticate');
-                $token = $this->fetchGhcrAuthToken($challenge);
-                if ($token !== null) {
-                    $headers['Authorization'] = "Bearer {$token}";
-                    $response = $this->httpClient->get($url, [], ['headers' => $headers]);
+            while ($url !== null && $pageCount < self::TAGS_MAX_PAGES) {
+                $response = $this->httpClient->get($url, [], ['headers' => $headers]);
+                if ($response->getStatusCode() === 401) {
+                    $challenge = $response->getHeaderLine('WWW-Authenticate');
+                    $token = $this->fetchGhcrAuthToken($challenge);
+                    if ($token !== null) {
+                        $headers['Authorization'] = "Bearer {$token}";
+                        $response = $this->httpClient->get($url, [], ['headers' => $headers]);
+                    }
                 }
+
+                if (!$response->isOk()) {
+                    Log::warning("GHCR tag fetch failed: HTTP {$response->getStatusCode()}");
+                    if ($allTags === []) {
+                        return [];
+                    }
+                    break;
+                }
+
+                $data = $response->getJson();
+                $pageTags = is_array($data['tags'] ?? null) ? $data['tags'] : [];
+                foreach ($pageTags as $tag) {
+                    if (!is_string($tag) || isset($seen[$tag])) {
+                        continue;
+                    }
+                    $seen[$tag] = true;
+                    $allTags[] = $tag;
+                }
+
+                $url = $this->extractNextTagsPageUrl($response->getHeaderLine('Link'), $registryHost);
+                $pageCount++;
             }
 
-            if (!$response->isOk()) {
-                Log::warning("GHCR tag fetch failed: HTTP {$response->getStatusCode()}");
-
-                return [];
+            if ($pageCount >= self::TAGS_MAX_PAGES) {
+                Log::warning('GHCR tag fetch reached max pagination limit; results may be incomplete.');
             }
 
-            $data = $response->getJson();
-            $tags = is_array($data['tags'] ?? null) ? $data['tags'] : [];
+            $tags = $allTags;
 
             // Filter out non-app image tags (base images, digests, sidecar/installer tags)
             $tags = array_filter($tags, function (mixed $tag) {
@@ -443,5 +467,32 @@ class ContainerRegistryService
         }
 
         return $token;
+    }
+
+    /**
+     * Parse RFC5988 Link header and return absolute URL for next tags page.
+     */
+    private function extractNextTagsPageUrl(string $linkHeader, string $registryHost): ?string
+    {
+        if (trim($linkHeader) === '') {
+            return null;
+        }
+
+        if (!preg_match('/<([^>]+)>\s*;\s*rel="?next"?/i', $linkHeader, $matches)) {
+            return null;
+        }
+
+        $next = trim($matches[1]);
+        if ($next === '') {
+            return null;
+        }
+        if (str_starts_with($next, 'https://') || str_starts_with($next, 'http://')) {
+            return $next;
+        }
+        if (str_starts_with($next, '/')) {
+            return "https://{$registryHost}{$next}";
+        }
+
+        return "https://{$registryHost}/{$next}";
     }
 }

@@ -45,4 +45,33 @@ class ContainerRegistryServiceTest extends TestCase
         $this->assertFalse($method->invoke($service, '1.4.94', '1.4.97', false));
         $this->assertFalse($method->invoke($service, '1.4.97', '1.4.97', true));
     }
+
+    public function testExtractNextTagsPageUrlHandlesRelativeLink(): void
+    {
+        $service = new ContainerRegistryService();
+        $method = new ReflectionMethod(ContainerRegistryService::class, 'extractNextTagsPageUrl');
+        $method->setAccessible(true);
+
+        $url = $method->invoke(
+            $service,
+            '</v2/jhandel/kmp/tags/list?n=100&last=dev-1.4.94>; rel="next"',
+            'ghcr.io',
+        );
+
+        $this->assertSame(
+            'https://ghcr.io/v2/jhandel/kmp/tags/list?n=100&last=dev-1.4.94',
+            $url,
+        );
+    }
+
+    public function testExtractNextTagsPageUrlReturnsNullWhenNoNext(): void
+    {
+        $service = new ContainerRegistryService();
+        $method = new ReflectionMethod(ContainerRegistryService::class, 'extractNextTagsPageUrl');
+        $method->setAccessible(true);
+
+        $url = $method->invoke($service, '', 'ghcr.io');
+
+        $this->assertNull($url);
+    }
 }
