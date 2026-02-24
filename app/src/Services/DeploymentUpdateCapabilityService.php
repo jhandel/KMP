@@ -37,15 +37,15 @@ class DeploymentUpdateCapabilityService
             'docker' => [
                 'provider' => 'docker',
                 'label' => 'Docker / VPC',
-                'web_update' => true,
+                'web_update' => false,
                 'requires_root_access' => true,
-                'update_mode' => 'updater-sidecar',
+                'update_mode' => 'cli-managed',
                 'components' => [
-                    'app' => $this->component(true, 'automated', 'Update sidecar pulls image and recreates app container.'),
+                    'app' => $this->component(true, 'manual-or-cli', 'Use kmp update or docker compose pull/up workflow.'),
                     'database_migrations' => $this->component(true, 'automated-on-app-start', 'Migrations run via app startup/update commands.'),
                     'database_engine' => $this->component(true, 'manual-planned', 'DB engine upgrades require planned compose/image change and downtime window.'),
                     'proxy' => $this->component(true, 'manual-or-cli', 'Caddy image and config upgrades managed with compose update/restart.'),
-                    'updater' => $this->component(true, 'manual-or-cli', 'Updater sidecar image can be upgraded with compose pull/up.'),
+                    'updater' => $this->component(false, 'disabled', 'Sidecar updater strategy is disabled for Docker updates.'),
                 ],
             ],
             'railway' => [

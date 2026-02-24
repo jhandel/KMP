@@ -27,7 +27,8 @@ class DeploymentUpdateCapabilityServiceTest extends TestCase
         $capabilities = $service->getCapabilitiesForProvider('vpc');
 
         $this->assertSame('docker', $capabilities['provider']);
-        $this->assertSame('updater-sidecar', $capabilities['update_mode']);
+        $this->assertSame('cli-managed', $capabilities['update_mode']);
+        $this->assertFalse($capabilities['web_update']);
         $this->assertTrue($capabilities['components']['app']['supported']);
     }
 

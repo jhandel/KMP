@@ -70,6 +70,8 @@ docker compose pull
 docker compose up -d
 ```
 
+In-app web-triggered updates for Docker/VPC are currently disabled; use `kmp update` or the manual compose commands above.
+
 ### Fly.io
 
 ```bash
