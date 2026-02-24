@@ -138,9 +138,6 @@ return [
 
         /** @var string Deployment provider: docker, railway, azure, aws, fly, vpc, shared */
         "deploymentProvider" => env("DEPLOYMENT_PROVIDER", env("KMP_DEPLOY_PROVIDER", "docker")),
-
-        /** @var string|null Legacy sidecar updater URL (reserved; Docker web updates currently disabled) */
-        "updaterUrl" => env("UPDATER_URL", null),
     ],
 
     /** @see docs/7.1-security-best-practices.md#encryption-and-cryptographic-salt */

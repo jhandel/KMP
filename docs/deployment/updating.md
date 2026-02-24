@@ -131,12 +131,6 @@ KMP_IMAGE_TAG=v1.2.3 docker compose up -d
 fly deploy --image ghcr.io/jhandel/kmp:v1.2.3
 ```
 
-## In-App Update Notifications
-
-KMP checks for available updates and displays a notification banner to administrators when a newer version is available. This uses the `/health` endpoint, which includes version information.
-
-No action is taken automatically — administrators choose when to apply updates.
-
 ## Best Practices
 
 - **Always back up before updating** — `kmp update` does this automatically; for manual updates, run `kmp backup` first
