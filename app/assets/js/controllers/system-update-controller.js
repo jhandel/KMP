@@ -151,7 +151,7 @@ class SystemUpdateController extends Controller {
                 const currentBadge = isCurrent
                     ? `<span class="badge bg-primary ms-2">Current</span>`
                     : ""
-                const updateBtn = (!isCurrent && this.supportsWebUpdateValue)
+                const updateBtn = (!isCurrent && this.supportsWebUpdateValue && v.isUpgrade !== false)
                     ? `<button class="btn btn-sm btn-outline-primary"
                          data-action="click->system-update#triggerUpdate"
                          data-system-update-tag-param="${v.tag}">

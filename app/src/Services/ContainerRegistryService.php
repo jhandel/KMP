@@ -16,6 +16,7 @@ use Cake\Log\Log;
  */
 class ContainerRegistryService
 {
+    private const PRIMARY_CHANNELS = ['release', 'dev', 'nightly'];
     private const CACHE_KEY_TAGS = 'container_registry_tags';
     private const CACHE_KEY_RELEASES = 'container_registry_releases';
     private const CACHE_CONFIG = 'default';
@@ -35,7 +36,7 @@ class ContainerRegistryService
     /**
      * Get available image tags from GHCR, enriched with release metadata.
      *
-     * @return array<int, array{tag: string, version: string|null, channel: string, published: string|null, releaseNotes: string|null, isCurrent: bool}>
+     * @return array<int, array{tag: string, version: string|null, channel: string, published: string|null, releaseNotes: string|null, isCurrent: bool, isUpgrade: bool}>
      */
     public function getAvailableVersions(): array
     {
@@ -43,6 +44,8 @@ class ContainerRegistryService
         $releases = $this->fetchReleases();
 
         $currentTag = trim((string)Configure::read('App.imageTag', 'unknown'));
+        $currentVersion = $this->extractVersionFromTag($currentTag)
+            ?? $this->extractVersionFromTag(trim((string)Configure::read('App.version', '')));
 
         $releaseMap = [];
         foreach ($releases as $release) {
@@ -62,33 +65,21 @@ class ContainerRegistryService
                 'releaseNotes' => $release['body'] ?? null,
                 'prerelease' => $release['prerelease'] ?? ($channel !== 'release'),
                 'isCurrent' => ($tag === $currentTag),
+                'isUpgrade' => false,
             ];
         }
 
-        // Sort current first, then explicit semantic versions, then published/tag fallback.
-        usort($versions, function ($a, $b) {
-            if ($a['isCurrent'] !== $b['isCurrent']) {
-                return $a['isCurrent'] ? -1 : 1;
-            }
+        usort($versions, fn(array $a, array $b): int => $this->compareVersionRows($a, $b));
+        $versions = $this->limitToPrimaryChannelHeads($versions);
 
-            $aVersion = $a['version'] ?? null;
-            $bVersion = $b['version'] ?? null;
-            if (is_string($aVersion) && is_string($bVersion)) {
-                $versionComparison = version_compare($bVersion, $aVersion);
-                if ($versionComparison !== 0) {
-                    return $versionComparison;
-                }
-            } elseif (is_string($aVersion) xor is_string($bVersion)) {
-                return is_string($aVersion) ? -1 : 1;
-            }
-
-            $publishedComparison = strcmp((string)($b['published'] ?? ''), (string)($a['published'] ?? ''));
-            if ($publishedComparison !== 0) {
-                return $publishedComparison;
-            }
-
-            return strcmp($b['tag'], $a['tag']);
-        });
+        foreach ($versions as &$version) {
+            $version['isUpgrade'] = $this->isUpgradeCandidate(
+                is_string($version['version'] ?? null) ? $version['version'] : null,
+                $currentVersion,
+                (bool)($version['isCurrent'] ?? false),
+            );
+        }
+        unset($version);
 
         return $versions;
     }
@@ -100,7 +91,11 @@ class ContainerRegistryService
     {
         $versions = $this->getAvailableVersions();
         foreach ($versions as $version) {
-            if ($version['channel'] === $channel && !$version['isCurrent']) {
+            if (
+                $version['channel'] === $channel
+                && !$version['isCurrent']
+                && (bool)($version['isUpgrade'] ?? true)
+            ) {
                 return $version;
             }
         }
@@ -290,6 +285,77 @@ class ContainerRegistryService
         }
 
         return null;
+    }
+
+    /**
+     * Keep only one latest candidate per primary channel.
+     *
+     * @param array<int, array<string, mixed>> $versions
+     * @return array<int, array<string, mixed>>
+     */
+    private function limitToPrimaryChannelHeads(array $versions): array
+    {
+        $allowedChannels = array_fill_keys(self::PRIMARY_CHANNELS, true);
+        $selected = [];
+
+        foreach ($versions as $version) {
+            $channel = (string)($version['channel'] ?? '');
+            if (!isset($allowedChannels[$channel])) {
+                continue;
+            }
+            if (isset($selected[$channel])) {
+                continue;
+            }
+            $selected[$channel] = $version;
+        }
+
+        $ordered = [];
+        foreach (self::PRIMARY_CHANNELS as $channel) {
+            if (isset($selected[$channel])) {
+                $ordered[] = $selected[$channel];
+            }
+        }
+
+        return $ordered;
+    }
+
+    /**
+     * Compare version rows from newest to oldest.
+     *
+     * @param array<string, mixed> $a
+     * @param array<string, mixed> $b
+     */
+    private function compareVersionRows(array $a, array $b): int
+    {
+        $aVersion = $a['version'] ?? null;
+        $bVersion = $b['version'] ?? null;
+        if (is_string($aVersion) && is_string($bVersion)) {
+            $versionComparison = version_compare($bVersion, $aVersion);
+            if ($versionComparison !== 0) {
+                return $versionComparison;
+            }
+        } elseif (is_string($aVersion) xor is_string($bVersion)) {
+            return is_string($aVersion) ? -1 : 1;
+        }
+
+        $publishedComparison = strcmp((string)($b['published'] ?? ''), (string)($a['published'] ?? ''));
+        if ($publishedComparison !== 0) {
+            return $publishedComparison;
+        }
+
+        return strcmp((string)($b['tag'] ?? ''), (string)($a['tag'] ?? ''));
+    }
+
+    private function isUpgradeCandidate(?string $candidateVersion, ?string $currentVersion, bool $isCurrent): bool
+    {
+        if ($isCurrent) {
+            return false;
+        }
+        if ($candidateVersion === null || $currentVersion === null) {
+            return true;
+        }
+
+        return version_compare($candidateVersion, $currentVersion, '>');
     }
 
     /**
