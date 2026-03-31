@@ -27,13 +27,16 @@ class OfficerWorkflowActions
 
     private ActiveWindowManagerInterface $activeWindowManager;
     private WarrantManagerInterface $warrantManager;
+    private ?OfficerManagerInterface $officerManager;
 
     public function __construct(
         ActiveWindowManagerInterface $activeWindowManager,
         WarrantManagerInterface $warrantManager,
+        ?OfficerManagerInterface $officerManager = null,
     ) {
         $this->activeWindowManager = $activeWindowManager;
         $this->warrantManager = $warrantManager;
+        $this->officerManager = $officerManager;
     }
 
     /**
@@ -352,6 +355,178 @@ class OfficerWorkflowActions
             Log::error('Workflow RequestWarrantRoster failed: ' . $e->getMessage());
 
             return ['rosterId' => null];
+        }
+    }
+
+    /**
+     * Calculate reporting hierarchy fields for an officer.
+     *
+     * Standalone action wrapping the complex hierarchy traversal logic
+     * so it can be invoked independently in a workflow step.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Action config with officeId, branchId, officerId
+     * @return array Reporting field values
+     */
+    public function calculateReportingFieldsAction(array $context, array $config): array
+    {
+        try {
+            $officeId = (int)$this->resolveValue($config['officeId'], $context);
+            $branchId = (int)$this->resolveValue($config['branchId'], $context);
+
+            $officeTable = TableRegistry::getTableLocator()->get('Officers.Offices');
+            $office = $officeTable->get($officeId);
+
+            // Build a minimal officer-like object for the calculation
+            $officer = new \stdClass();
+            $officer->branch_id = $branchId;
+            $officer->deputy_description = $this->resolveValue($config['deputyDescription'] ?? null, $context);
+
+            $result = $this->calculateReportingFields($office, $officer);
+
+            return $result;
+        } catch (\Throwable $e) {
+            Log::error('Workflow CalculateReportingFields failed: ' . $e->getMessage());
+
+            return [
+                'reports_to_office_id' => null,
+                'reports_to_branch_id' => null,
+                'deputy_to_office_id' => null,
+                'deputy_to_branch_id' => null,
+            ];
+        }
+    }
+
+    /**
+     * Release existing officers when a one-per-branch office gets a new assignment.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Action config with officeId, branchId, newOfficerStartDate
+     * @return array List of released officer IDs
+     */
+    public function releaseConflictingOfficers(array $context, array $config): array
+    {
+        try {
+            $officeId = (int)$this->resolveValue($config['officeId'], $context);
+            $branchId = (int)$this->resolveValue($config['branchId'], $context);
+
+            $startDateRaw = $this->resolveValue($config['newOfficerStartDate'] ?? null, $context);
+            $startDate = $startDateRaw instanceof DateTime
+                ? $startDateRaw
+                : new DateTime($startDateRaw ?? 'now');
+
+            $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+
+            $currentOfficers = $officerTable->find()
+                ->where([
+                    'office_id' => $officeId,
+                    'branch_id' => $branchId,
+                    'status' => Officer::CURRENT_STATUS,
+                ])
+                ->all();
+
+            $releasedIds = [];
+            foreach ($currentOfficers as $existing) {
+                $existing->status = Officer::REPLACED_STATUS;
+                $existing->expires_on = $startDate;
+                $existing->revoked_reason = 'Replaced by new officer';
+                if ($officerTable->save($existing)) {
+                    $releasedIds[] = $existing->id;
+                }
+            }
+
+            return ['releasedOfficerIds' => $releasedIds];
+        } catch (\Throwable $e) {
+            Log::error('Workflow ReleaseConflictingOfficers failed: ' . $e->getMessage());
+
+            return ['releasedOfficerIds' => []];
+        }
+    }
+
+    /**
+     * Batch recalculate all officers when office configuration changes.
+     *
+     * Delegates to OfficerManagerInterface::recalculateOfficersForOffice().
+     *
+     * @param array $context Current workflow context
+     * @param array $config Action config with officeId, updaterId
+     * @return array Updated count
+     */
+    public function recalculateOfficersForOffice(array $context, array $config): array
+    {
+        try {
+            $officeId = (int)$this->resolveValue($config['officeId'], $context);
+            $updaterId = (int)$this->resolveValue(
+                $config['updaterId'] ?? $context['triggeredBy'] ?? 0,
+                $context,
+            );
+
+            if ($this->officerManager === null) {
+                Log::error('Workflow RecalculateOfficersForOffice: OfficerManager not available');
+
+                return ['updatedCount' => 0];
+            }
+
+            $result = $this->officerManager->recalculateOfficersForOffice($officeId, $updaterId);
+
+            if (!$result->success) {
+                Log::error('Workflow RecalculateOfficersForOffice: ' . $result->reason);
+
+                return ['updatedCount' => 0];
+            }
+
+            return ['updatedCount' => $result->data['updated_count'] ?? 0];
+        } catch (\Throwable $e) {
+            Log::error('Workflow RecalculateOfficersForOffice failed: ' . $e->getMessage());
+
+            return ['updatedCount' => 0];
+        }
+    }
+
+    /**
+     * Queue a release notification email for a released officer.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Action config with officerId, memberId, reason
+     * @return array Output with sent boolean
+     */
+    public function sendReleaseNotification(array $context, array $config): array
+    {
+        try {
+            $officerId = (int)$this->resolveValue($config['officerId'], $context);
+
+            $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+            $officer = $officerTable->get($officerId, contain: ['Offices']);
+
+            $member = TableRegistry::getTableLocator()->get('Members')->get($officer->member_id);
+            $branch = TableRegistry::getTableLocator()->get('Branches')->get($officer->branch_id);
+
+            $reason = $this->resolveValue($config['reason'] ?? 'Released via workflow', $context);
+            $releaseDate = $officer->expires_on ?? DateTime::now();
+
+            $mailerClass = App::className('Officers.Officers', 'Mailer', 'Mailer');
+            $vars = [
+                'to' => $member->email_address,
+                'memberScaName' => $member->sca_name,
+                'officeName' => $officer->office->name,
+                'branchName' => $branch->name,
+                'reason' => $reason,
+                'releaseDate' => TimezoneHelper::formatDate($releaseDate),
+            ];
+
+            $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
+            $data = [
+                'class' => $mailerClass,
+                'action' => 'notifyOfRelease',
+                'vars' => $vars,
+            ];
+            $queuedJobsTable->createJob('Queue.Mailer', $data);
+
+            return ['sent' => true];
+        } catch (\Throwable $e) {
+            Log::error('Workflow SendReleaseNotification failed: ' . $e->getMessage());
+
+            return ['sent' => false];
         }
     }
 }

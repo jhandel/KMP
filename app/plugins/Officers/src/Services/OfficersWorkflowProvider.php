@@ -144,6 +144,71 @@ class OfficersWorkflowProvider
                 'serviceMethod' => 'requestWarrantRoster',
                 'isAsync' => false,
             ],
+            [
+                'action' => 'Officers.CalculateReportingFields',
+                'label' => 'Calculate Reporting Fields',
+                'description' => 'Calculate reporting hierarchy for an officer based on office configuration',
+                'inputSchema' => [
+                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The office to calculate reporting for'],
+                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID', 'required' => true, 'description' => 'The branch the officer is assigned to'],
+                    'deputyDescription' => ['type' => 'string', 'label' => 'Deputy Description', 'description' => 'Optional deputy description'],
+                ],
+                'outputSchema' => [
+                    'reports_to_office_id' => ['type' => 'integer', 'label' => 'Reports To Office ID'],
+                    'reports_to_branch_id' => ['type' => 'integer', 'label' => 'Reports To Branch ID'],
+                    'deputy_to_office_id' => ['type' => 'integer', 'label' => 'Deputy To Office ID'],
+                    'deputy_to_branch_id' => ['type' => 'integer', 'label' => 'Deputy To Branch ID'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'calculateReportingFieldsAction',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Officers.ReleaseConflictingOfficers',
+                'label' => 'Release Conflicting Officers',
+                'description' => 'Release existing officers when a one-per-branch office gets a new assignment',
+                'inputSchema' => [
+                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The office to check for conflicts'],
+                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID', 'required' => true, 'description' => 'The branch to check for conflicts'],
+                    'newOfficerStartDate' => ['type' => 'datetime', 'label' => 'New Officer Start Date', 'description' => 'Start date of new officer; used as release date for conflicts'],
+                ],
+                'outputSchema' => [
+                    'releasedOfficerIds' => ['type' => 'array', 'label' => 'Released Officer IDs'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'releaseConflictingOfficers',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Officers.RecalculateOfficersForOffice',
+                'label' => 'Recalculate Officers For Office',
+                'description' => 'Batch recalculate reporting fields and roles for all officers when office config changes',
+                'inputSchema' => [
+                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The office whose officers need recalculation'],
+                    'updaterId' => ['type' => 'integer', 'label' => 'Updater ID', 'description' => 'The user who triggered the recalculation'],
+                ],
+                'outputSchema' => [
+                    'updatedCount' => ['type' => 'integer', 'label' => 'Updated Count'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'recalculateOfficersForOffice',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Officers.SendReleaseNotification',
+                'label' => 'Send Release Notification',
+                'description' => 'Send email notification about officer release',
+                'inputSchema' => [
+                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true, 'description' => 'The officer record to notify about'],
+                    'reason' => ['type' => 'string', 'label' => 'Reason', 'description' => 'Reason for release'],
+                ],
+                'outputSchema' => [
+                    'sent' => ['type' => 'boolean'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'sendReleaseNotification',
+                'isAsync' => true,
+            ],
         ]);
     }
 
@@ -184,6 +249,17 @@ class OfficersWorkflowProvider
                 ],
                 'evaluatorClass' => $conditionsClass,
                 'evaluatorMethod' => 'isMemberWarrantable',
+            ],
+            [
+                'condition' => 'Officers.HasConflictingOfficer',
+                'label' => 'Has Conflicting Officer',
+                'description' => 'Check if a branch already has a current officer for a given office',
+                'inputSchema' => [
+                    'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The office to check for conflicts'],
+                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID', 'required' => true, 'description' => 'The branch to check for conflicts'],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'hasConflictingOfficer',
             ],
         ]);
     }

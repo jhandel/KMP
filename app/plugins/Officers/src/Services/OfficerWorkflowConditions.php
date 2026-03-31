@@ -88,4 +88,36 @@ class OfficerWorkflowConditions
             return false;
         }
     }
+
+    /**
+     * Check if a branch already has a current officer for a given office.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with 'officeId' and 'branchId'
+     * @return bool
+     */
+    public function hasConflictingOfficer(array $context, array $config): bool
+    {
+        try {
+            $officeId = $this->resolveValue($config['officeId'] ?? null, $context);
+            $branchId = $this->resolveValue($config['branchId'] ?? null, $context);
+
+            if (empty($officeId) || empty($branchId)) {
+                return false;
+            }
+
+            $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+            $count = $officerTable->find()
+                ->where([
+                    'office_id' => (int)$officeId,
+                    'branch_id' => (int)$branchId,
+                    'status' => 'Current',
+                ])
+                ->count();
+
+            return $count > 0;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
 }
