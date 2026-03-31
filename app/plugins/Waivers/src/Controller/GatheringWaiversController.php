@@ -28,6 +28,7 @@ use Waivers\Services\WaiverStateService;
 class GatheringWaiversController extends AppController
 {
     use DataverseGridTrait;
+    use \App\Controller\WorkflowDispatchTrait;
 
     /**
      * Initialize method
@@ -160,14 +161,23 @@ class GatheringWaiversController extends AppController
         $tempWaiver->gathering = $gathering;
         $this->Authorization->authorize($tempWaiver, 'closeWaivers');
 
-        $result = $stateService->close((int)$gatheringId, $this->Authentication->getIdentity()->getIdentifier());
+        $closedBy = $this->Authentication->getIdentity()->getIdentifier();
 
-        if ($result->success) {
-            $this->Flash->success($result->reason);
-        } elseif (stripos($result->reason, 'already') !== false) {
-            $this->Flash->info($result->reason);
-        } else {
-            $this->Flash->error($result->reason);
+        $result = $this->dispatchOrLegacy(
+            'waiver-closure',
+            'Waivers.CollectionClosed',
+            ['gathering_id' => (int)$gatheringId, 'closed_by' => $closedBy],
+            fn () => $stateService->close((int)$gatheringId, $closedBy),
+        );
+
+        if ($result instanceof \App\Services\ServiceResult) {
+            if ($result->success) {
+                $this->Flash->success($result->reason);
+            } elseif (stripos($result->reason, 'already') !== false) {
+                $this->Flash->info($result->reason);
+            } else {
+                $this->Flash->error($result->reason);
+            }
         }
 
         $redirectUrl = $this->request->referer();
@@ -209,6 +219,10 @@ class GatheringWaiversController extends AppController
 
         if ($result->success) {
             $this->Flash->success($result->reason);
+            $this->dispatchWorkflowEvent('Waivers.CollectionReopened', [
+                'gathering_id' => (int)$gatheringId,
+                'reopened_by' => $this->Authentication->getIdentity()->getIdentifier(),
+            ]);
         } elseif (stripos($result->reason, 'already') !== false) {
             $this->Flash->info($result->reason);
         } else {
@@ -249,10 +263,16 @@ class GatheringWaiversController extends AppController
         // Use edit permission on gathering - editors and stewards can mark ready
         $this->Authorization->authorize($gathering, 'edit');
 
-        $result = $stateService->markReadyToClose((int)$gatheringId, $this->Authentication->getIdentity()->getIdentifier());
+        $markedBy = $this->Authentication->getIdentity()->getIdentifier();
+
+        $result = $stateService->markReadyToClose((int)$gatheringId, $markedBy);
 
         if ($result->success) {
             $this->Flash->success($result->reason);
+            $this->dispatchWorkflowEvent('Waivers.ReadyToClose', [
+                'gathering_id' => (int)$gatheringId,
+                'marked_by' => $markedBy,
+            ]);
         } elseif (stripos($result->reason, 'already') !== false) {
             $this->Flash->info($result->reason);
         } else {
@@ -1074,15 +1094,21 @@ class GatheringWaiversController extends AppController
         $this->Authorization->authorize($gatheringWaiver, 'decline');
 
         $declineReason = $this->request->getData('decline_reason') ?? '';
+        $declinedBy = $this->Authentication->getIdentity()->getIdentifier();
 
         $result = $stateService->decline(
             (int)$gatheringWaiver->id,
             $declineReason,
-            $this->Authentication->getIdentity()->getIdentifier(),
+            $declinedBy,
         );
 
         if ($result->success) {
             $this->Flash->success($result->reason);
+            $this->dispatchWorkflowEvent('Waivers.WaiverDeclined', [
+                'waiver_id' => (int)$gatheringWaiver->id,
+                'declined_by' => $declinedBy,
+                'reason' => $declineReason,
+            ]);
         } else {
             $this->Flash->error($result->reason);
         }
