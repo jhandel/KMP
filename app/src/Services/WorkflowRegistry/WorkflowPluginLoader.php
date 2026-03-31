@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services\WorkflowRegistry;
 
 use App\KMP\KMPWorkflowPluginInterface;
+use App\Services\WorkflowEngine\Providers\MembersWorkflowProvider;
 use App\Services\WorkflowEngine\Providers\ScheduleWorkflowProvider;
 use App\Services\WorkflowEngine\Providers\WarrantWorkflowProvider;
 use Activities\Services\ActivitiesWorkflowProvider;
+use Awards\Services\AwardsWorkflowProvider;
 use Cake\Core\PluginCollection;
 use Cake\Core\PluginInterface;
 use Officers\Services\OfficersWorkflowProvider;
@@ -86,8 +88,10 @@ class WorkflowPluginLoader
         OfficersWorkflowProvider::register();
         WarrantWorkflowProvider::register();
         ActivitiesWorkflowProvider::register();
+        AwardsWorkflowProvider::register();
         WaiversWorkflowProvider::register();
         ScheduleWorkflowProvider::register();
+        MembersWorkflowProvider::register();
     }
 
     /**
