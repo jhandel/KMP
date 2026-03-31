@@ -5,6 +5,7 @@ namespace App\Command;
 
 use App\Model\Entity\Member;
 use App\Services\WorkflowEngine\TriggerDispatcher;
+use App\Services\WorkflowEngine\WorkflowDefinitionFinderTrait;
 use Cake\Command\Command;
 use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
@@ -18,9 +19,11 @@ use Cake\ORM\TableRegistry;
  *
  * Supports dual-path dispatch: when a 'member-age-up' workflow is active,
  * delegates to the workflow engine; otherwise runs legacy age-up logic.
+ * Kingdom-aware: dispatches per-kingdom when kingdom-specific workflows exist.
  */
 class AgeUpMembersCommand extends Command
 {
+    use WorkflowDefinitionFinderTrait;
     /**
      * Injected dispatcher — null means createTriggerDispatcher() will be called.
      *
@@ -94,45 +97,97 @@ class AgeUpMembersCommand extends Command
     /**
      * Attempt to dispatch via the workflow engine.
      *
+     * Iterates over all kingdoms, using kingdom-scoped lookup to find
+     * the appropriate workflow definition for each.
+     *
      * @param \Cake\Console\ConsoleIo $io Console IO instance.
      * @return bool True if workflow was dispatched, false to fall back to legacy.
      */
     protected function dispatchViaWorkflow(ConsoleIo $io): bool
     {
         try {
-            $definitions = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
-            $def = $definitions->find()
-                ->where([
-                    'slug' => 'member-age-up',
-                    'is_active' => true,
-                    'current_version_id IS NOT' => null,
-                    'deleted IS' => null,
-                ])
-                ->contain(['CurrentVersion'])
-                ->first();
+            $branchesTable = TableRegistry::getTableLocator()->get('Branches');
+            $kingdoms = $branchesTable->find()
+                ->select(['id', 'name'])
+                ->where(['type' => 'Kingdom'])
+                ->all()
+                ->toArray();
 
-            if (!$def || !$def->current_version) {
-                return false;
+            $dispatched = false;
+            $dispatcher = null;
+            $defTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
+
+            foreach ($kingdoms as $kingdom) {
+                $def = $this->findForKingdom($kingdom->id, 'member-age-up');
+
+                if (!$def || !$def->is_active || !$def->current_version_id) {
+                    continue;
+                }
+
+                $fullDef = $defTable->find()
+                    ->where(['WorkflowDefinitions.id' => $def->id])
+                    ->contain(['CurrentVersion'])
+                    ->first();
+
+                if (!$fullDef || !$fullDef->current_version) {
+                    continue;
+                }
+
+                $dispatcher = $dispatcher ?? ($this->triggerDispatcher ?? $this->createTriggerDispatcher());
+                $io->info(sprintf('Active "member-age-up" workflow found for kingdom: %s. Dispatching...', $kingdom->name));
+
+                $results = $dispatcher->dispatch('Members.AgeUpTriggered', [
+                    'triggered_at' => date('c'),
+                    'trigger' => 'cron',
+                    'kingdom_id' => $kingdom->id,
+                ]);
+
+                $successCount = 0;
+                foreach ($results as $result) {
+                    if ($result->isSuccess()) {
+                        $successCount++;
+                    }
+                }
+
+                $io->success(sprintf('Workflow dispatched for %s (started %d workflow(s)).', $kingdom->name, $successCount));
+                $dispatched = true;
             }
 
-            $io->info('Active "member-age-up" workflow found. Dispatching via workflow engine...');
+            // If no kingdoms found, try global definition
+            if (empty($kingdoms)) {
+                $def = $defTable->find()
+                    ->where([
+                        'slug' => 'member-age-up',
+                        'is_active' => true,
+                        'current_version_id IS NOT' => null,
+                        'kingdom_id IS' => null,
+                    ])
+                    ->contain(['CurrentVersion'])
+                    ->first();
 
-            $dispatcher = $this->triggerDispatcher ?? $this->createTriggerDispatcher();
-            $results = $dispatcher->dispatch('Members.AgeUpTriggered', [
-                'triggered_at' => date('c'),
-                'trigger' => 'cron',
-            ]);
+                if ($def && $def->current_version) {
+                    $dispatcher = $this->triggerDispatcher ?? $this->createTriggerDispatcher();
+                    $io->info('Active "member-age-up" workflow found (global). Dispatching...');
 
-            $successCount = 0;
-            foreach ($results as $result) {
-                if ($result->isSuccess()) {
-                    $successCount++;
+                    $results = $dispatcher->dispatch('Members.AgeUpTriggered', [
+                        'triggered_at' => date('c'),
+                        'trigger' => 'cron',
+                        'kingdom_id' => null,
+                    ]);
+
+                    $successCount = 0;
+                    foreach ($results as $result) {
+                        if ($result->isSuccess()) {
+                            $successCount++;
+                        }
+                    }
+
+                    $io->success(sprintf('Workflow dispatched globally (started %d workflow(s)).', $successCount));
+                    $dispatched = true;
                 }
             }
 
-            $io->success(sprintf('Workflow dispatched (started %d workflow(s)).', $successCount));
-
-            return true;
+            return $dispatched;
         } catch (\Throwable $e) {
             Log::error('AgeUpMembersCommand: Workflow dispatch failed: ' . $e->getMessage());
             $io->warning('Workflow dispatch failed, falling back to legacy logic.');

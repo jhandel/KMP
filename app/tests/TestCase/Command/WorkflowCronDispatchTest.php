@@ -143,7 +143,7 @@ class WorkflowCronDispatchTest extends BaseTestCase
 
         $output = implode("\n", $stub['out']->messages());
         $this->assertSame(0, $result);
-        $this->assertStringContainsString('Dispatching via workflow engine', $output);
+        $this->assertStringContainsString('Dispatching', $output);
         $this->assertStringContainsString('Workflow dispatched', $output);
         $this->assertStringNotContainsString('Running legacy age-up logic', $output);
     }
@@ -261,7 +261,7 @@ class WorkflowCronDispatchTest extends BaseTestCase
 
         $output = implode("\n", $stub['out']->messages());
         $this->assertSame(0, $result);
-        $this->assertStringContainsString('Dispatching via workflow engine', $output);
+        $this->assertStringContainsString('Dispatching', $output);
         $this->assertStringContainsString('Workflow dispatched', $output);
         $this->assertStringNotContainsString('Running legacy active-window sync', $output);
     }
