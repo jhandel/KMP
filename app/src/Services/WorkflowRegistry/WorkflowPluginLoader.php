@@ -11,6 +11,7 @@ use Activities\Services\ActivitiesWorkflowProvider;
 use Cake\Core\PluginCollection;
 use Cake\Core\PluginInterface;
 use Officers\Services\OfficersWorkflowProvider;
+use Waivers\Services\WaiversWorkflowProvider;
 
 /**
  * Discovers and loads workflow registrations from plugins.
@@ -85,6 +86,7 @@ class WorkflowPluginLoader
         OfficersWorkflowProvider::register();
         WarrantWorkflowProvider::register();
         ActivitiesWorkflowProvider::register();
+        WaiversWorkflowProvider::register();
         ScheduleWorkflowProvider::register();
     }
 
