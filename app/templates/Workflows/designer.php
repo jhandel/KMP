@@ -25,8 +25,6 @@ $this->KMP->endBlock();
 
 <div class="workflows designer content"
     data-controller="workflow-designer"
-    data-workflow-designer-save-url-value="<?= $this->Url->build(['action' => 'save']) ?>"
-    data-workflow-designer-publish-url-value="<?= $this->Url->build(['action' => 'publish']) ?>"
     data-workflow-designer-registry-url-value="<?= $this->Url->build(['action' => 'registry']) ?>"
     <?php if ($draftVersion) : ?>
     data-workflow-designer-load-url-value="<?= $this->Url->build(['action' => 'loadVersion', $draftVersion->id]) ?>"
@@ -36,7 +34,12 @@ $this->KMP->endBlock();
     data-workflow-designer-csrf-token-value="<?= $this->request->getAttribute('csrfToken') ?>">
 
     <!-- Toolbar -->
-    <div class="workflow-toolbar">
+    <div class="workflow-toolbar"
+        data-controller="workflow-toolbar"
+        data-workflow-toolbar-save-url-value="<?= $this->Url->build(['action' => 'save']) ?>"
+        data-workflow-toolbar-publish-url-value="<?= $this->Url->build(['action' => 'publish']) ?>"
+        data-workflow-toolbar-csrf-token-value="<?= $this->request->getAttribute('csrfToken') ?>"
+        data-workflow-toolbar-workflow-designer-outlet=".workflows.designer.content">
         <h5 class="mb-0 me-2">
             <?php if ($workflow) : ?>
                 <i class="bi bi-diagram-3 me-1"></i><?= h($workflow->name) ?>
@@ -49,30 +52,30 @@ $this->KMP->endBlock();
         </h5>
 
         <div class="wf-zoom-controls ms-3">
-            <button class="btn btn-sm" data-action="workflow-designer#zoomOut" title="Zoom Out" aria-label="<?= __('Zoom Out') ?>">
+            <button class="btn btn-sm" data-action="workflow-toolbar#zoomOut" title="Zoom Out" aria-label="<?= __('Zoom Out') ?>">
                 <i class="bi bi-dash"></i>
             </button>
-            <span class="wf-zoom-level" data-workflow-designer-target="zoomLevel">100%</span>
-            <button class="btn btn-sm" data-action="workflow-designer#zoomIn" title="Zoom In" aria-label="<?= __('Zoom In') ?>">
+            <span class="wf-zoom-level" data-workflow-toolbar-target="zoomLevel">100%</span>
+            <button class="btn btn-sm" data-action="workflow-toolbar#zoomIn" title="Zoom In" aria-label="<?= __('Zoom In') ?>">
                 <i class="bi bi-plus"></i>
             </button>
-            <button class="btn btn-sm" data-action="workflow-designer#zoomReset" title="Reset Zoom" aria-label="<?= __('Reset Zoom') ?>">
+            <button class="btn btn-sm" data-action="workflow-toolbar#zoomReset" title="Reset Zoom" aria-label="<?= __('Reset Zoom') ?>">
                 <i class="bi bi-arrows-angle-expand"></i>
             </button>
         </div>
 
         <div class="toolbar-separator"></div>
 
-        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#undo" title="Undo (Ctrl+Z)" aria-label="<?= __('Undo') ?>">
+        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-toolbar#undo" title="Undo (Ctrl+Z)" aria-label="<?= __('Undo') ?>">
             <i class="bi bi-arrow-counterclockwise"></i>
         </button>
-        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#redo" title="Redo (Ctrl+Y)" aria-label="<?= __('Redo') ?>">
+        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-toolbar#redo" title="Redo (Ctrl+Y)" aria-label="<?= __('Redo') ?>">
             <i class="bi bi-arrow-clockwise"></i>
         </button>
 
         <div class="toolbar-separator"></div>
 
-        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-designer#validateWorkflow" title="Validate">
+        <button class="btn btn-sm btn-outline-secondary" data-action="workflow-toolbar#validateWorkflow" title="Validate">
             <i class="bi bi-check-circle me-1"></i><?= __('Validate') ?>
         </button>
 
@@ -84,10 +87,14 @@ $this->KMP->endBlock();
                     ['class' => 'btn btn-sm btn-outline-secondary', 'escape' => false]
                 ) ?>
             <?php endif; ?>
-            <button class="btn btn-sm btn-outline-primary" data-action="workflow-designer#save">
+            <button class="btn btn-sm btn-outline-primary"
+                data-action="workflow-toolbar#save"
+                data-workflow-toolbar-target="saveBtn">
                 <i class="bi bi-save me-1"></i><?= __('Save Draft') ?>
             </button>
-            <button class="btn btn-sm btn-primary" data-action="workflow-designer#publish">
+            <button class="btn btn-sm btn-primary"
+                data-action="workflow-toolbar#publish"
+                data-workflow-toolbar-target="publishBtn">
                 <i class="bi bi-rocket-takeoff me-1"></i><?= __('Publish') ?>
             </button>
         </div>
