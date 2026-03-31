@@ -18,6 +18,7 @@ use Cake\ORM\TableRegistry;
 use Exception;
 use PhpParser\Node\Stmt\TryCatch;
 use App\Services\CsvExportService;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Awards\Services\RecommendationStateService;
 use Awards\Services\RecommendationFormService;
 use Awards\Services\RecommendationQueryService;
@@ -39,6 +40,7 @@ use Cake\Error\Debugger;
 class RecommendationsController extends AppController
 {
     use DataverseGridTrait;
+    use \App\Controller\WorkflowDispatchTrait;
 
     /**
      * Configure authentication - allows unauthenticated submitRecommendation.
@@ -929,7 +931,7 @@ class RecommendationsController extends AppController
      * @see \Awards\Model\Entity\Recommendation::getStatuses() For state → status mapping
      * @see \Awards\Model\Table\NotesTable For note creation and management
      */
-    public function updateStates(RecommendationStateService $stateService): ?\Cake\Http\Response
+    public function updateStates(RecommendationStateService $stateService, TriggerDispatcher $triggerDispatcher): ?\Cake\Http\Response
     {
         $view = $this->request->getData('view') ?? 'Index';
         $status = $this->request->getData('status') ?? 'All';
@@ -963,6 +965,18 @@ class RecommendationsController extends AppController
                 } else {
                     $this->Flash->error(__('The recommendations could not be updated. Please, try again.'));
                 }
+            }
+
+            if ($success) {
+                $this->dispatchWorkflowEvent(
+                    $triggerDispatcher,
+                    'Awards.BulkStateTransition',
+                    [
+                        'recommendationIds' => $ids,
+                        'targetState' => $newState,
+                        'actorId' => $user->id,
+                    ],
+                );
             }
         }
         $currentPage = $this->request->getData('current_page');
@@ -1040,7 +1054,7 @@ class RecommendationsController extends AppController
      * @see view() For recommendation detail display after submission
      * @see \Awards\Model\Entity\Recommendation For recommendation entity structure
      */
-    public function add(): ?\Cake\Http\Response
+    public function add(TriggerDispatcher $triggerDispatcher): ?\Cake\Http\Response
     {
         try {
             $user = $this->request->getAttribute('identity');
@@ -1116,23 +1130,46 @@ class RecommendationsController extends AppController
                 $recommendation->court_availability = $recommendation->court_availability ?? 'Not Set';
                 $recommendation->person_to_notify = $recommendation->person_to_notify ?? '';
 
-                if ($this->Recommendations->save($recommendation)) {
-                    $this->Recommendations->getConnection()->commit();
-                    $this->Flash->success(__('The recommendation has been saved.'));
+                $legacySave = function () use ($recommendation, $user) {
+                    if ($this->Recommendations->save($recommendation)) {
+                        $this->Recommendations->getConnection()->commit();
+                        $this->Flash->success(__('The recommendation has been saved.'));
 
-                    if ($user->checkCan('view', $recommendation)) {
-                        return $this->redirect(['action' => 'view', $recommendation->id]);
+                        if ($user->checkCan('view', $recommendation)) {
+                            return $this->redirect(['action' => 'view', $recommendation->id]);
+                        }
+
+                        return $this->redirect([
+                            'controller' => 'members',
+                            'plugin' => null,
+                            'action' => 'view',
+                            $user->id
+                        ]);
                     }
+                    $this->Recommendations->getConnection()->rollback();
+                    $this->Flash->error(__('The recommendation could not be saved. Please, try again.'));
 
-                    return $this->redirect([
-                        'controller' => 'members',
-                        'plugin' => null,
-                        'action' => 'view',
-                        $user->id
-                    ]);
+                    return null;
+                };
+
+                $result = $this->dispatchOrLegacy(
+                    $triggerDispatcher,
+                    'awards-recommendation-lifecycle',
+                    'Awards.RecommendationSubmitted',
+                    [
+                        'recommendationId' => $recommendation->id,
+                        'awardId' => $recommendation->award_id,
+                        'memberId' => $recommendation->member_id,
+                        'requesterId' => $recommendation->requester_id,
+                        'branchId' => $recommendation->branch_id,
+                        'state' => $recommendation->state,
+                    ],
+                    $legacySave,
+                );
+
+                if ($result instanceof \Cake\Http\Response) {
+                    return $result;
                 }
-                $this->Recommendations->getConnection()->rollback();
-                $this->Flash->error(__('The recommendation could not be saved. Please, try again.'));
             }
 
             // Get data for dropdowns
@@ -1170,7 +1207,7 @@ class RecommendationsController extends AppController
      * @see add() For authenticated member submission workflow
      * @see beforeFilter() For authentication bypass configuration
      */
-    public function submitRecommendation(): ?\Cake\Http\Response
+    public function submitRecommendation(TriggerDispatcher $triggerDispatcher): ?\Cake\Http\Response
     {
         $this->Authorization->skipAuthorization();
         $user = $this->request->getAttribute('identity');
@@ -1262,6 +1299,19 @@ class RecommendationsController extends AppController
                 if ($this->Recommendations->save($recommendation)) {
                     $this->Recommendations->getConnection()->commit();
                     $this->Flash->success(__('The recommendation has been submitted.'));
+
+                    $this->dispatchWorkflowEvent(
+                        $triggerDispatcher,
+                        'Awards.RecommendationSubmitted',
+                        [
+                            'recommendationId' => $recommendation->id,
+                            'awardId' => $recommendation->award_id,
+                            'memberId' => $recommendation->member_id,
+                            'requesterId' => $recommendation->requester_id,
+                            'branchId' => $recommendation->branch_id,
+                            'state' => $recommendation->state,
+                        ],
+                    );
                 } else {
                     $this->Recommendations->getConnection()->rollback();
                     $this->Flash->error(__('The recommendation could not be submitted. Please, try again.'));
@@ -1459,7 +1509,7 @@ class RecommendationsController extends AppController
      * @return \Cake\Http\Response JSON response indicating success or failure
      * @throws \Cake\Http\Exception\NotFoundException When recommendation not found
      */
-    public function kanbanUpdate(RecommendationStateService $stateService, ?string $id = null): \Cake\Http\Response
+    public function kanbanUpdate(RecommendationStateService $stateService, TriggerDispatcher $triggerDispatcher, ?string $id = null): \Cake\Http\Response
     {
         try {
             $recommendation = $this->Recommendations->get($id);
@@ -1468,6 +1518,7 @@ class RecommendationsController extends AppController
             }
 
             $this->Authorization->authorize($recommendation, 'edit');
+            $oldState = $recommendation->state;
             $message = 'failed';
 
             if ($this->request->is(['patch', 'post', 'put'])) {
@@ -1478,6 +1529,21 @@ class RecommendationsController extends AppController
                     $this->request->getData('placeBefore'),
                     $this->request->getData('placeAfter'),
                 );
+
+                if ($message === 'success') {
+                    $this->dispatchWorkflowEvent(
+                        $triggerDispatcher,
+                        'Awards.RecommendationStateChanged',
+                        [
+                            'recommendationId' => $recommendation->id,
+                            'previousState' => $oldState,
+                            'newState' => $this->request->getData('newCol'),
+                            'previousStatus' => '',
+                            'newStatus' => '',
+                            'actorId' => $this->request->getAttribute('identity')?->getIdentifier(),
+                        ],
+                    );
+                }
             }
 
             return $this->response
