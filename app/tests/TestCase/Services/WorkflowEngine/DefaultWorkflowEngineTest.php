@@ -960,4 +960,125 @@ class DefaultWorkflowEngineTest extends BaseTestCase
         // decision falls back to outputPort when not in additionalData
         $this->assertSame('approved', $nodesCtx['decision']);
     }
+
+    // =====================================================
+    // stateMachine nodes
+    // =====================================================
+
+    public function testStateMachineNodeValidTransition(): void
+    {
+        $slug = 'sm-valid-' . uniqid();
+        $this->createWorkflow($slug, [
+            'nodes' => [
+                'trigger1' => ['type' => 'trigger', 'config' => [], 'outputs' => [['port' => 'default', 'target' => 'sm1']]],
+                'sm1' => [
+                    'type' => 'stateMachine',
+                    'config' => [
+                        'stateField' => 'state',
+                        'statusField' => 'status',
+                        'currentState' => '$.trigger.currentState',
+                        'targetState' => '$.trigger.targetState',
+                        'statuses' => [
+                            'Open' => ['Draft', 'Active'],
+                            'Closed' => ['Done'],
+                        ],
+                        'transitions' => [
+                            'Draft' => ['Active'],
+                            'Active' => ['Done'],
+                        ],
+                        'stateRules' => [],
+                    ],
+                    'outputs' => [
+                        ['port' => 'on_transition', 'target' => 'end1'],
+                    ],
+                ],
+                'end1' => ['type' => 'end', 'config' => [], 'outputs' => []],
+            ],
+        ]);
+
+        $result = $this->engine->startWorkflow($slug, [
+            'currentState' => 'Draft',
+            'targetState' => 'Active',
+        ]);
+
+        $this->assertTrue($result->isSuccess());
+        $instanceId = $result->data['instanceId'];
+        $instance = $this->instancesTable->get($instanceId);
+        $this->assertSame(WorkflowInstance::STATUS_COMPLETED, $instance->status);
+
+        // Verify the state machine stored its result in context
+        $ctx = $instance->context;
+        $this->assertTrue($ctx['nodes']['sm1']['result']['success']);
+        $this->assertSame('Active', $ctx['nodes']['sm1']['result']['toState']);
+        $this->assertSame('Open', $ctx['nodes']['sm1']['result']['toStatus']);
+    }
+
+    public function testStateMachineNodeInvalidTransition(): void
+    {
+        $slug = 'sm-invalid-' . uniqid();
+        $this->createWorkflow($slug, [
+            'nodes' => [
+                'trigger1' => ['type' => 'trigger', 'config' => [], 'outputs' => [['port' => 'default', 'target' => 'sm1']]],
+                'sm1' => [
+                    'type' => 'stateMachine',
+                    'config' => [
+                        'currentState' => '$.trigger.currentState',
+                        'targetState' => '$.trigger.targetState',
+                        'statuses' => ['Open' => ['Draft', 'Active'], 'Closed' => ['Done']],
+                        'transitions' => ['Draft' => ['Active'], 'Active' => ['Done']],
+                        'stateRules' => [],
+                    ],
+                    'outputs' => [
+                        ['port' => 'on_invalid', 'target' => 'end1'],
+                    ],
+                ],
+                'end1' => ['type' => 'end', 'config' => [], 'outputs' => []],
+            ],
+        ]);
+
+        $result = $this->engine->startWorkflow($slug, [
+            'currentState' => 'Draft',
+            'targetState' => 'Done',
+        ]);
+
+        $this->assertTrue($result->isSuccess());
+        $instanceId = $result->data['instanceId'];
+        $instance = $this->instancesTable->get($instanceId);
+        $this->assertSame(WorkflowInstance::STATUS_COMPLETED, $instance->status);
+
+        // Verify the invalid port was taken
+        $ctx = $instance->context;
+        $this->assertFalse($ctx['nodes']['sm1']['result']['success']);
+        $this->assertSame('on_invalid', $ctx['nodes']['sm1']['port']);
+    }
+
+    public function testStateMachineNodeMissingStatesFiresOnInvalid(): void
+    {
+        $slug = 'sm-nostate-' . uniqid();
+        $this->createWorkflow($slug, [
+            'nodes' => [
+                'trigger1' => ['type' => 'trigger', 'config' => [], 'outputs' => [['port' => 'default', 'target' => 'sm1']]],
+                'sm1' => [
+                    'type' => 'stateMachine',
+                    'config' => [
+                        'statuses' => [],
+                        'transitions' => [],
+                        'stateRules' => [],
+                    ],
+                    'outputs' => [
+                        ['port' => 'on_invalid', 'target' => 'end1'],
+                    ],
+                ],
+                'end1' => ['type' => 'end', 'config' => [], 'outputs' => []],
+            ],
+        ]);
+
+        // No currentState/targetState in trigger
+        $result = $this->engine->startWorkflow($slug, []);
+
+        $this->assertTrue($result->isSuccess());
+        $instanceId = $result->data['instanceId'];
+        $instance = $this->instancesTable->get($instanceId);
+        $this->assertSame(WorkflowInstance::STATUS_COMPLETED, $instance->status);
+    }
 }

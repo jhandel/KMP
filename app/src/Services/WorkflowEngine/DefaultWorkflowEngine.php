@@ -9,6 +9,7 @@ use App\Model\Entity\WorkflowExecutionLog;
 use App\Model\Entity\WorkflowInstance;
 use App\Services\ServiceResult;
 use App\Services\WorkflowEngine\Conditions\CoreConditions;
+use App\Services\WorkflowEngine\StateMachine\StateMachineHandler;
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use Cake\Core\ContainerInterface;
@@ -532,6 +533,10 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                         $this->executeLoopNode($instance, $nodeId, $node, $log, $definition);
                         break;
 
+                    case 'forEach':
+                        $this->executeForEachNode($instance, $nodeId, $node, $log, $definition);
+                        break;
+
                     case 'delay':
                         $this->executeDelayNode($instance, $nodeId, $node, $log);
                         break;
@@ -542,6 +547,10 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
                     case 'subworkflow':
                         $this->executeSubworkflowNode($instance, $nodeId, $node, $log);
+                        break;
+
+                    case 'stateMachine':
+                        $this->executeStateMachineNode($instance, $nodeId, $node, $log, $definition);
                         break;
 
                     default:
@@ -950,6 +959,112 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     }
 
     /**
+     * Execute a forEach node — iterates over a collection, executing child nodes per item.
+     *
+     * Output ports: 'iterate' (per item), 'complete' (after all), 'error' (on failure).
+     */
+    protected function executeForEachNode(
+        WorkflowInstance $instance,
+        string $nodeId,
+        array $node,
+        WorkflowExecutionLog $log,
+        array $definition,
+    ): void {
+        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
+        $context = $instance->context ?? [];
+        $config = $node['config'] ?? [];
+
+        $collectionPath = $config['collection'] ?? '';
+        $itemVariable = $config['itemVariable'] ?? 'currentItem';
+        $indexVariable = $config['indexVariable'] ?? 'currentIndex';
+        $continueOnError = !empty($config['continueOnError']);
+
+        // Resolve collection from context
+        $collection = $collectionPath ? $this->resolveContextValue($context, $collectionPath) : null;
+
+        if (!is_array($collection)) {
+            $collection = [];
+        }
+
+        $processed = 0;
+        $errors = [];
+        $results = [];
+
+        foreach ($collection as $index => $item) {
+            // Set iteration variables in context
+            $context[$itemVariable] = $item;
+            $context[$indexVariable] = $index;
+            $instance->context = $context;
+
+            try {
+                // Execute child nodes connected to 'iterate' output port
+                $iterateTargets = $this->getNodeOutputTargets($definition, $nodeId, 'iterate');
+                foreach ($iterateTargets as $targetNodeId) {
+                    $this->executeNode($instance, $targetNodeId, $definition);
+                }
+
+                // Capture any result stored by child nodes for this iteration
+                $iterationResult = $instance->context['nodes'][$nodeId . '_iteration'] ?? null;
+                $results[] = $iterationResult;
+                $processed++;
+
+                // Re-read context after child execution (children may have mutated it)
+                $context = $instance->context ?? [];
+            } catch (Throwable $e) {
+                $errors[] = [
+                    'index' => $index,
+                    'message' => $e->getMessage(),
+                ];
+
+                if (!$continueOnError) {
+                    // Store partial results, log failure, and fire error port
+                    $context['forEach'][$nodeId] = [
+                        'processed' => $processed,
+                        'errors' => $errors,
+                        'results' => $results,
+                    ];
+                    $instance->context = $context;
+
+                    $log->status = WorkflowExecutionLog::STATUS_FAILED;
+                    $log->error_message = "forEach failed at index {$index}: " . $e->getMessage();
+                    $log->output_data = $context['forEach'][$nodeId];
+                    $log->completed_at = DateTime::now();
+                    $logsTable->save($log);
+
+                    $this->removeFromActiveNodes($instance, $nodeId);
+                    $this->advanceToOutputs($instance, $nodeId, 'error', $definition);
+
+                    return;
+                }
+
+                // continueOnError: re-read context and keep going
+                $context = $instance->context ?? [];
+                $results[] = null;
+                $processed++;
+            }
+        }
+
+        // Clean up iteration variables from context
+        unset($context[$itemVariable], $context[$indexVariable]);
+
+        // Store aggregated results
+        $context['forEach'][$nodeId] = [
+            'processed' => $processed,
+            'errors' => $errors,
+            'results' => $results,
+        ];
+        $instance->context = $context;
+
+        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+        $log->output_data = $context['forEach'][$nodeId];
+        $log->completed_at = DateTime::now();
+        $logsTable->save($log);
+
+        $this->removeFromActiveNodes($instance, $nodeId);
+        $this->advanceToOutputs($instance, $nodeId, 'complete', $definition);
+    }
+
+    /**
      * Execute a delay node — sets instance to WAITING for later resumption.
      */
     protected function executeDelayNode(
@@ -1064,6 +1179,126 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         $instance->status = WorkflowInstance::STATUS_WAITING;
         $this->updateInstance($instance, []);
+    }
+
+    /**
+     * Execute a state machine node — validates and applies a state transition
+     * with configurable rules, status resolution, and audit logging.
+     */
+    protected function executeStateMachineNode(
+        WorkflowInstance $instance,
+        string $nodeId,
+        array $node,
+        WorkflowExecutionLog $log,
+        array $definition,
+    ): void {
+        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
+        $context = $instance->context ?? [];
+        $config = $node['config'] ?? [];
+
+        $handler = $this->container->has(StateMachineHandler::class)
+            ? $this->container->get(StateMachineHandler::class)
+            : new StateMachineHandler();
+
+        // Read current and target states from context
+        $stateField = $config['stateField'] ?? 'state';
+        $statusField = $config['statusField'] ?? 'status';
+
+        $targetState = $this->resolveParamValue(
+            $config['targetState'] ?? '$.trigger.targetState',
+            $context,
+        );
+        $currentState = $this->resolveParamValue(
+            $config['currentState'] ?? '$.trigger.currentState',
+            $context,
+        );
+
+        if (!$targetState || !$currentState) {
+            $log->status = WorkflowExecutionLog::STATUS_FAILED;
+            $log->error_message = 'State machine node requires both currentState and targetState.';
+            $log->completed_at = DateTime::now();
+            $logsTable->save($log);
+
+            $this->removeFromActiveNodes($instance, $nodeId);
+            $this->advanceToOutputs($instance, $nodeId, 'on_invalid', $definition);
+
+            return;
+        }
+
+        // Build entity data from context
+        $entityData = $context['trigger']['entityData'] ?? $context['trigger'] ?? [];
+
+        // Execute the transition
+        $result = $handler->executeTransition($entityData, (string)$currentState, (string)$targetState, $config);
+
+        if (!$result['success']) {
+            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->output_data = [
+                'success' => false,
+                'error' => $result['error'],
+                'missingFields' => $result['missingFields'] ?? [],
+            ];
+            $log->completed_at = DateTime::now();
+            $logsTable->save($log);
+
+            $context['nodes'][$nodeId] = [
+                'result' => $log->output_data,
+                'port' => 'on_invalid',
+            ];
+            $instance->context = $context;
+
+            $this->removeFromActiveNodes($instance, $nodeId);
+            $this->advanceToOutputs($instance, $nodeId, 'on_invalid', $definition);
+
+            return;
+        }
+
+        // Resolve statuses for audit log
+        $statuses = $config['statuses'] ?? [];
+        $fromStatus = $handler->resolveStatus((string)$currentState, $statuses) ?? '';
+        $toStatus = $result['newStatus'] ?? '';
+
+        // Create audit log entry if configured
+        $auditConfig = $config['auditLog'] ?? [];
+        if (!empty($auditConfig['table'])) {
+            $entityId = (int)($context['trigger']['entity_id'] ?? $context['trigger']['id'] ?? 0);
+            $userId = $instance->started_by;
+            $handler->createAuditLog(
+                $auditConfig,
+                (string)$currentState,
+                (string)$targetState,
+                $fromStatus,
+                $toStatus,
+                $entityId,
+                $userId,
+            );
+        }
+
+        // Store result in context
+        $outputData = [
+            'success' => true,
+            'fromState' => $currentState,
+            'toState' => $targetState,
+            'fromStatus' => $fromStatus,
+            'toStatus' => $toStatus,
+            'entityData' => $result['entityData'],
+        ];
+
+        $context['nodes'][$nodeId] = ['result' => $outputData];
+        $context['trigger']['entityData'] = $result['entityData'];
+        $instance->context = $context;
+
+        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+        $log->output_data = $outputData;
+        $log->completed_at = DateTime::now();
+        $logsTable->save($log);
+
+        $this->removeFromActiveNodes($instance, $nodeId);
+
+        // Fire state-specific port, then generic on_transition
+        $statePort = 'on_enter_' . strtolower(str_replace(' ', '_', (string)$targetState));
+        $this->advanceToOutputs($instance, $nodeId, $statePort, $definition);
+        $this->advanceToOutputs($instance, $nodeId, 'on_transition', $definition);
     }
 
     // -------------------------------------------------------------------------

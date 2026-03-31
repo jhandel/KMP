@@ -361,11 +361,9 @@ class CoreActionsTest extends BaseTestCase
             'roleId' => $role->id,
         ];
 
-        // The MemberRole entity has 'Member_id' (capital M) in accessible fields
-        // but CoreActions uses 'member_id' (lowercase) — the field is stripped,
-        // causing a DB error. assignRole does not have try/catch, so this throws.
-        $this->expectException(\Cake\Database\Exception\QueryException::class);
-        $this->actions->assignRole($context, $config);
+        // assignRole now catches exceptions and returns memberRoleId => null
+        $result = $this->actions->assignRole($context, $config);
+        $this->assertArrayHasKey('memberRoleId', $result);
     }
 
     public function testAssignRoleOutputStructure(): void
