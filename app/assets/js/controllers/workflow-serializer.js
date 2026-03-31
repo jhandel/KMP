@@ -18,6 +18,7 @@ export default class WorkflowSerializer {
             case 'fork': return { inputs: 1, outputs: 2 }
             case 'join': return { inputs: 2, outputs: 1 }
             case 'loop': return { inputs: 1, outputs: 2 }
+            case 'forEach': return { inputs: 1, outputs: 3 }
             case 'delay': return { inputs: 1, outputs: 1 }
             case 'subworkflow': return { inputs: 1, outputs: 1 }
             case 'end': return { inputs: 1, outputs: 0 }
@@ -32,6 +33,7 @@ export default class WorkflowSerializer {
             condition: ['true', 'false'],
             approval: ['approved', 'rejected', 'on_each_approval'],
             loop: ['continue', 'exit'],
+            forEach: ['iterate', 'complete', 'error'],
             fork: ['path-1', 'path-2', 'path-3', 'path-4'],
             delay: ['default'],
             join: ['default'],
@@ -45,12 +47,12 @@ export default class WorkflowSerializer {
         const icons = {
             trigger: 'fa-bolt', action: 'fa-gear', condition: 'fa-diamond',
             approval: 'fa-check-double', fork: 'fa-code-branch', join: 'fa-code-merge',
-            loop: 'fa-rotate', delay: 'fa-clock', subworkflow: 'fa-sitemap', end: 'fa-stop'
+            loop: 'fa-rotate', forEach: 'fa-list-ol', delay: 'fa-clock', subworkflow: 'fa-sitemap', end: 'fa-stop'
         }
         const typeLabels = {
             trigger: 'Trigger', action: 'Action', condition: 'Condition',
             approval: 'Approval', fork: 'Parallel Fork', join: 'Parallel Join',
-            loop: 'Loop', delay: 'Delay', subworkflow: 'Sub-workflow', end: 'End'
+            loop: 'Loop', forEach: 'For Each', delay: 'Delay', subworkflow: 'Sub-workflow', end: 'End'
         }
 
         const icon = icons[type] || 'fa-circle'
@@ -82,6 +84,13 @@ export default class WorkflowSerializer {
             portLabelsHtml = `<div class="wf-port-labels">
                 <span class="wf-port-label wf-port-label-yes">${pair[0]}</span>
                 <span class="wf-port-label wf-port-label-no">${pair[1]}</span>
+            </div>`
+        }
+        if (type === 'forEach') {
+            portLabelsHtml = `<div class="wf-port-labels">
+                <span class="wf-port-label wf-port-label-yes">Iterate</span>
+                <span class="wf-port-label wf-port-label-no">Complete</span>
+                <span class="wf-port-label wf-port-label-mid">Error</span>
             </div>`
         }
         if (type === 'approval') {

@@ -23,7 +23,7 @@ export default class WorkflowConfigPanel {
         const typeLabels = {
             trigger: 'Trigger', action: 'Action', condition: 'Condition',
             approval: 'Approval Gate', fork: 'Parallel Fork', join: 'Parallel Join',
-            loop: 'Loop', delay: 'Delay', subworkflow: 'Sub-workflow', end: 'End'
+            loop: 'Loop', forEach: 'For Each', delay: 'Delay', subworkflow: 'Sub-workflow', end: 'End'
         }
         let html = `
             <div class="config-panel-header">
@@ -64,6 +64,7 @@ export default class WorkflowConfigPanel {
             case 'approval': return this._approvalHTML(config)
             case 'delay': return this._delayHTML(config)
             case 'loop': return this._loopHTML(config)
+            case 'forEach': return this._forEachHTML(config)
             case 'subworkflow': return this._subworkflowHTML(config)
             case 'fork': return this._forkHTML(config)
             case 'join': return this._joinHTML(config)
@@ -400,6 +401,37 @@ export default class WorkflowConfigPanel {
         `<div class="mb-3">
             <label class="form-label">Exit Condition</label>
             <input type="text" class="form-control form-control-sm" name="exitCondition" value="${config.exitCondition || ''}" placeholder="Expression to evaluate" data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+        </div>`
+    }
+
+    _forEachHTML(config) {
+        return `<div class="mb-3">
+            <label class="form-label">Collection Path</label>
+            <input type="text" class="form-control form-control-sm" name="collection"
+                value="${config.collection || ''}" placeholder="e.g. $.roster.warrants"
+                data-action="change->workflow-designer#updateNodeConfig" data-variable-picker="true">
+            <small class="form-text text-muted">Context path to the array to iterate over</small>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Item Variable</label>
+            <input type="text" class="form-control form-control-sm" name="itemVariable"
+                value="${config.itemVariable || 'currentItem'}" placeholder="currentItem"
+                data-action="change->workflow-designer#updateNodeConfig">
+            <small class="form-text text-muted">Context variable name for the current item</small>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Index Variable</label>
+            <input type="text" class="form-control form-control-sm" name="indexVariable"
+                value="${config.indexVariable || 'currentIndex'}" placeholder="currentIndex"
+                data-action="change->workflow-designer#updateNodeConfig">
+            <small class="form-text text-muted">Context variable name for the current index</small>
+        </div>
+        <div class="form-check mb-3">
+            <input type="checkbox" class="form-check-input" name="continueOnError"
+                id="forEach-continueOnError" ${config.continueOnError ? 'checked' : ''}
+                data-action="change->workflow-designer#updateNodeConfig">
+            <label class="form-check-label" for="forEach-continueOnError">Continue on Error</label>
+            <div><small class="form-text text-muted">If checked, errors are logged but processing continues</small></div>
         </div>`
     }
 

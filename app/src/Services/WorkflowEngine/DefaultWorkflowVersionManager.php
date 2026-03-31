@@ -225,6 +225,14 @@ class DefaultWorkflowVersionManager implements WorkflowVersionManagerInterface
             }
         }
 
+        // ForEach nodes must have a collection path configured
+        $forEachNodes = array_filter($nodes, fn($node) => ($node['type'] ?? '') === 'forEach');
+        foreach ($forEachNodes as $key => $node) {
+            if (empty($node['config']['collection'])) {
+                $errors[] = "ForEach node '{$key}' must have a collection path configured.";
+            }
+        }
+
         // Cycle detection: find back-edges via DFS (loops are allowed via 'continue' port)
         if ($triggerKey !== null) {
             $cycles = $this->detectCycles($triggerKey, $nodes);

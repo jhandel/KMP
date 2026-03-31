@@ -268,6 +268,7 @@ class WorkflowDesignerController extends Controller {
             { type: 'fork', label: 'Parallel Fork', icon: 'fa-code-branch' },
             { type: 'join', label: 'Parallel Join', icon: 'fa-code-merge' },
             { type: 'loop', label: 'Loop', icon: 'fa-rotate' },
+            { type: 'forEach', label: 'For Each', icon: 'fa-list-ol' },
             { type: 'delay', label: 'Delay / Wait', icon: 'fa-clock' },
             { type: 'end', label: 'End', icon: 'fa-stop' },
         ]

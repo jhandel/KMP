@@ -33,6 +33,7 @@ export default class WorkflowValidationService {
         this._validateTriggerCount(nodes, errors)
         this._validateEndNodes(nodes, errors)
         this._validateLoopNodes(nodes, errors)
+        this._validateForEachNodes(nodes, errors)
         this._validateConnections(nodes, errors, warnings)
         this._validateReachability(nodes, errors)
         this._validateRequiredParams(nodes, errors)
@@ -61,6 +62,15 @@ export default class WorkflowValidationService {
             const max = n.data?.config?.maxIterations
             if (!max || parseInt(max, 10) <= 0) {
                 errors.push(`Loop node #${id} must have maxIterations set to a positive number.`)
+            }
+        })
+    }
+
+    _validateForEachNodes(nodes, errors) {
+        nodes.filter(([, n]) => n.data?.type === 'forEach').forEach(([id, n]) => {
+            const collection = n.data?.config?.collection
+            if (!collection) {
+                errors.push(`ForEach node #${id} must have a collection path configured.`)
             }
         })
     }

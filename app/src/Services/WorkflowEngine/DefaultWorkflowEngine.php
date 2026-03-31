@@ -7,6 +7,7 @@ namespace App\Services\WorkflowEngine;
 use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WorkflowExecutionLog;
 use App\Model\Entity\WorkflowInstance;
+use App\Model\Entity\WorkflowTask;
 use App\Services\ServiceResult;
 use App\Services\WorkflowEngine\Conditions\CoreConditions;
 use App\Services\WorkflowEngine\StateMachine\StateMachineHandler;
@@ -553,6 +554,10 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                         $this->executeStateMachineNode($instance, $nodeId, $node, $log, $definition);
                         break;
 
+                    case 'humanTask':
+                        $this->executeHumanTaskNode($instance, $nodeId, $node, $log);
+                        break;
+
                     default:
                         $log->status = WorkflowExecutionLog::STATUS_FAILED;
                         $log->error_message = "Unknown node type: {$nodeType}";
@@ -855,6 +860,230 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     }
 
     /**
+     * Execute a humanTask node — creates a task record and pauses the workflow.
+     *
+     * The workflow remains in WAITING status until completeHumanTask() is
+     * called with the submitted form data.
+     */
+    protected function executeHumanTaskNode(
+        WorkflowInstance $instance,
+        string $nodeId,
+        array $node,
+        WorkflowExecutionLog $log,
+    ): void {
+        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
+        $tasksTable = TableRegistry::getTableLocator()->get('WorkflowTasks');
+
+        $config = $node['config'] ?? [];
+        $instanceContext = $instance->context ?? [];
+
+        // Resolve assignTo — may be a $.path or a literal member ID
+        $assignedTo = null;
+        if (!empty($config['assignTo'])) {
+            $resolved = $this->resolveParamValue($config['assignTo'], $instanceContext);
+            if ($resolved !== null) {
+                $assignedTo = (int)$resolved;
+            }
+        }
+
+        // Resolve assignByRole — permission name for role-based assignment
+        $assignedByRole = $config['assignByRole'] ?? null;
+
+        // Resolve task title
+        $taskTitle = $config['taskTitle'] ?? null;
+        if (is_string($taskTitle) && str_starts_with($taskTitle, '$.')) {
+            $taskTitle = $this->resolveParamValue($taskTitle, $instanceContext);
+        }
+
+        // Build form definition from config
+        $formFields = $config['formFields'] ?? [];
+
+        // Parse due date
+        $dueDate = null;
+        if (!empty($config['dueDate'])) {
+            $dueDateValue = $config['dueDate'];
+            // Support "=$.now + 7 days" style expressions
+            if (is_string($dueDateValue) && preg_match('/^\s*=?\s*\$\.now\s*\+\s*(\d+)\s*(days?|hours?|minutes?)\s*$/i', $dueDateValue, $matches)) {
+                $amount = (int)$matches[1];
+                $unit = strtolower($matches[2]);
+                // Normalise singular
+                if (!str_ends_with($unit, 's')) {
+                    $unit .= 's';
+                }
+                $dueDate = DateTime::now()->modify("+{$amount} {$unit}");
+            } elseif (is_string($dueDateValue)) {
+                // Try as a duration string (e.g. "7d")
+                $dueDate = $this->parseDeadline($dueDateValue);
+            }
+        }
+
+        $task = $tasksTable->newEntity([
+            'workflow_instance_id' => $instance->id,
+            'node_id' => $nodeId,
+            'assigned_to' => $assignedTo,
+            'assigned_by_role' => $assignedByRole,
+            'task_title' => $taskTitle,
+            'form_definition' => $formFields,
+            'form_data' => null,
+            'status' => WorkflowTask::STATUS_PENDING,
+            'due_date' => $dueDate,
+        ]);
+
+        if ($task->getErrors()) {
+            Log::error('WorkflowTask entity validation errors: ' . json_encode($task->getErrors()));
+        }
+        if (!$tasksTable->save($task)) {
+            Log::error('Failed to save workflow task for node ' . $nodeId . ': ' . json_encode($task->getErrors()));
+        }
+
+        // Store task ID in context for later reference
+        $context = $instance->context ?? [];
+        if (!isset($context['nodes'])) {
+            $context['nodes'] = [];
+        }
+        $context['nodes'][$nodeId] = [
+            'taskId' => $task->id,
+            'status' => 'pending',
+        ];
+        $instance->context = $context;
+
+        // Set log to WAITING
+        $log->status = WorkflowExecutionLog::STATUS_WAITING;
+        $log->output_data = ['taskId' => $task->id];
+        $logsTable->save($log);
+
+        // Pause workflow
+        $instance->status = WorkflowInstance::STATUS_WAITING;
+        $this->updateInstance($instance, []);
+    }
+
+    /**
+     * Complete a human task and resume the workflow.
+     *
+     * Validates required form fields, saves form data to the task record,
+     * merges values into the workflow context via contextMapping, and
+     * resumes the workflow from the humanTask node's default output.
+     *
+     * @param int $taskId The workflow_tasks.id to complete
+     * @param array $formData Submitted form field values
+     * @param int $completedBy Member ID of the user completing the task
+     * @return \App\Services\ServiceResult
+     */
+    public function completeHumanTask(int $taskId, array $formData, int $completedBy): ServiceResult
+    {
+        return $this->executeInTransaction(function () use ($taskId, $formData, $completedBy) {
+            $tasksTable = TableRegistry::getTableLocator()->get('WorkflowTasks');
+
+            $task = $tasksTable->find()
+                ->where(['WorkflowTasks.id' => $taskId])
+                ->first();
+
+            if (!$task) {
+                return new ServiceResult(false, "Task #{$taskId} not found.");
+            }
+
+            if ($task->status !== WorkflowTask::STATUS_PENDING) {
+                return new ServiceResult(false, "Task #{$taskId} is no longer pending (status: {$task->status}).");
+            }
+
+            // Check if the task has expired
+            if ($task->due_date !== null && $task->due_date->isPast()) {
+                $task->status = WorkflowTask::STATUS_EXPIRED;
+                $tasksTable->save($task);
+
+                return new ServiceResult(false, "Task #{$taskId} has expired.");
+            }
+
+            // Validate required form fields
+            $formDefinition = $task->form_definition ?? [];
+            $missingFields = [];
+            foreach ($formDefinition as $field) {
+                $fieldName = $field['name'] ?? null;
+                $required = $field['required'] ?? false;
+                if ($required && $fieldName) {
+                    if (!array_key_exists($fieldName, $formData) || $formData[$fieldName] === null || $formData[$fieldName] === '') {
+                        $missingFields[] = $fieldName;
+                    }
+                }
+            }
+            if (!empty($missingFields)) {
+                return new ServiceResult(false, 'Missing required fields: ' . implode(', ', $missingFields));
+            }
+
+            // Save completion data
+            $task->form_data = $formData;
+            $task->status = WorkflowTask::STATUS_COMPLETED;
+            $task->completed_at = DateTime::now();
+            $task->completed_by = $completedBy;
+            $tasksTable->save($task);
+
+            // Load the workflow instance to merge context
+            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+            $instance = $instancesTable->get($task->workflow_instance_id, contain: ['WorkflowVersions']);
+            $definition = $instance->workflow_version->definition;
+
+            // Apply contextMapping from the node config
+            $nodeConfig = $definition['nodes'][$task->node_id]['config'] ?? [];
+            $contextMapping = $nodeConfig['contextMapping'] ?? [];
+
+            $context = $instance->context ?? [];
+
+            // Put raw form data under $.task for mapping resolution
+            $context['task'] = $formData;
+
+            foreach ($contextMapping as $formField => $contextPath) {
+                $value = $formData[$formField] ?? null;
+                if ($contextPath && $value !== null) {
+                    $this->setContextValue($context, $contextPath, $value);
+                }
+            }
+
+            // Remove temporary task key
+            unset($context['task']);
+
+            $instance->context = $context;
+            $this->updateInstance($instance, []);
+
+            // Resume the workflow from the humanTask node
+            return $this->resumeWorkflow(
+                $task->workflow_instance_id,
+                $task->node_id,
+                'default',
+                ['taskId' => $taskId, 'formData' => $formData, 'completedBy' => $completedBy],
+            );
+        }, 'completeHumanTask');
+    }
+
+    /**
+     * Cancel a pending human task without resuming the workflow.
+     *
+     * @param int $taskId The workflow_tasks.id to cancel
+     * @param string|null $reason Optional cancellation reason
+     * @return \App\Services\ServiceResult
+     */
+    public function cancelHumanTask(int $taskId, ?string $reason = null): ServiceResult
+    {
+        $tasksTable = TableRegistry::getTableLocator()->get('WorkflowTasks');
+
+        $task = $tasksTable->find()
+            ->where(['WorkflowTasks.id' => $taskId])
+            ->first();
+
+        if (!$task) {
+            return new ServiceResult(false, "Task #{$taskId} not found.");
+        }
+
+        if ($task->status !== WorkflowTask::STATUS_PENDING) {
+            return new ServiceResult(false, "Task #{$taskId} is no longer pending.");
+        }
+
+        $task->status = WorkflowTask::STATUS_CANCELLED;
+        $tasksTable->save($task);
+
+        return new ServiceResult(true, null, ['taskId' => $taskId]);
+    }
+
+    /**
      * Execute a fork node — marks complete and executes all output targets.
      */
     protected function executeForkNode(
@@ -986,11 +1215,24 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $collection = [];
         }
 
+        // Collect all descendant node IDs reachable from iterate targets
+        // so we can clear their visited state between iterations
+        $iterateTargets = $this->getNodeOutputTargets($definition, $nodeId, 'iterate');
+        $iterateDescendants = [];
+        foreach ($iterateTargets as $targetId) {
+            $this->collectDescendants($definition, $targetId, $iterateDescendants);
+        }
+
         $processed = 0;
         $errors = [];
         $results = [];
 
         foreach ($collection as $index => $item) {
+            // Clear visited state for iterate descendants so they can execute again
+            foreach ($iterateDescendants as $descendantId => $_) {
+                unset($this->visitedNodes[$descendantId]);
+            }
+
             // Set iteration variables in context
             $context[$itemVariable] = $item;
             $context[$indexVariable] = $index;
@@ -998,7 +1240,6 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
             try {
                 // Execute child nodes connected to 'iterate' output port
-                $iterateTargets = $this->getNodeOutputTargets($definition, $nodeId, 'iterate');
                 foreach ($iterateTargets as $targetNodeId) {
                     $this->executeNode($instance, $targetNodeId, $definition);
                 }
@@ -1016,14 +1257,26 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                     'message' => $e->getMessage(),
                 ];
 
+                // Clean up failed iterate descendants from active_nodes
+                foreach ($iterateDescendants as $descId => $_) {
+                    $this->removeFromActiveNodes($instance, $descId);
+                }
+
                 if (!$continueOnError) {
                     // Store partial results, log failure, and fire error port
+                    $context = $instance->context ?? [];
                     $context['forEach'][$nodeId] = [
                         'processed' => $processed,
                         'errors' => $errors,
                         'results' => $results,
                     ];
                     $instance->context = $context;
+
+                    // Restore instance to running so error port can continue execution
+                    $instance->status = WorkflowInstance::STATUS_RUNNING;
+                    $instance->completed_at = null;
+                    $instance->error_info = null;
+                    $this->updateInstance($instance, []);
 
                     $log->status = WorkflowExecutionLog::STATUS_FAILED;
                     $log->error_message = "forEach failed at index {$index}: " . $e->getMessage();
@@ -1032,12 +1285,27 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                     $logsTable->save($log);
 
                     $this->removeFromActiveNodes($instance, $nodeId);
+
+                    // Clear visited state for error port descendants
+                    $errorTargets = $this->getNodeOutputTargets($definition, $nodeId, 'error');
+                    foreach ($errorTargets as $errTargetId) {
+                        $errDescendants = [];
+                        $this->collectDescendants($definition, $errTargetId, $errDescendants);
+                        foreach ($errDescendants as $descId => $_) {
+                            unset($this->visitedNodes[$descId]);
+                        }
+                    }
+
                     $this->advanceToOutputs($instance, $nodeId, 'error', $definition);
 
                     return;
                 }
 
-                // continueOnError: re-read context and keep going
+                // continueOnError: restore instance status and keep going
+                $instance->status = WorkflowInstance::STATUS_RUNNING;
+                $instance->completed_at = null;
+                $instance->error_info = null;
+                $this->updateInstance($instance, []);
                 $context = $instance->context ?? [];
                 $results[] = null;
                 $processed++;
@@ -1061,7 +1329,34 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $logsTable->save($log);
 
         $this->removeFromActiveNodes($instance, $nodeId);
+
+        // Clear visited state for complete port descendants (may overlap with iterate descendants)
+        $completeTargets = $this->getNodeOutputTargets($definition, $nodeId, 'complete');
+        foreach ($completeTargets as $targetId) {
+            $descendants = [];
+            $this->collectDescendants($definition, $targetId, $descendants);
+            foreach ($descendants as $descId => $_) {
+                unset($this->visitedNodes[$descId]);
+            }
+        }
+
         $this->advanceToOutputs($instance, $nodeId, 'complete', $definition);
+    }
+
+    /**
+     * Collect all descendant node IDs reachable from a starting node.
+     */
+    protected function collectDescendants(array $definition, string $nodeId, array &$collected): void
+    {
+        if (isset($collected[$nodeId])) {
+            return;
+        }
+        $collected[$nodeId] = true;
+
+        $targets = $this->getAllOutputTargets($definition, $nodeId);
+        foreach ($targets as $targetId) {
+            $this->collectDescendants($definition, $targetId, $collected);
+        }
     }
 
     /**
