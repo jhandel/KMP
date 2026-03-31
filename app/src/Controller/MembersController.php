@@ -46,6 +46,7 @@ class MembersController extends AppController
     use QueuedMailerAwareTrait;
     use MailerAwareTrait;
     use DataverseGridTrait;
+    use WorkflowDispatchTrait;
 
     /**
      * @var array<string> Service injection configuration
@@ -1085,27 +1086,42 @@ class MembersController extends AppController
             } else {
                 $member->status = Member::STATUS_ACTIVE;
             }
-            if ($this->Members->save($member)) {
-                if ($member->age < 18) {
-                    $this->Flash->success(__(
-                        'The Member has been saved and the minor '
-                        . 'registration email has been sent for '
-                        . 'verification.',
-                    ));
-                    $this->getMailer('KMP')->send('notifySecretaryOfNewMinorMember', [$member]);
-                } else {
-                    $this->Flash->success(__(
-                        'The Member has been saved. Please ask the '
-                        . "member to use 'forgot password' to set "
-                        . 'their password.',
-                    ));
-                }
+            $addResult = $this->dispatchOrLegacy(
+                'member-registration',
+                'Members.Registered',
+                [
+                    'member' => $member->toArray(),
+                    'form_data' => $this->request->getData(),
+                ],
+                function () use ($member) {
+                    if ($this->Members->save($member)) {
+                        if ($member->age < 18) {
+                            $this->Flash->success(__(
+                                'The Member has been saved and the minor '
+                                . 'registration email has been sent for '
+                                . 'verification.',
+                            ));
+                            $this->getMailer('KMP')->send('notifySecretaryOfNewMinorMember', [$member]);
+                        } else {
+                            $this->Flash->success(__(
+                                'The Member has been saved. Please ask the '
+                                . "member to use 'forgot password' to set "
+                                . 'their password.',
+                            ));
+                        }
 
-                return $this->redirect(['action' => 'view', $member->id]);
-            }
-            $this->Flash->error(
-                __('The Member could not be saved. Please, try again.'),
+                        return $this->redirect(['action' => 'view', $member->id]);
+                    }
+                    $this->Flash->error(
+                        __('The Member could not be saved. Please, try again.'),
+                    );
+
+                    return null;
+                },
             );
+            if ($addResult instanceof Response) {
+                return $addResult;
+            }
         }
         $months = array_reduce(range(1, 12), function ($rslt, $m) {
             $rslt[$m] = date('F', mktime(0, 0, 0, $m, 10));
@@ -1202,9 +1218,13 @@ class MembersController extends AppController
         }
         $this->Authorization->authorize($member);
 
+        $memberId = (int)$id;
         $member->email_address = 'Deleted: ' . $member->email_address;
         if ($this->Members->delete($member)) {
             $this->Flash->success(__('The Member has been deleted.'));
+            $this->dispatchWorkflowEvent('Members.Deactivated', [
+                'member_id' => $memberId,
+            ]);
         } else {
             $this->Flash->error(
                 __('The Member could not be deleted. Please, try again.'),
@@ -1818,27 +1838,39 @@ class MembersController extends AppController
     {
         $this->Authorization->skipAuthorization();
         if ($this->request->is('post')) {
-            $result = $authService->generatePasswordResetToken(
-                (string)$this->request->getData('email_address'),
-            );
-            if ($result['found']) {
-                $vars = ['url' => $result['resetUrl']];
-                $this->queueMail('KMP', 'resetPassword', $result['email'], $vars);
-                $this->Flash->success(
-                    __(
-                        'Password reset request sent to ' .
-                            $result['email'],
-                    ),
-                );
+            $resetResult = $this->dispatchOrLegacy(
+                'member-password-reset',
+                'Members.PasswordResetRequested',
+                ['email_address' => (string)$this->request->getData('email_address')],
+                function () use ($authService) {
+                    $result = $authService->generatePasswordResetToken(
+                        (string)$this->request->getData('email_address'),
+                    );
+                    if ($result['found']) {
+                        $vars = ['url' => $result['resetUrl']];
+                        $this->queueMail('KMP', 'resetPassword', $result['email'], $vars);
+                        $this->Flash->success(
+                            __(
+                                'Password reset request sent to ' .
+                                    $result['email'],
+                            ),
+                        );
 
-                return $this->redirect(['action' => 'login']);
-            } else {
-                $this->Flash->error(
-                    __(
-                        'Your email was not found, please contact the Marshalate Secretary at ' .
-                            $result['secretaryEmail'],
-                    ),
-                );
+                        return $this->redirect(['action' => 'login']);
+                    } else {
+                        $this->Flash->error(
+                            __(
+                                'Your email was not found, please contact the Marshalate Secretary at ' .
+                                    $result['secretaryEmail'],
+                            ),
+                        );
+                    }
+
+                    return null;
+                },
+            );
+            if ($resetResult instanceof Response) {
+                return $resetResult;
             }
         }
         $headerImage = StaticHelpers::getAppSetting(
@@ -2653,6 +2685,10 @@ class MembersController extends AppController
                 );
                 $this->redirect(['action' => 'view', $member->id]);
             }
+            $this->dispatchWorkflowEvent('Members.MembershipVerified', [
+                'member_id' => $member->id,
+                'verified_by' => $this->Authentication->getIdentity()->getIdentifier(),
+            ]);
             if ($image != null && $deleteImage) {
                 $image = WWW_ROOT . '../images/uploaded/' . $image;
                 $member->membership_card_path = null;
