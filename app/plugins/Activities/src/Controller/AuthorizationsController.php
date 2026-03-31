@@ -18,7 +18,9 @@ namespace Activities\Controller;
 use Activities\Services\AuthorizationManagerInterface;
 use Activities\KMP\GridColumns\MemberAuthorizationsGridColumns;
 use App\Controller\DataverseGridTrait;
+use App\Controller\WorkflowDispatchTrait;
 use App\Services\CsvExportService;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\ORM\Query\SelectQuery;
 use Activities\Model\Entity\Authorization;
 use App\KMP\StaticHelpers;
@@ -27,6 +29,7 @@ use Cake\ORM\TableRegistry;
 class AuthorizationsController extends AppController
 {
     use DataverseGridTrait;
+    use WorkflowDispatchTrait;
 
     /**
      * Run before controller action execution.
@@ -48,7 +51,7 @@ class AuthorizationsController extends AppController
      * @param AuthorizationManagerInterface $maService
      * @param mixed $id
      */
-    public function revoke(AuthorizationManagerInterface $maService, $id = null)
+    public function revoke(AuthorizationManagerInterface $maService, TriggerDispatcher $triggerDispatcher, $id = null)
     {
         $this->request->allowMethod(["post"]);
         if ($id == null) {
@@ -71,6 +74,15 @@ class AuthorizationsController extends AppController
 
             return $this->redirect($this->referer());
         }
+
+        $this->dispatchWorkflowEvent($triggerDispatcher, 'Activities.AuthorizationRevoked', [
+            'authorization_id' => (int)$id,
+            'member_id' => $authorization->member_id,
+            'activity_id' => $authorization->activity_id,
+            'revoked_by' => $revokerId,
+            'revoked_reason' => $revokedReason,
+        ]);
+
         $this->Flash->success(
             __("The authorization revocation has been processed"),
         );
@@ -85,7 +97,7 @@ class AuthorizationsController extends AppController
      * @param string|null $id Authorization ID to retract
      * @return \Cake\Http\Response|null
      */
-    public function retract(AuthorizationManagerInterface $maService, $id = null)
+    public function retract(AuthorizationManagerInterface $maService, TriggerDispatcher $triggerDispatcher, $id = null)
     {
         $this->request->allowMethod(["post"]);
         if ($id == null) {
@@ -109,6 +121,14 @@ class AuthorizationsController extends AppController
 
             return $this->redirect($this->referer());
         }
+
+        $this->dispatchWorkflowEvent($triggerDispatcher, 'Activities.AuthorizationRetracted', [
+            'authorization_id' => $id,
+            'member_id' => $authorization->member_id,
+            'activity_id' => $authorization->activity_id,
+            'retracted_by' => $requesterId,
+        ]);
+
         $this->Flash->success(
             __("Your authorization request has been retracted."),
         );
@@ -128,7 +148,7 @@ class AuthorizationsController extends AppController
      * @param \Activities\Services\AuthorizationManagerInterface $maService Authorization management service
      * @return \Cake\Http\Response|null
      */
-    public function add(AuthorizationManagerInterface $maService)
+    public function add(AuthorizationManagerInterface $maService, TriggerDispatcher $triggerDispatcher)
     {
         $this->request->allowMethod(["post"]);
         $memberId = $this->request->getData("member_id");
@@ -139,30 +159,38 @@ class AuthorizationsController extends AppController
 
         $activity_id = $this->request->getData("activity");
         $approverId = $this->request->getData("approver_id");
-        $is_renewal = false;
-        $maResult = $maService->request(
-            (int) $memberId,
-            (int) $activity_id,
-            (int) $approverId,
-            (bool) $is_renewal,
+
+        $result = $this->dispatchOrLegacy(
+            $triggerDispatcher,
+            'activities-authorization-request',
+            'Activities.AuthorizationRequested',
+            [
+                'member_id' => (int)$memberId,
+                'activity_id' => (int)$activity_id,
+                'approver_id' => (int)$approverId,
+                'renewal' => false,
+            ],
+            function () use ($maService, $memberId, $activity_id, $approverId) {
+                return $maService->request(
+                    (int)$memberId,
+                    (int)$activity_id,
+                    (int)$approverId,
+                    false,
+                );
+            },
         );
-        if ($maResult->success) {
+
+        if (is_array($result)) {
+            // Workflow engine handled the request
             $this->Flash->success(__("The Authorization has been requested."));
-
-            // Redirect to mobile card if request came from mobile interface
-            $mobileRedirect = $this->redirectIfMobileContext((int) $memberId);
-            if ($mobileRedirect !== null) {
-                return $mobileRedirect;
-            }
-
-            return $this->redirect($this->referer());
+        } elseif ($result->success) {
+            $this->Flash->success(__("The Authorization has been requested."));
+        } else {
+            $this->Flash->error(__($result->reason));
         }
-        $this->Flash->error(
-            __($maResult->reason),
-        );
 
         // Redirect to mobile card if request came from mobile interface
-        $mobileRedirect = $this->redirectIfMobileContext((int) $memberId);
+        $mobileRedirect = $this->redirectIfMobileContext((int)$memberId);
         if ($mobileRedirect !== null) {
             return $mobileRedirect;
         }
@@ -176,7 +204,7 @@ class AuthorizationsController extends AppController
      * @param \Activities\Services\AuthorizationManagerInterface $maService Authorization management service
      * @return \Cake\Http\Response|null
      */
-    public function renew(AuthorizationManagerInterface $maService)
+    public function renew(AuthorizationManagerInterface $maService, TriggerDispatcher $triggerDispatcher)
     {
         $this->request->allowMethod(["post"]);
         $memberId = $this->request->getData("member_id");
@@ -190,32 +218,38 @@ class AuthorizationsController extends AppController
 
         $activity_id = $this->request->getData("activity");
         $approverId = $this->request->getData("approver_id");
-        $is_renewal = true;
-        $maResult = $maService->request(
-            (int) $memberId,
-            (int) $activity_id,
-            (int) $approverId,
-            (bool) $is_renewal,
+
+        $result = $this->dispatchOrLegacy(
+            $triggerDispatcher,
+            'activities-authorization-renewal',
+            'Activities.AuthorizationRequested',
+            [
+                'member_id' => (int)$memberId,
+                'activity_id' => (int)$activity_id,
+                'approver_id' => (int)$approverId,
+                'renewal' => true,
+            ],
+            function () use ($maService, $memberId, $activity_id, $approverId) {
+                return $maService->request(
+                    (int)$memberId,
+                    (int)$activity_id,
+                    (int)$approverId,
+                    true,
+                );
+            },
         );
-        if (
-            $maResult->success
-        ) {
+
+        if (is_array($result)) {
+            // Workflow engine handled the renewal
             $this->Flash->success(__("The Authorization has been requested."));
-
-            // Redirect to mobile card if request came from mobile interface
-            $mobileRedirect = $this->redirectIfMobileContext((int) $memberId);
-            if ($mobileRedirect !== null) {
-                return $mobileRedirect;
-            }
-
-            return $this->redirect($this->referer());
+        } elseif ($result->success) {
+            $this->Flash->success(__("The Authorization has been requested."));
+        } else {
+            $this->Flash->error(__($result->reason));
         }
-        $this->Flash->error(
-            __($maResult->reason),
-        );
 
         // Redirect to mobile card if request came from mobile interface
-        $mobileRedirect = $this->redirectIfMobileContext((int) $memberId);
+        $mobileRedirect = $this->redirectIfMobileContext((int)$memberId);
         if ($mobileRedirect !== null) {
             return $mobileRedirect;
         }
