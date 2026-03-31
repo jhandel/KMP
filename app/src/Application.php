@@ -77,6 +77,8 @@ use App\Services\WorkflowEngine\Actions\CoreActions;
 use App\Services\WorkflowEngine\Conditions\CoreConditions;
 use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
 use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\ExpressionEvaluator;
+use App\Services\WorkflowEngine\StateMachine\StateMachineHandler;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
@@ -705,9 +707,20 @@ class Application extends BaseApplication implements
             TriggerDispatcher::class,
         )->addArgument(WorkflowEngineInterface::class);
 
-        // Core workflow actions and conditions (no constructor dependencies)
-        $container->add(CoreActions::class);
-        $container->add(CoreConditions::class);
+        // Expression evaluator for workflow templates, dates, and conditionals
+        $container->add(ExpressionEvaluator::class);
+
+        // Core workflow actions and conditions
+        $container->add(CoreActions::class)
+            ->addArguments([
+                ActiveWindowManagerInterface::class,
+                ExpressionEvaluator::class,
+            ]);
+        $container->add(CoreConditions::class)
+            ->addArgument(ExpressionEvaluator::class);
+
+        // StateMachineHandler — state transition logic for stateMachine nodes
+        $container->add(StateMachineHandler::class);
 
         // WarrantWorkflowActions — workflow actions delegating to WarrantManager
         $container->add(WarrantWorkflowActions::class)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\WorkflowEngine\Conditions;
 
+use App\Services\WorkflowEngine\ExpressionEvaluator;
 use Cake\ORM\TableRegistry;
 
 /**
@@ -11,6 +12,12 @@ use Cake\ORM\TableRegistry;
  */
 class CoreConditions
 {
+    private ExpressionEvaluator $expressionEvaluator;
+
+    public function __construct(?ExpressionEvaluator $expressionEvaluator = null)
+    {
+        $this->expressionEvaluator = $expressionEvaluator ?? new ExpressionEvaluator();
+    }
     /**
      * Check if a context field equals a specific value.
      *
@@ -105,14 +112,23 @@ class CoreConditions
             return false;
         }
 
-        // Match: field operator value
+        // Match: field operator value (with optional expression-evaluated right side)
         $operators = ['>=', '<=', '!=', '==', '>', '<'];
         foreach ($operators as $op) {
             $parts = explode($op, $expression, 2);
             if (count($parts) === 2) {
                 $field = trim($parts[0]);
-                $value = trim($parts[1], " \t\n\r\0\x0B\"'");
+                $rawRight = trim($parts[1]);
+
+                // Resolve left side from context
                 $resolved = self::resolveFieldPath($context, $field);
+
+                // Resolve right side: use ExpressionEvaluator for '=' prefixed values
+                if (str_starts_with($rawRight, '=')) {
+                    $value = $this->expressionEvaluator->evaluate(substr($rawRight, 1), $context);
+                } else {
+                    $value = trim($rawRight, " \t\n\r\0\x0B\"'");
+                }
 
                 return self::compare($resolved, $op, $value);
             }

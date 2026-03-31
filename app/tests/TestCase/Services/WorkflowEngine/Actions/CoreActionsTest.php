@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Test\TestCase\Services\WorkflowEngine\Actions;
 
+use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\WorkflowEngine\Actions\CoreActions;
 use App\Services\WorkflowRegistry\WorkflowEntityRegistry;
 use App\Test\TestCase\BaseTestCase;
@@ -19,7 +20,8 @@ class CoreActionsTest extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->actions = new CoreActions();
+        $awm = $this->createMock(ActiveWindowManagerInterface::class);
+        $this->actions = new CoreActions($awm);
     }
 
     protected function tearDown(): void
