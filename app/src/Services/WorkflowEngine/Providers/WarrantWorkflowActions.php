@@ -298,6 +298,188 @@ class WarrantWorkflowActions
     }
 
     /**
+     * Cancel/revoke a specific warrant by ID.
+     *
+     * Delegates to WarrantManagerInterface::cancel().
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with warrantId, reason, revokerId, expiresOn
+     * @return array Output with revoked boolean
+     */
+    public function revokeWarrant(array $context, array $config): array
+    {
+        try {
+            $warrantId = (int)$this->resolveValue($config['warrantId'], $context);
+            $reason = $this->resolveValue($config['reason'] ?? 'Revoked via workflow', $context);
+            $revokerId = $this->resolveValue($config['revokerId'] ?? null, $context);
+            if (!$revokerId) {
+                $revokerId = $context['triggeredBy'] ?? 0;
+            }
+            $revokerId = (int)$revokerId;
+
+            $expiresOnRaw = $this->resolveValue($config['expiresOn'] ?? null, $context);
+            $expiresOn = $expiresOnRaw instanceof DateTime
+                ? $expiresOnRaw
+                : new DateTime($expiresOnRaw ?? 'now');
+
+            $result = $this->warrantManager->cancel($warrantId, (string)$reason, $revokerId, $expiresOn);
+
+            return ['revoked' => $result->success];
+        } catch (\Throwable $e) {
+            Log::error('Workflow RevokeWarrant failed: ' . $e->getMessage());
+
+            return ['revoked' => false];
+        }
+    }
+
+    /**
+     * Cancel all warrants for a specific entity.
+     *
+     * Delegates to WarrantManagerInterface::cancelByEntity().
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with entityType, entityId, reason, revokerId, expiresOn
+     * @return array Output with cancelled boolean
+     */
+    public function cancelByEntity(array $context, array $config): array
+    {
+        try {
+            $entityType = $this->resolveValue($config['entityType'], $context);
+            $entityId = (int)$this->resolveValue($config['entityId'], $context);
+            $reason = $this->resolveValue($config['reason'] ?? 'Cancelled via workflow', $context);
+            $revokerId = $this->resolveValue($config['revokerId'] ?? null, $context);
+            if (!$revokerId) {
+                $revokerId = $context['triggeredBy'] ?? 0;
+            }
+            $revokerId = (int)$revokerId;
+
+            $expiresOnRaw = $this->resolveValue($config['expiresOn'] ?? null, $context);
+            $expiresOn = $expiresOnRaw instanceof DateTime
+                ? $expiresOnRaw
+                : new DateTime($expiresOnRaw ?? 'now');
+
+            $result = $this->warrantManager->cancelByEntity(
+                (string)$entityType,
+                $entityId,
+                (string)$reason,
+                $revokerId,
+                $expiresOn,
+            );
+
+            return ['cancelled' => $result->success];
+        } catch (\Throwable $e) {
+            Log::error('Workflow CancelByEntity failed: ' . $e->getMessage());
+
+            return ['cancelled' => false];
+        }
+    }
+
+    /**
+     * Decline a single warrant (not the entire roster).
+     *
+     * Delegates to WarrantManagerInterface::declineSingleWarrant().
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with warrantId, reason, rejecterId
+     * @return array Output with declined boolean
+     */
+    public function declineSingleWarrant(array $context, array $config): array
+    {
+        try {
+            $warrantId = (int)$this->resolveValue($config['warrantId'], $context);
+            $reason = $this->resolveValue($config['reason'] ?? 'Declined via workflow', $context);
+            $rejecterId = $this->resolveValue($config['rejecterId'] ?? null, $context);
+            if (!$rejecterId) {
+                $rejecterId = $context['triggeredBy'] ?? 0;
+            }
+            $rejecterId = (int)$rejecterId;
+
+            $result = $this->warrantManager->declineSingleWarrant($warrantId, (string)$reason, $rejecterId);
+
+            return ['declined' => $result->success];
+        } catch (\Throwable $e) {
+            Log::error('Workflow DeclineSingleWarrant failed: ' . $e->getMessage());
+
+            return ['declined' => false];
+        }
+    }
+
+    /**
+     * Check if a member is eligible to receive warrants.
+     *
+     * Verifies the member.warrantable flag and that membership has not expired.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with memberId
+     * @return array Output with warrantable boolean and reason
+     */
+    public function validateWarrantability(array $context, array $config): array
+    {
+        try {
+            $memberId = (int)$this->resolveValue($config['memberId'], $context);
+
+            $memberTable = TableRegistry::getTableLocator()->get('Members');
+            $member = $memberTable->get($memberId);
+
+            if (!$member->warrantable) {
+                return ['warrantable' => false, 'reason' => 'Member is not warrantable'];
+            }
+
+            if (
+                $member->membership_expires_on !== null
+                && $member->membership_expires_on < DateTime::now()
+            ) {
+                return ['warrantable' => false, 'reason' => 'Membership has expired'];
+            }
+
+            return ['warrantable' => true, 'reason' => null];
+        } catch (\Throwable $e) {
+            Log::error('Workflow ValidateWarrantability failed: ' . $e->getMessage());
+
+            return ['warrantable' => false, 'reason' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Calculate warrant start/end dates via WarrantManager.
+     *
+     * Delegates to WarrantManagerInterface::getWarrantPeriod().
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with startOn, endOn (optional)
+     * @return array Output with startDate, endDate, periodId
+     */
+    public function getWarrantPeriod(array $context, array $config): array
+    {
+        try {
+            $startOnRaw = $this->resolveValue($config['startOn'], $context);
+            $startOn = $startOnRaw instanceof DateTime ? $startOnRaw : new DateTime($startOnRaw);
+
+            $endOnRaw = $this->resolveValue($config['endOn'] ?? null, $context);
+            $endOn = null;
+            if ($endOnRaw !== null) {
+                $endOn = $endOnRaw instanceof DateTime ? $endOnRaw : new DateTime($endOnRaw);
+            }
+
+            $period = $this->warrantManager->getWarrantPeriod($startOn, $endOn);
+
+            if ($period === null) {
+                return ['startDate' => null, 'endDate' => null, 'periodId' => null];
+            }
+
+            return [
+                'startDate' => $period->start_date ? $period->start_date->format('Y-m-d') : null,
+                'endDate' => $period->end_date ? $period->end_date->format('Y-m-d') : null,
+                'periodId' => $period->id,
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Workflow GetWarrantPeriod failed: ' . $e->getMessage());
+
+            return ['startDate' => null, 'endDate' => null, 'periodId' => null];
+        }
+    }
+
+    /**
      * Send warrant-issued notification emails to each member in the roster.
      *
      * @param array $context Current workflow context

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\WorkflowEngine\Providers;
 
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
+use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Services\WorkflowRegistry\WorkflowTriggerRegistry;
 
 /**
@@ -23,6 +24,7 @@ class WarrantWorkflowProvider
     {
         self::registerTriggers();
         self::registerActions();
+        self::registerConditions();
     }
 
     /**
@@ -56,6 +58,25 @@ class WarrantWorkflowProvider
                 'payloadSchema' => [
                     'rosterId' => ['type' => 'integer', 'label' => 'Roster ID'],
                     'reason' => ['type' => 'string', 'label' => 'Decline Reason'],
+                ],
+            ],
+            [
+                'event' => 'Warrants.WarrantRevoked',
+                'label' => 'Warrant Revoked',
+                'description' => 'When a specific warrant is revoked/cancelled',
+                'payloadSchema' => [
+                    'warrantId' => ['type' => 'integer', 'label' => 'Warrant ID'],
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
+                    'reason' => ['type' => 'string', 'label' => 'Revocation Reason'],
+                ],
+            ],
+            [
+                'event' => 'Warrants.WarrantExpired',
+                'label' => 'Warrant Expired',
+                'description' => 'When a warrant reaches its expiration date',
+                'payloadSchema' => [
+                    'warrantId' => ['type' => 'integer', 'label' => 'Warrant ID'],
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
                 ],
             ],
         ]);
@@ -154,6 +175,151 @@ class WarrantWorkflowProvider
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'notifyWarrantIssued',
                 'isAsync' => false,
+            ],
+            [
+                'action' => 'Warrants.RevokeWarrant',
+                'label' => 'Revoke Warrant',
+                'description' => 'Cancel/revoke a specific warrant',
+                'inputSchema' => [
+                    'warrantId' => ['type' => 'integer', 'label' => 'Warrant ID', 'required' => true, 'description' => 'The ID of the warrant to revoke'],
+                    'reason' => ['type' => 'string', 'label' => 'Reason', 'default' => 'Revoked via workflow'],
+                    'revokerId' => ['type' => 'integer', 'label' => 'Revoker ID', 'description' => 'Member ID of the revoker (defaults to triggeredBy)'],
+                    'expiresOn' => ['type' => 'datetime', 'label' => 'Expires On', 'description' => 'When the warrant should terminate (defaults to now)'],
+                ],
+                'outputSchema' => [
+                    'revoked' => ['type' => 'boolean', 'label' => 'Revocation Successful'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'revokeWarrant',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Warrants.CancelByEntity',
+                'label' => 'Cancel Warrants By Entity',
+                'description' => 'Cancel all warrants for a specific entity',
+                'inputSchema' => [
+                    'entityType' => ['type' => 'string', 'label' => 'Entity Type', 'required' => true, 'description' => 'CakePHP table alias for the entity'],
+                    'entityId' => ['type' => 'integer', 'label' => 'Entity ID', 'required' => true, 'description' => 'Primary key of the entity'],
+                    'reason' => ['type' => 'string', 'label' => 'Reason', 'default' => 'Cancelled via workflow'],
+                    'revokerId' => ['type' => 'integer', 'label' => 'Revoker ID', 'description' => 'Member ID of the revoker (defaults to triggeredBy)'],
+                    'expiresOn' => ['type' => 'datetime', 'label' => 'Expires On', 'description' => 'When warrants should terminate (defaults to now)'],
+                ],
+                'outputSchema' => [
+                    'cancelled' => ['type' => 'boolean', 'label' => 'Cancellation Successful'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'cancelByEntity',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Warrants.DeclineSingleWarrant',
+                'label' => 'Decline Single Warrant',
+                'description' => 'Decline a specific warrant (not the entire roster)',
+                'inputSchema' => [
+                    'warrantId' => ['type' => 'integer', 'label' => 'Warrant ID', 'required' => true, 'description' => 'The ID of the warrant to decline'],
+                    'reason' => ['type' => 'string', 'label' => 'Reason', 'default' => 'Declined via workflow'],
+                    'rejecterId' => ['type' => 'integer', 'label' => 'Rejecter ID', 'description' => 'Member ID of the rejecter (defaults to triggeredBy)'],
+                ],
+                'outputSchema' => [
+                    'declined' => ['type' => 'boolean', 'label' => 'Decline Successful'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'declineSingleWarrant',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Warrants.ValidateWarrantability',
+                'label' => 'Validate Warrantability',
+                'description' => 'Check if a member is eligible to receive warrants',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true, 'description' => 'The member to check'],
+                ],
+                'outputSchema' => [
+                    'warrantable' => ['type' => 'boolean', 'label' => 'Is Warrantable'],
+                    'reason' => ['type' => 'string', 'label' => 'Reason'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'validateWarrantability',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Warrants.GetWarrantPeriod',
+                'label' => 'Get Warrant Period',
+                'description' => 'Calculate warrant start/end dates from a warrant period',
+                'inputSchema' => [
+                    'startOn' => ['type' => 'datetime', 'label' => 'Start Date', 'required' => true],
+                    'endOn' => ['type' => 'datetime', 'label' => 'End Date'],
+                ],
+                'outputSchema' => [
+                    'startDate' => ['type' => 'string', 'label' => 'Period Start Date'],
+                    'endDate' => ['type' => 'string', 'label' => 'Period End Date'],
+                    'periodId' => ['type' => 'integer', 'label' => 'Period ID'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'getWarrantPeriod',
+                'isAsync' => false,
+            ],
+        ]);
+    }
+
+    /**
+     * @return void
+     */
+    private static function registerConditions(): void
+    {
+        $conditionsClass = WarrantWorkflowConditions::class;
+
+        WorkflowConditionRegistry::register(self::SOURCE, [
+            [
+                'condition' => 'Warrants.IsMemberWarrantable',
+                'label' => 'Is Member Warrantable',
+                'description' => 'Check if a member has the warrantable flag set and membership is not expired',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'isMemberWarrantable',
+            ],
+            [
+                'condition' => 'Warrants.HasRequiredApprovals',
+                'label' => 'Has Required Approvals',
+                'description' => 'Check if a warrant roster has received the required number of approvals',
+                'inputSchema' => [
+                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'hasRequiredApprovals',
+            ],
+            [
+                'condition' => 'Warrants.IsWithinWarrantPeriod',
+                'label' => 'Is Within Warrant Period',
+                'description' => 'Check if the current date falls within the specified warrant period',
+                'inputSchema' => [
+                    'startOn' => ['type' => 'datetime', 'label' => 'Period Start', 'required' => true],
+                    'expiresOn' => ['type' => 'datetime', 'label' => 'Period End'],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'isWithinWarrantPeriod',
+            ],
+            [
+                'condition' => 'Warrants.IsRosterApproved',
+                'label' => 'Is Roster Approved',
+                'description' => 'Check if a warrant roster has been fully approved',
+                'inputSchema' => [
+                    'rosterId' => ['type' => 'integer', 'label' => 'Roster ID', 'required' => true],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'isRosterApproved',
+            ],
+            [
+                'condition' => 'Warrants.IsWarrantActive',
+                'label' => 'Is Warrant Active',
+                'description' => 'Check if a specific warrant is currently active',
+                'inputSchema' => [
+                    'warrantId' => ['type' => 'integer', 'label' => 'Warrant ID', 'required' => true],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'isWarrantActive',
             ],
         ]);
     }
