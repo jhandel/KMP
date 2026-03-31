@@ -1028,18 +1028,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
             $context = $instance->context ?? [];
 
-            // Put raw form data under $.task for mapping resolution
-            $context['task'] = $formData;
-
             foreach ($contextMapping as $formField => $contextPath) {
                 $value = $formData[$formField] ?? null;
                 if ($contextPath && $value !== null) {
                     $this->setContextValue($context, $contextPath, $value);
                 }
             }
-
-            // Remove temporary task key
-            unset($context['task']);
 
             $instance->context = $context;
             $this->updateInstance($instance, []);

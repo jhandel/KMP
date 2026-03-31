@@ -50,6 +50,10 @@ class WorkflowInstancesTable extends BaseTable
             'foreignKey' => 'workflow_instance_id',
             'dependent' => true,
         ]);
+        $this->hasMany('WorkflowTasks', [
+            'foreignKey' => 'workflow_instance_id',
+            'dependent' => true,
+        ]);
 
         $this->addBehavior('Timestamp');
 
