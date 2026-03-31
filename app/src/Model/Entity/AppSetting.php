@@ -9,6 +9,7 @@ namespace App\Model\Entity;
  * @property int $id
  * @property string $name
  * @property string|null $value
+ * @property int|null $kingdom_id
  */
 class AppSetting extends BaseEntity
 {
@@ -27,6 +28,7 @@ class AppSetting extends BaseEntity
         'type' => true,
         'raw_value' => true,
         'required' => true,
+        'kingdom_id' => true,
     ];
 
     /**

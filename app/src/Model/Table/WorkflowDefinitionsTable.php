@@ -12,6 +12,7 @@ use Cake\Validation\Validator;
  * WorkflowDefinitions Model
  *
  * @property \App\Model\Table\WorkflowVersionsTable&\Cake\ORM\Association\BelongsTo $CurrentVersion
+ * @property \App\Model\Table\BranchesTable&\Cake\ORM\Association\BelongsTo $Kingdoms
  * @property \App\Model\Table\WorkflowVersionsTable&\Cake\ORM\Association\HasMany $WorkflowVersions
  * @property \App\Model\Table\WorkflowInstancesTable&\Cake\ORM\Association\HasMany $WorkflowInstances
  *
@@ -35,6 +36,11 @@ class WorkflowDefinitionsTable extends BaseTable
         $this->belongsTo('CurrentVersion', [
             'className' => 'WorkflowVersions',
             'foreignKey' => 'current_version_id',
+            'joinType' => 'LEFT',
+        ]);
+        $this->belongsTo('Kingdoms', [
+            'className' => 'Branches',
+            'foreignKey' => 'kingdom_id',
             'joinType' => 'LEFT',
         ]);
         $this->hasMany('WorkflowVersions', [
@@ -102,6 +108,10 @@ class WorkflowDefinitionsTable extends BaseTable
             ->integer('current_version_id')
             ->allowEmptyString('current_version_id');
 
+        $validator
+            ->integer('kingdom_id')
+            ->allowEmptyString('kingdom_id');
+
         return $validator;
     }
 
@@ -110,7 +120,7 @@ class WorkflowDefinitionsTable extends BaseTable
      */
     public function buildRules(RulesChecker $rules): RulesChecker
     {
-        $rules->add($rules->isUnique(['slug']), ['errorField' => 'slug']);
+        $rules->add($rules->isUnique(['slug', 'kingdom_id']), ['errorField' => 'slug']);
         $rules->add($rules->existsIn(['current_version_id'], 'CurrentVersion'), [
             'errorField' => 'current_version_id',
         ]);
