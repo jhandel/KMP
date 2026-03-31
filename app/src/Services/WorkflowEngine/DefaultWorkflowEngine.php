@@ -23,6 +23,22 @@ use Throwable;
  *
  * Executes workflow graphs by traversing nodes, invoking actions/conditions
  * from the registries, and managing instance lifecycle state.
+ *
+ * Transaction strategy: each public entry point (startWorkflow, resumeWorkflow,
+ * cancelWorkflow, fireIntermediateApprovalActions) wraps its work in a single
+ * database transaction via ConnectionManager::get('default')->transactional().
+ * Recursive calls (e.g., subworkflow nodes calling startWorkflow, or child
+ * completion calling resumeWorkflow) share the outer transaction instead of
+ * opening a nested one. The $isInTransaction flag tracks this.
+ *
+ * Action nodes may invoke services (e.g., WarrantManager) that manage their own
+ * internal transactions. CakePHP's Connection handles nested transactional()
+ * calls via savepoints, so these are safe and will participate correctly in the
+ * outer transaction's commit/rollback.
+ *
+ * When a workflow hits a WAITING state (approval gate, delay node, subworkflow),
+ * the transaction commits at that point. A later resumeWorkflow() call starts a
+ * fresh transaction.
  */
 class DefaultWorkflowEngine implements WorkflowEngineInterface
 {
@@ -46,6 +62,14 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
      */
     private int $executionDepth = 0;
 
+    /**
+     * Whether we are currently inside a database transaction.
+     * Prevents nested transaction wrapping when methods like startWorkflow()
+     * or resumeWorkflow() are called recursively (e.g., subworkflow nodes,
+     * child completion callbacks).
+     */
+    private bool $isInTransaction = false;
+
     public function __construct(ContainerInterface $container)
     {
         $this->container = $container;
@@ -64,9 +88,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $this->visitedNodes = [];
         $this->executionDepth = 0;
 
-        $connection = ConnectionManager::get('default');
-        try {
-            return $connection->transactional(function () use ($workflowSlug, $triggerData, $startedBy, $entityType, $entityId) {
+        return $this->executeInTransaction(function () use ($workflowSlug, $triggerData, $startedBy, $entityType, $entityId) {
             $definitionsTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
             $versionsTable = TableRegistry::getTableLocator()->get('WorkflowVersions');
             $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
@@ -177,12 +199,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $this->updateInstance($instance, []);
 
             return new ServiceResult(true, null, ['instanceId' => $instance->id]);
-            });
-        } catch (Throwable $e) {
-            Log::error("WorkflowEngine::startWorkflow failed: {$e->getMessage()}");
-
-            return new ServiceResult(false, "Failed to start workflow: {$e->getMessage()}");
-        }
+        }, 'startWorkflow');
     }
 
     /**
@@ -198,9 +215,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $this->visitedNodes = [];
         $this->executionDepth = 0;
 
-        $connection = ConnectionManager::get('default');
-        try {
-            return $connection->transactional(function () use ($instanceId, $nodeId, $outputPort, $additionalData) {
+        return $this->executeInTransaction(function () use ($instanceId, $nodeId, $outputPort, $additionalData) {
             $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
             $instance = $instancesTable->get($instanceId, contain: ['WorkflowVersions']);
 
@@ -264,12 +279,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $this->updateInstance($instance, []);
 
             return new ServiceResult(true, null, ['instanceId' => $instanceId]);
-            });
-        } catch (Throwable $e) {
-            Log::error("WorkflowEngine::resumeWorkflow failed: {$e->getMessage()}");
-
-            return new ServiceResult(false, "Failed to resume workflow: {$e->getMessage()}");
-        }
+        }, 'resumeWorkflow', $instanceId);
     }
 
     /**
@@ -277,9 +287,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
      */
     public function cancelWorkflow(int $instanceId, ?string $reason = null): ServiceResult
     {
-        $connection = ConnectionManager::get('default');
-        try {
-            return $connection->transactional(function () use ($instanceId, $reason) {
+        return $this->executeInTransaction(function () use ($instanceId, $reason) {
             $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
             $instance = $instancesTable->get($instanceId);
 
@@ -314,12 +322,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             }
 
             return new ServiceResult(true, null, ['instanceId' => $instanceId]);
-            });
-        } catch (Throwable $e) {
-            Log::error("WorkflowEngine::cancelWorkflow failed: {$e->getMessage()}");
-
-            return new ServiceResult(false, "Failed to cancel workflow: {$e->getMessage()}");
-        }
+        }, 'cancelWorkflow', $instanceId);
     }
 
     /**
@@ -636,9 +639,13 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $serviceClass = $actionConfig['serviceClass'];
         $serviceMethod = $actionConfig['serviceMethod'];
 
-        $service = $this->container->has($serviceClass)
-            ? $this->container->get($serviceClass)
-            : new $serviceClass();
+        if (!$this->container->has($serviceClass)) {
+            throw new \RuntimeException(
+                "Workflow action service '{$serviceClass}' is not registered in the DI container. "
+                . "Register it in Application::services() or your plugin's services() method."
+            );
+        }
+        $service = $this->container->get($serviceClass);
         $context = $instance->context ?? [];
 
         // Resolve and merge config.params into top-level config so actions can read params directly
@@ -686,9 +693,13 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             if ($conditionConfig) {
                 $evaluatorClass = $conditionConfig['evaluatorClass'];
                 $evaluatorMethod = $conditionConfig['evaluatorMethod'];
-                $evaluator = $this->container->has($evaluatorClass)
-                    ? $this->container->get($evaluatorClass)
-                    : new $evaluatorClass();
+                if (!$this->container->has($evaluatorClass)) {
+                    throw new \RuntimeException(
+                        "Workflow condition evaluator '{$evaluatorClass}' is not registered in the DI container. "
+                        . "Register it in Application::services() or your plugin's services() method."
+                    );
+                }
+                $evaluator = $this->container->get($evaluatorClass);
                 // Resolve and merge config.params into top-level config so evaluators can read params directly
                 $nodeConfig = $node['config'] ?? [];
                 if (isset($nodeConfig['expectedValue'])) {
@@ -1451,9 +1462,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $this->visitedNodes = [];
         $this->executionDepth = 0;
 
-        $connection = ConnectionManager::get('default');
-        try {
-            return $connection->transactional(function () use ($instanceId, $nodeId, $approvalData) {
+        return $this->executeInTransaction(function () use ($instanceId, $nodeId, $approvalData) {
                 $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
                 $instance = $instancesTable->get($instanceId, contain: ['WorkflowVersions']);
 
@@ -1545,9 +1554,13 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                         $serviceClass = $actionConfig['serviceClass'];
                         $serviceMethod = $actionConfig['serviceMethod'];
 
-                        $service = $this->container->has($serviceClass)
-                            ? $this->container->get($serviceClass)
-                            : new $serviceClass();
+                        if (!$this->container->has($serviceClass)) {
+                            throw new \RuntimeException(
+                                "Workflow action service '{$serviceClass}' is not registered in the DI container. "
+                                . "Register it in Application::services() or your plugin's services() method."
+                            );
+                        }
+                        $service = $this->container->get($serviceClass);
 
                         // Resolve params from context
                         $nodeConfig = $targetNode['config'] ?? [];
@@ -1582,11 +1595,104 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                     'instanceId' => $instanceId,
                     'intermediateActionsRun' => $actionsRun,
                 ]);
-            });
-        } catch (Throwable $e) {
-            Log::error("WorkflowEngine::fireIntermediateApprovalActions failed: {$e->getMessage()}");
+        }, 'fireIntermediateApprovalActions', $instanceId);
+    }
 
-            return new ServiceResult(false, "Failed to fire intermediate approval actions: {$e->getMessage()}");
+    // -------------------------------------------------------------------------
+    // Transaction management
+    // -------------------------------------------------------------------------
+
+    /**
+     * Execute a callable inside a single database transaction, avoiding nesting.
+     *
+     * When already inside a transaction (e.g., subworkflow calling startWorkflow,
+     * or child completion calling resumeWorkflow), the callable runs directly
+     * without a new transactional() wrapper — all work shares the outer transaction.
+     *
+     * CakePHP supports nested transactional() calls via savepoints, so services
+     * invoked by action nodes (e.g., WarrantManager) that open their own
+     * transactional() blocks are safe and participate in the outer transaction.
+     *
+     * On failure at the top level the transaction is rolled back automatically.
+     * If $existingInstanceId is provided, the instance is marked FAILED in a
+     * separate post-rollback save so the database reflects the terminal state.
+     *
+     * @param callable $work The work to execute inside the transaction
+     * @param string $methodName Method name for error logging
+     * @param int|null $existingInstanceId Instance ID to mark FAILED on rollback
+     * @return \App\Services\ServiceResult
+     */
+    private function executeInTransaction(
+        callable $work,
+        string $methodName,
+        ?int $existingInstanceId = null,
+    ): ServiceResult {
+        $alreadyInTransaction = $this->isInTransaction;
+        $this->isInTransaction = true;
+
+        try {
+            if ($alreadyInTransaction) {
+                // Already inside a transaction — execute directly.
+                return $work();
+            }
+
+            $connection = ConnectionManager::get('default');
+            $result = $connection->transactional($work);
+            $this->isInTransaction = false;
+
+            return $result;
+        } catch (Throwable $e) {
+            if (!$alreadyInTransaction) {
+                $this->isInTransaction = false;
+            }
+
+            Log::error("WorkflowEngine::{$methodName} failed: {$e->getMessage()}");
+
+            if ($alreadyInTransaction) {
+                // Re-throw so the outer transaction can handle the rollback.
+                throw $e;
+            }
+
+            // Transaction was rolled back. Mark instance FAILED in a separate save
+            // so the database reflects the terminal state.
+            if ($existingInstanceId !== null) {
+                $this->markInstanceFailed($existingInstanceId, $e->getMessage());
+            }
+
+            return new ServiceResult(false, "Failed to {$methodName}: {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Mark a workflow instance as FAILED after a transaction rollback.
+     *
+     * Runs outside any transaction so the FAILED status persists even though
+     * the main transaction was rolled back.
+     *
+     * @param int $instanceId The instance to mark
+     * @param string $errorMessage The error that caused the failure
+     * @return void
+     */
+    private function markInstanceFailed(int $instanceId, string $errorMessage): void
+    {
+        try {
+            $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+            $instance = $instancesTable->get($instanceId);
+
+            if (!$instance->isTerminal()) {
+                $instance->status = WorkflowInstance::STATUS_FAILED;
+                $instance->completed_at = DateTime::now();
+                $instance->error_info = [
+                    'error' => $errorMessage,
+                    'rolled_back' => true,
+                ];
+                $instancesTable->save($instance);
+            }
+        } catch (Throwable $inner) {
+            Log::error(
+                "WorkflowEngine: Failed to mark instance #{$instanceId} as FAILED "
+                . "after rollback: {$inner->getMessage()}"
+            );
         }
     }
 }
