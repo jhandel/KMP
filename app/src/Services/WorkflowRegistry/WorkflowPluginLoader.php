@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\WorkflowRegistry;
 
 use App\KMP\KMPWorkflowPluginInterface;
+use App\Services\WorkflowEngine\Providers\ScheduleWorkflowProvider;
 use App\Services\WorkflowEngine\Providers\WarrantWorkflowProvider;
 use Activities\Services\ActivitiesWorkflowProvider;
 use Cake\Core\PluginCollection;
@@ -84,6 +85,7 @@ class WorkflowPluginLoader
         OfficersWorkflowProvider::register();
         WarrantWorkflowProvider::register();
         ActivitiesWorkflowProvider::register();
+        ScheduleWorkflowProvider::register();
     }
 
     /**
@@ -126,6 +128,7 @@ class WorkflowPluginLoader
                     'mailer' => ['type' => 'string', 'label' => 'Mailer Class', 'required' => true],
                     'action' => ['type' => 'string', 'label' => 'Mailer Action', 'required' => true],
                     'vars' => ['type' => 'object', 'label' => 'Template Variables'],
+                    'replyTo' => ['type' => 'string', 'label' => 'Reply-To Email'],
                 ],
                 'outputSchema' => [
                     'sent' => ['type' => 'boolean', 'label' => 'Email Sent'],
@@ -170,7 +173,7 @@ class WorkflowPluginLoader
             [
                 'action' => 'Core.AssignRole',
                 'label' => 'Assign Role to Member',
-                'description' => 'Assign a role to a member with optional start/end dates',
+                'description' => 'Assign a role to a member with optional temporal bounds and ActiveWindow integration',
                 'inputSchema' => [
                     'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
                     'roleId' => ['type' => 'integer', 'label' => 'Role ID', 'required' => true],
@@ -178,6 +181,7 @@ class WorkflowPluginLoader
                     'expiresOn' => ['type' => 'datetime', 'label' => 'Expiry Date'],
                     'entityType' => ['type' => 'string', 'label' => 'Granting Entity Type'],
                     'entityId' => ['type' => 'integer', 'label' => 'Granting Entity ID'],
+                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID'],
                 ],
                 'outputSchema' => [
                     'memberRoleId' => ['type' => 'integer', 'label' => 'Member Role ID'],
@@ -197,6 +201,61 @@ class WorkflowPluginLoader
                 'outputSchema' => [],
                 'serviceClass' => $coreActions,
                 'serviceMethod' => 'setVariable',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Core.StartActiveWindow',
+                'label' => 'Start Active Window',
+                'description' => 'Start temporal management for an entity (officer, authorization, etc.)',
+                'inputSchema' => [
+                    'entityType' => ['type' => 'string', 'label' => 'Entity Table Name', 'required' => true],
+                    'entityId' => ['type' => 'integer', 'label' => 'Entity ID', 'required' => true],
+                    'memberId' => ['type' => 'integer', 'label' => 'Acting Member ID'],
+                    'roleId' => ['type' => 'integer', 'label' => 'Role to Grant'],
+                    'startOn' => ['type' => 'datetime', 'label' => 'Start Date'],
+                    'expiresOn' => ['type' => 'datetime', 'label' => 'Expiry Date'],
+                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID'],
+                    'closeExisting' => ['type' => 'boolean', 'label' => 'Close Existing Windows'],
+                ],
+                'outputSchema' => [
+                    'memberRoleId' => ['type' => 'integer', 'label' => 'Granted Member Role ID'],
+                    'status' => ['type' => 'string', 'label' => 'Result Status'],
+                ],
+                'serviceClass' => $coreActions,
+                'serviceMethod' => 'startActiveWindow',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Core.StopActiveWindow',
+                'label' => 'Stop Active Window',
+                'description' => 'End temporal management for an entity',
+                'inputSchema' => [
+                    'entityType' => ['type' => 'string', 'label' => 'Entity Table Name', 'required' => true],
+                    'entityId' => ['type' => 'integer', 'label' => 'Entity ID', 'required' => true],
+                    'memberId' => ['type' => 'integer', 'label' => 'Acting Member ID'],
+                    'newStatus' => ['type' => 'string', 'label' => 'New Status (e.g. Released, Revoked, Expired)'],
+                    'reason' => ['type' => 'string', 'label' => 'Reason for Stopping'],
+                    'expiresOn' => ['type' => 'datetime', 'label' => 'Expiry Date'],
+                ],
+                'outputSchema' => [
+                    'stopped' => ['type' => 'boolean', 'label' => 'Window Stopped'],
+                ],
+                'serviceClass' => $coreActions,
+                'serviceMethod' => 'stopActiveWindow',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Core.SyncActiveWindowStatuses',
+                'label' => 'Sync Active Window Statuses',
+                'description' => 'Batch transition Upcoming→Current and Current→Expired based on date windows',
+                'inputSchema' => [
+                    'entityType' => ['type' => 'string', 'label' => 'Entity Type (optional, defaults to all)'],
+                ],
+                'outputSchema' => [
+                    'transitioned' => ['type' => 'object', 'label' => 'Transition Counts'],
+                ],
+                'serviceClass' => $coreActions,
+                'serviceMethod' => 'syncActiveWindowStatuses',
                 'isAsync' => false,
             ],
         ]);
@@ -324,6 +383,20 @@ class WorkflowPluginLoader
                     'member_id' => ['type' => 'integer', 'label' => 'Member ID'],
                     'status' => ['type' => 'string', 'label' => 'Status'],
                     'expires_on' => ['type' => 'datetime', 'label' => 'Expires On'],
+                ],
+            ],
+            [
+                'entityType' => 'Core.MemberRoles',
+                'label' => 'Member Role',
+                'description' => 'Role assignment for a member with temporal lifecycle',
+                'tableClass' => \App\Model\Table\MemberRolesTable::class,
+                'fields' => [
+                    'id' => ['type' => 'integer', 'label' => 'ID'],
+                    'member_id' => ['type' => 'integer', 'label' => 'Member ID'],
+                    'role_id' => ['type' => 'integer', 'label' => 'Role ID'],
+                    'status' => ['type' => 'string', 'label' => 'Status'],
+                    'start_on' => ['type' => 'datetime', 'label' => 'Start Date'],
+                    'expires_on' => ['type' => 'datetime', 'label' => 'Expiry Date'],
                 ],
             ],
         ]);

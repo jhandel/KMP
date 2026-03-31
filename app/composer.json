@@ -18,6 +18,7 @@
         "cakephp/plugin-installer": "^2.0",
         "dereuromark/cakephp-templating": "^0.2.1",
         "dereuromark/cakephp-tools": "^3.9",
+        "dragonmantank/cron-expression": "^3.6",
         "erusev/parsedown": "^1.7",
         "friendsofcake/bootstrap-ui": "^5.0",
         "friendsofcake/cakepdf": "^5.0",

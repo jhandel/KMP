@@ -44,6 +44,10 @@ class WorkflowDefinitionsTable extends BaseTable
         $this->hasMany('WorkflowInstances', [
             'foreignKey' => 'workflow_definition_id',
         ]);
+        $this->hasMany('WorkflowSchedules', [
+            'foreignKey' => 'workflow_definition_id',
+            'dependent' => true,
+        ]);
 
         $this->addBehavior('Timestamp');
         $this->addBehavior('Muffin/Footprint.Footprint');
