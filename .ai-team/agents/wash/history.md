@@ -288,3 +288,14 @@ Added a third output port to approval nodes in the workflow designer, per Mal's 
 📌 Team update (2026-02-11): EmailTemplateRendererService now supports safe conditional DSL (`<?php if ($var == "value") : ?>...<?php endif; ?>`) — parsed via regex, never eval()d. Supports ==, ||, && operators. Conditionals processed before {{variable}} substitution. — decided by Kaylee
 
 📌 Team update (2026-02-11): Email template conditionals now use {{#if var == "value"}}...{{/if}} mustache-style syntax instead of PHP-style. convertTemplateVariables() auto-converts on import. — decided by Kaylee
+
+### 2026-02-12: Changelog Format Conventions
+
+- Changelog lives at `app/CHANGELOG.md`, titled "What's New in KMP" — written for end users, not developers
+- Three HTML comment sync markers at the top: `CHANGELOG_SYNC_MARKER`, `LAST_SYNCED_COMMIT`, `LAST_SYNCED_DATE`
+- Entries grouped under month headings (`## February 2026`), newest first within each month
+- Each entry: `### Title`, 1-2 sentence user-facing description, bullet list of capabilities, then `📅 Date · \`Tag\`` (tags: `New Feature`, `Improvement`, `Security`, etc.)
+- Entries separated by `---` horizontal rules
+- Update `LAST_SYNCED_COMMIT` to current HEAD and `LAST_SYNCED_DATE` to the entry date when adding entries
+
+📌 Team update (2026-02-22): Runtime startup decisions consolidated — run startup/migration CLI with `CACHE_ENGINE=apcu`, keep Redis for runtime cache traffic, enforce single Apache MPM, and validate with Redis/update_database/MPM gates. — decided by Jayne, Kaylee

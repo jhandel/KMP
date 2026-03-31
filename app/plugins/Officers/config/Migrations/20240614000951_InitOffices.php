@@ -11,10 +11,20 @@ require_once __DIR__ . '/../Seeds/InitOfficersSeed.php';
 class InitOffices extends BaseMigration
 {
     public bool $autoId = false;
+    /** Disable transaction wrapping so embedded seed failures don't roll back DDL on Postgres. */
+    public function useTransactions(): bool
+    {
+        return false;
+    }
 
+    /**
+     * Run the migration up.
+     *
+     * @return void
+     */
     public function up(): void
     {
-        $this->table("officers_departments")
+        $this->table("officers_departments", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -56,7 +66,7 @@ class InitOffices extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("officers_offices")
+        $this->table("officers_offices", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -144,7 +154,7 @@ class InitOffices extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("officers_officers")
+        $this->table("officers_officers", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -344,6 +354,9 @@ class InitOffices extends BaseMigration
 
 
 
+    /**
+     * Reverse the migration.
+     */
     public function down()
     {
         $this->table("officers_offices")

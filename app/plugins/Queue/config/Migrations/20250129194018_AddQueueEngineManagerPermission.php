@@ -16,11 +16,16 @@ class AddQueueEngineManagerPermission extends BaseMigration
     public function up(): void
     {
         $this->execute(
-            "INSERT INTO permissions (name, require_active_membership, require_active_background_check, require_min_age, is_system, is_super_user, requires_warrant) " .
-            "VALUES ('Can Manage Queue Engine', 0, 0, 0, 1, 0, 0)"
+            "INSERT INTO permissions (name, require_active_membership, require_active_background_check, require_min_age, is_system, is_super_user, requires_warrant, created) " .
+            "VALUES ('Can Manage Queue Engine', FALSE, FALSE, 0, TRUE, FALSE, FALSE, NOW())"
         );
     }
 
+    /**
+     * Reverse the migration.
+     *
+     * @return void
+     */
     public function down(): void
     {
         $this->execute("DELETE FROM permissions WHERE name = 'Can Manage Queue Engine'");

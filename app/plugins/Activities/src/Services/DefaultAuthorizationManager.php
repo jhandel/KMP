@@ -130,6 +130,12 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
 
     #endregion
 
+    /**
+     * Constructor.
+     *
+     * @param ActiveWindowManagerInterface $activeWindowManager
+     * @param TriggerDispatcher $triggerDispatcher
+     */
     public function __construct(ActiveWindowManagerInterface $activeWindowManager, TriggerDispatcher $triggerDispatcher)
     {
         $this->activeWindowManager = $activeWindowManager;

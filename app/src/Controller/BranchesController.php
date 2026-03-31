@@ -1,9 +1,9 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\KMP\GridColumns\BranchesGridColumns;
 use App\KMP\StaticHelpers;
 use App\Services\CsvExportService;
 use Cake\Database\Exception\DatabaseException;
@@ -86,7 +86,7 @@ class BranchesController extends AppController
         // Sort by 'lft' (left value) to maintain hierarchical tree order
         $result = $this->processDataverseGrid([
             'gridKey' => 'Branches.index.main',
-            'gridColumnsClass' => \App\KMP\GridColumns\BranchesGridColumns::class,
+            'gridColumnsClass' => BranchesGridColumns::class,
             'baseQuery' => $baseQuery,
             'tableName' => 'Branches',
             'defaultSort' => ['Branches.lft' => 'asc'],
@@ -112,7 +112,7 @@ class BranchesController extends AppController
             'gridState' => $result['gridState'],
             'columns' => $result['columnsMetadata'],
             'visibleColumns' => $result['visibleColumns'],
-            'searchableColumns' => \App\KMP\GridColumns\BranchesGridColumns::getSearchableColumns(),
+            'searchableColumns' => BranchesGridColumns::getSearchableColumns(),
             'dropdownFilterColumns' => $result['dropdownFilterColumns'],
             'filterOptions' => $result['filterOptions'],
             'currentFilters' => $result['currentFilters'],
@@ -282,9 +282,15 @@ class BranchesController extends AppController
         $branch = $this->Branches->find('byPublicId', [$id])
             ->contain([
                 'Parent',
+                'Contacts' => function ($q) {
+                    return $q->select(['id', 'public_id', 'sca_name']);
+                },
                 'Members' => function ($q) {
                     return $q
-                        ->select(['id', 'sca_name', 'branch_id', 'membership_number', 'membership_expires_on', 'status', 'birth_month', 'birth_year'])
+                        ->select([
+                            'id', 'sca_name', 'branch_id', 'membership_number',
+                            'membership_expires_on', 'status', 'birth_month', 'birth_year',
+                        ])
                         ->orderBy(['sca_name' => 'ASC']);
                 },
             ])
@@ -360,15 +366,43 @@ class BranchesController extends AppController
      */
     public function edit(?string $id = null)
     {
-        $branch = $this->Branches->find('byPublicId', [$id])->firstOrFail();
+        $branch = $this->Branches->find('byPublicId', [$id])
+            ->contain([
+                'Parent',
+                'Contacts' => function ($q) {
+                    return $q->select(['id', 'public_id', 'sca_name']);
+                },
+                'Members' => function ($q) {
+                    return $q
+                        ->select([
+                            'id', 'sca_name', 'branch_id', 'membership_number',
+                            'membership_expires_on', 'status', 'birth_month', 'birth_year',
+                        ])
+                        ->orderBy(['sca_name' => 'ASC']);
+                },
+            ])
+            ->firstOrFail();
         if (!$branch) {
             throw new NotFoundException();
         }
         $this->Authorization->authorize($branch);
         if ($this->request->is(['patch', 'post', 'put'])) {
+            // Resolve contact public_id to internal id
+            $contactPublicId = $this->request->getData('contact_id');
+            $data = $this->request->getData();
+            if (!empty($contactPublicId)) {
+                $contactMember = $this->fetchTable('Members')
+                    ->find('byPublicId', [$contactPublicId])
+                    ->select(['id'])
+                    ->first();
+                $data['contact_id'] = $contactMember ? $contactMember->id : null;
+            } else {
+                $data['contact_id'] = null;
+            }
+
             $branch = $this->Branches->patchEntity(
                 $branch,
-                $this->request->getData(),
+                $data,
             );
             $links = json_decode($this->request->getData('branch_links'), true);
             $branch->links = $links;
@@ -411,6 +445,10 @@ class BranchesController extends AppController
         $this->set(compact('branch', 'treeList'));
         // Mirror MembersController pattern: GET edit displays view template with modal
         if ($this->request->is('get')) {
+            // Load children for the view template
+            $branch->children = $this->Branches
+                ->find('children', for: $branch->id, direct: true)
+                ->toArray();
             // Provide branch_types for edit modal element
             $btArray = StaticHelpers::getAppSetting('Branches.Types');
             $branch_types = [];
@@ -418,6 +456,7 @@ class BranchesController extends AppController
                 $branch_types[$branchType] = $branchType;
             }
             $this->set(compact('branch_types'));
+
             return $this->render('view');
         }
     }

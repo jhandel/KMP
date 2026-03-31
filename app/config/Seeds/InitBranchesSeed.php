@@ -22,6 +22,7 @@ class InitBranchesSeed extends BaseSeed
         return [
             [
                 //'id' => 1,
+                'public_id' => bin2hex(random_bytes(4)),
                 'name' => 'Kingdom',
                 'location' => 'Kingdom',
                 'parent_id' => NULL,
@@ -48,9 +49,6 @@ class InitBranchesSeed extends BaseSeed
         $data = $this->getData();
 
         $table = $this->table('branches');
-        $options = $table->getAdapter()->getOptions();
-        $options['identity_insert'] = true;
-        $table->getAdapter()->setOptions($options);
-        $table->insert($data)->saveData();
+        $table->insert($data)->save();
     }
 }

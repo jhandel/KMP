@@ -19,11 +19,47 @@ declare(strict_types=1);
 
 use Cake\Cache\Engine\ApcuEngine;
 use Cake\Cache\Engine\ArrayEngine;
+use Cake\Cache\Engine\FileEngine;
+use Cake\Cache\Engine\RedisEngine;
 use Cake\Database\Connection;
 use Cake\Database\Driver\Mysql;
 use Cake\Log\Engine\FileLog;
 use Cake\Mailer\Transport\MailTransport;
 use Templating\View\Icon\BootstrapIcon;
+
+// Determine cache engine and Redis config from environment
+$cacheEngine = env('CACHE_ENGINE', 'apcu') === 'redis' ? RedisEngine::class : ApcuEngine::class;
+$cliArgs = array_map('strtolower', $_SERVER['argv'] ?? []);
+$isSetupCommand = PHP_SAPI === 'cli' && (in_array('migrations', $cliArgs, true) || in_array('update_database', $cliArgs, true));
+if ($cacheEngine === RedisEngine::class && $isSetupCommand) {
+    $cacheEngine = ArrayEngine::class;
+}
+$redisExtensionLoaded = extension_loaded('redis');
+if ($cacheEngine === RedisEngine::class && !$redisExtensionLoaded) {
+    $cacheEngine = ApcuEngine::class;
+}
+$redisConfig = [];
+if ($cacheEngine === RedisEngine::class) {
+    $redisUrl = trim((string)env('REDIS_URL', ''));
+    if ($redisUrl === '') {
+        $cacheEngine = ApcuEngine::class;
+    } else {
+        $parsed = parse_url($redisUrl) ?: [];
+        $redisConfig = [
+            'server'   => $parsed['host'] ?? 'redis',
+            'port'     => $parsed['port'] ?? 6379,
+            'password' => ($parsed['pass'] ?? null) ?: env('REDIS_PASSWORD', null),
+            'database' => (int)(ltrim($parsed['path'] ?? '/0', '/') ?: '0'),
+            'timeout'  => 0,
+            'persistent' => false,
+        ];
+    }
+}
+$restoreStatusPath = env('RESTORE_STATUS_CACHE_PATH', sys_get_temp_dir() . DS . 'kmp_restore_status_shared' . DS);
+if (!is_dir($restoreStatusPath)) {
+    @mkdir($restoreStatusPath, 0777, true);
+}
+@chmod($restoreStatusPath, 0777);
 
 return [
     /** @var bool Enable debug mode - set via DEBUG environment variable */
@@ -65,7 +101,7 @@ return [
         //'baseUrl' => env('SCRIPT_NAME'),
 
         /** @var string|false Full base URL for absolute links (auto-detected if false) */
-        "fullBaseUrl" => false,
+        "fullBaseUrl" => env("APP_FULL_BASE_URL", false),
 
         /** @var string Web path to images directory */
         "imageBaseUrl" => "img/",
@@ -89,7 +125,19 @@ return [
         ],
 
         /** @var string Application version loaded from version.txt */
-        "version" => file_get_contents(CONFIG . "version.txt"),
+        "version" => @file_get_contents(CONFIG . "version.txt") ?: 'unknown',
+
+        /** @var string Container image tag (set at build time or via env) */
+        "imageTag" => env("IMAGE_TAG", trim((string)@file_get_contents(CONFIG . "version.txt")) ?: 'unknown'),
+
+        /** @var string Release channel: release, beta, dev, nightly */
+        "releaseChannel" => env("RELEASE_CHANNEL", trim((string)@file_get_contents(CONFIG . "channel.txt")) ?: 'release'),
+
+        /** @var string Container registry base (no tag) */
+        "containerRegistry" => env("CONTAINER_REGISTRY", "ghcr.io/jhandel/kmp"),
+
+        /** @var string Deployment provider: docker, railway, azure, aws, fly, vpc, shared */
+        "deploymentProvider" => env("DEPLOYMENT_PROVIDER", env("KMP_DEPLOY_PROVIDER", "docker")),
     ],
 
     /** @see docs/7.1-security-best-practices.md#encryption-and-cryptographic-salt */
@@ -110,8 +158,8 @@ return [
     /** @see docs/6.4-caching-strategy.md */
     "Cache" => [
         /** @var array Default cache configuration for general application data */
-        "default" => [
-            "className" => ApcuEngine::class,
+        "default" => $redisConfig + [
+            "className" => $cacheEngine,
             'duration' => '+1 hours',
         ],
 
@@ -120,8 +168,8 @@ return [
          * Stores individual member permission data for fast authorization checks.
          * Short TTL ensures permission changes are reflected quickly.
          */
-        "member_permissions" => [
-            "className" => ApcuEngine::class,
+        "member_permissions" => $redisConfig + [
+            "className" => $cacheEngine,
             "duration" => "+30 minutes",
             'groups' => ['security', 'member_security']
         ],
@@ -131,8 +179,8 @@ return [
          * Stores the role/permission hierarchy and relationships.
          * Long TTL as this structure changes infrequently.
          */
-        "permissions_structure" => [
-            "className" => ApcuEngine::class,
+        "permissions_structure" => $redisConfig + [
+            "className" => $cacheEngine,
             "duration" => "+999 days",
             'groups' => ['security']
         ],
@@ -142,10 +190,23 @@ return [
          * Stores organizational hierarchy and branch relationships.
          * Long TTL as organizational structure is relatively stable.
          */
-        "branch_structure" => [
-            "className" => ApcuEngine::class,
+        "branch_structure" => $redisConfig + [
+            "className" => $cacheEngine,
             "duration" => "+999 days",
             'groups' => ['security']
+        ],
+
+        /**
+         * Restore Status Cache
+         * Uses file cache so restore lock/progress state is shared between web and CLI.
+         */
+        "restore_status" => [
+            "className" => FileEngine::class,
+            "duration" => "+2 days",
+            "prefix" => "kmp_restore_",
+            "path" => $restoreStatusPath,
+            "mask" => 0666,
+            "dirMask" => 0777,
         ],
 
         /**
@@ -154,8 +215,8 @@ return [
          * Framework-managed cache for i18n performance optimization.
          * Duration reduced to +2 minutes when debug = true.
          */
-        "_cake_translations_" => [
-            "className" => ApcuEngine::class,
+        "_cake_translations_" => $redisConfig + [
+            "className" => $cacheEngine,
             "duration" => "+1 years",
             "url" => env("CACHE_CAKECORE_URL", null),
         ],
@@ -166,8 +227,8 @@ return [
          * Framework-managed cache for ORM performance optimization.
          * Duration reduced to +2 minutes when debug = true.
          */
-        "_cake_model_" => [
-            "className" => ApcuEngine::class,
+        "_cake_model_" => $redisConfig + [
+            "className" => $cacheEngine,
             "duration" => "+1 years",
             "url" => env("CACHE_CAKEMODEL_URL", null),
         ],
@@ -266,6 +327,24 @@ return [
             /** @var string Database driver (MySQL/MariaDB) */
             "driver" => Mysql::class,
 
+            /** @var string Database hostname */
+            "host" => env("DB_HOST", env("MYSQL_HOST", "localhost")),
+
+            /** @var int Database port */
+            "port" => env("DB_PORT", env("MYSQL_PORT", 3306)),
+
+            /** @var string Database username */
+            "username" => env("DB_USERNAME", env("MYSQL_USERNAME", "root")),
+
+            /** @var string Database password */
+            "password" => env("DB_PASSWORD", env("MYSQL_PASSWORD", "")),
+
+            /** @var string Database name */
+            "database" => env("DB_DATABASE", env("MYSQL_DB_NAME", "kmp")),
+
+            /** @var string|null Complete database DSN URL */
+            "url" => env("DATABASE_URL", null),
+
             /** @var bool Use persistent connections (false for better resource management) */
             "persistent" => false,
 
@@ -304,6 +383,24 @@ return [
 
             /** @var string Database driver (MySQL/MariaDB) */
             "driver" => Mysql::class,
+
+            /** @var string Test database hostname */
+            "host" => env("DB_HOST", env("MYSQL_HOST", "localhost")),
+
+            /** @var int Test database port */
+            "port" => env("DB_PORT", env("MYSQL_PORT", 3306)),
+
+            /** @var string Test database username */
+            "username" => env("DB_USERNAME", env("MYSQL_USERNAME", "root")),
+
+            /** @var string Test database password */
+            "password" => env("DB_PASSWORD", env("MYSQL_PASSWORD", "")),
+
+            /** @var string Test database name */
+            "database" => env("DB_DATABASE", env("MYSQL_DB_NAME", "kmp")) . "_test",
+
+            /** @var string|null Complete test database DSN URL */
+            "url" => env("DATABASE_TEST_URL", env("DATABASE_URL", null)),
 
             /** @var bool Use persistent connections */
             "persistent" => false,
@@ -410,6 +507,32 @@ return [
             /** @var array Log scopes for database queries */
             "scopes" => ["cake.database.queries"],
         ],
+
+        /**
+         * Request Performance Log Channel
+         *
+         * Captures slow request timing emitted by optional middleware instrumentation.
+         * This channel is intended for performance risk monitoring in production-like environments.
+         */
+        "performance" => [
+            /** @var string Log engine class */
+            "className" => FileLog::class,
+
+            /** @var string Log file directory path */
+            "path" => LOGS,
+
+            /** @var string Log filename */
+            "file" => "performance",
+
+            /** @var string|null External log service URL */
+            "url" => env("LOG_PERFORMANCE_URL", null),
+
+            /** @var array Log scopes for request performance instrumentation */
+            "scopes" => ["app.performance"],
+
+            /** @var array Log levels to capture */
+            "levels" => ["info", "warning"],
+        ],
     ],
 
     /*
@@ -471,9 +594,10 @@ return [
             /**
              * Active Storage Adapter
              *
-             * Options: 'local' or 'azure'
+             * Options: 'local', 'azure', or 's3'
              * - local: Stores files in the local filesystem
              * - azure: Stores files in Azure Blob Storage
+             * - s3: Stores files in an S3-compatible bucket (AWS S3, MinIO, etc)
              */
             'adapter' => 'local',
 
@@ -521,6 +645,64 @@ return [
                  * Default: '' (no prefix)
                  */
                 'prefix' => '',
+            ],
+
+            /**
+             * S3 Adapter Configuration
+             *
+             * Used when adapter is set to 's3'.
+             */
+            's3' => [
+                /**
+                 * S3 Bucket Name
+                 *
+                 * Should be set via AWS_S3_BUCKET.
+                 */
+                'bucket' => env('AWS_S3_BUCKET'),
+
+                /**
+                 * AWS Region
+                 *
+                 * Should be set via AWS_DEFAULT_REGION.
+                 */
+                'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+
+                /**
+                 * Access Key ID (optional)
+                 *
+                 * Leave null to use instance/task role credentials.
+                 */
+                'key' => env('AWS_ACCESS_KEY_ID'),
+
+                /**
+                 * Secret Access Key (optional)
+                 *
+                 * Leave null to use instance/task role credentials.
+                 */
+                'secret' => env('AWS_SECRET_ACCESS_KEY'),
+
+                /**
+                 * Session token (optional)
+                 */
+                'sessionToken' => env('AWS_SESSION_TOKEN'),
+
+                /**
+                 * Optional object key prefix.
+                 */
+                'prefix' => env('AWS_S3_PREFIX', ''),
+
+                /**
+                 * Optional custom endpoint (for S3-compatible providers like MinIO).
+                 */
+                'endpoint' => env('AWS_S3_ENDPOINT'),
+
+                /**
+                 * Force path-style addressing (required by some S3-compatible providers).
+                 */
+                'usePathStyleEndpoint' => filter_var(
+                    env('AWS_S3_USE_PATH_STYLE_ENDPOINT', false),
+                    FILTER_VALIDATE_BOOLEAN,
+                ),
             ],
         ],
 

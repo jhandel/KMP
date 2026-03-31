@@ -11,6 +11,12 @@ require_once __DIR__ . '/../Seeds/MigrAddViewMembersPermission.php';
 
 class AddViewMembersPermission extends BaseMigration
 {
+    /** Disable transaction wrapping so embedded seed failures don't roll back DDL on Postgres. */
+    public function useTransactions(): bool
+    {
+        return false;
+    }
+
     /**
      * Change Method.
      *

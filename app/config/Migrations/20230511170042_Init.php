@@ -1,15 +1,22 @@
 <?php
 
-use Composer\IO\ConsoleIO;
 use Migrations\BaseMigration;
 use Migrations\Migration\ManagerFactory;
 
 require_once __DIR__ . '/../Seeds/InitMigrationSeed.php';
 
-
 class Init extends BaseMigration
 {
     public bool $autoId = false;
+
+    /**
+     * Disable transaction wrapping so that embedded seed failures on
+     * Postgres do not roll back the DDL statements.
+     */
+    public function useTransactions(): bool
+    {
+        return false;
+    }
 
 
     /**
@@ -21,12 +28,17 @@ class Init extends BaseMigration
     {
         #region Configuration Schema
 
-        $this->table("branches")
+        $this->table("branches", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
                 "limit" => 11,
                 "null" => false,
+            ])
+            ->addColumn("public_id", "string", [
+                "default" => null,
+                "limit" => 8,
+                "null" => true,
             ])
             ->addColumn("name", "string", [
                 "default" => null,
@@ -42,7 +54,6 @@ class Init extends BaseMigration
                 "default" => null,
                 "limit" => 11,
                 "null" => true,
-                "signed" => true,
             ])
             ->addColumn("links", "text", [
                 "default" => null,
@@ -58,13 +69,11 @@ class Init extends BaseMigration
                 "default" => null,
                 "limit" => 11,
                 "null" => true,
-                "signed" => true,
             ])
             ->addColumn("rght", "integer", [
                 "default" => null,
                 "limit" => 11,
                 "null" => true,
-                "signed" => true,
             ])
             ->addColumn("modified", "datetime", [
                 "default" => null,
@@ -99,7 +108,7 @@ class Init extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("roles")
+        $this->table("roles", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -146,7 +155,7 @@ class Init extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("permissions")
+        $this->table("permissions", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -218,7 +227,7 @@ class Init extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("roles_permissions")
+        $this->table("roles_permissions", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -235,8 +244,8 @@ class Init extends BaseMigration
                 "limit" => 11,
                 "null" => false,
             ])
-            ->addColumn("created", "timestamp", [
-                "default" => "CURRENT_TIMESTAMP",
+            ->addColumn("created", "datetime", [
+                "default" => null,
                 "limit" => null,
                 "null" => false,
             ])
@@ -248,7 +257,7 @@ class Init extends BaseMigration
             ->addPrimaryKey(["id"])
             ->create();
 
-        $this->table("app_settings")
+        $this->table("app_settings", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -289,7 +298,7 @@ class Init extends BaseMigration
             ->create();
         #endregion //
         #region Operational Tables
-        $this->table("notes")
+        $this->table("notes", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -301,8 +310,8 @@ class Init extends BaseMigration
                 "limit" => 11,
                 "null" => false,
             ])
-            ->addColumn("created", "timestamp", [
-                "default" => "CURRENT_TIMESTAMP",
+            ->addColumn("created", "datetime", [
+                "default" => null,
                 "limit" => null,
                 "null" => false,
             ])
@@ -336,12 +345,17 @@ class Init extends BaseMigration
             ->addIndex(["topic_model"])
             ->create();
 
-        $this->table("members")
+        $this->table("members", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
                 "limit" => 11,
                 "null" => false,
+            ])
+            ->addColumn("public_id", "string", [
+                "default" => null,
+                "limit" => 8,
+                "null" => true,
             ])
             ->addColumn("password", "string", [
                 "default" => null,
@@ -521,7 +535,7 @@ class Init extends BaseMigration
 
 
 
-        $this->table("member_roles")
+        $this->table("member_roles", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -544,7 +558,7 @@ class Init extends BaseMigration
                 "null" => true,
             ])
             ->addColumn("start_on", "datetime", [
-                "default" => "CURRENT_TIMESTAMP",
+                "default" => null,
                 "limit" => null,
                 "null" => false,
             ])

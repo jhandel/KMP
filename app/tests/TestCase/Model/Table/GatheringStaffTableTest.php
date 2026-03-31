@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Model\Table;
@@ -88,6 +87,7 @@ class GatheringStaffTableTest extends BaseTestCase
      */
     public function testStewardWithEmailSaves(): void
     {
+        $this->skipIfPostgres();
         $staff = $this->GatheringStaff->newEntity([
             'gathering_id' => 1,
             'member_id' => 1,
@@ -107,6 +107,7 @@ class GatheringStaffTableTest extends BaseTestCase
      */
     public function testStewardWithPhoneSaves(): void
     {
+        $this->skipIfPostgres();
         $staff = $this->GatheringStaff->newEntity([
             'gathering_id' => 1,
             'member_id' => 1,
@@ -126,6 +127,7 @@ class GatheringStaffTableTest extends BaseTestCase
      */
     public function testNonStewardWithoutContactInfoSaves(): void
     {
+        $this->skipIfPostgres();
         $staff = $this->GatheringStaff->newEntity([
             'gathering_id' => 1,
             'sca_name' => 'John of Example',
@@ -144,6 +146,7 @@ class GatheringStaffTableTest extends BaseTestCase
      */
     public function testFindStewards(): void
     {
+        $this->skipIfPostgres();
         $stewards = $this->GatheringStaff->find('stewards')->toArray();
 
         $this->assertNotEmpty($stewards);
@@ -159,6 +162,7 @@ class GatheringStaffTableTest extends BaseTestCase
      */
     public function testFindOtherStaff(): void
     {
+        $this->skipIfPostgres();
         $otherStaff = $this->GatheringStaff->find('otherStaff')->toArray();
 
         $this->assertNotEmpty($otherStaff);

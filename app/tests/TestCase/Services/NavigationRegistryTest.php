@@ -1,12 +1,13 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Services;
 
-use App\Services\NavigationRegistry;
 use App\Model\Entity\Member;
+use App\Services\NavigationRegistry;
 use App\Test\TestCase\BaseTestCase;
+use DateTimeImmutable;
+use DateTimeInterface;
 
 /**
  * NavigationRegistry Test Case
@@ -46,8 +47,8 @@ class NavigationRegistryTest extends BaseTestCase
             [
                 'type' => 'link',
                 'label' => 'Test Link',
-                'url' => ['controller' => 'Test', 'action' => 'index']
-            ]
+                'url' => ['controller' => 'Test', 'action' => 'index'],
+            ],
         ];
 
         NavigationRegistry::register('test', $items);
@@ -74,7 +75,7 @@ class NavigationRegistryTest extends BaseTestCase
             [
                 'type' => 'parent',
                 'label' => 'Static Menu',
-            ]
+            ],
         ];
 
         $callback = function ($user, $params) {
@@ -82,8 +83,8 @@ class NavigationRegistryTest extends BaseTestCase
                 [
                     'type' => 'link',
                     'label' => "Dynamic link for {$user->sca_name}",
-                    'url' => ['controller' => 'Users', 'action' => 'view', $user->id]
-                ]
+                    'url' => ['controller' => 'Users', 'action' => 'view', $user->id],
+                ],
             ];
         };
 
@@ -105,10 +106,10 @@ class NavigationRegistryTest extends BaseTestCase
     public function testGetNavigationItemsFromSource(): void
     {
         $coreItems = [
-            ['type' => 'link', 'label' => 'Core Item']
+            ['type' => 'link', 'label' => 'Core Item'],
         ];
         $pluginItems = [
-            ['type' => 'link', 'label' => 'Plugin Item']
+            ['type' => 'link', 'label' => 'Plugin Item'],
         ];
 
         NavigationRegistry::register('core', $coreItems);
@@ -151,7 +152,7 @@ class NavigationRegistryTest extends BaseTestCase
     {
         $items = [
             ['type' => 'link', 'label' => 'Item 1'],
-            ['type' => 'link', 'label' => 'Item 2']
+            ['type' => 'link', 'label' => 'Item 2'],
         ];
 
         $callback = function () {
@@ -170,5 +171,31 @@ class NavigationRegistryTest extends BaseTestCase
         $this->assertEquals(0, $debug['sources']['source2']['static_items']);
         $this->assertFalse($debug['sources']['source1']['has_callback']);
         $this->assertTrue($debug['sources']['source2']['has_callback']);
+    }
+
+    /**
+     * Ensure empty cached navigation does not suppress registered menu sources.
+     *
+     * @return void
+     */
+    public function testIgnoresEmptyCachedNavigationWhenSourcesExist(): void
+    {
+        $_SESSION['navigation_items'] = [
+            'user_id' => 1,
+            'items' => [],
+            'generated_at' => (new DateTimeImmutable('now'))->format(DateTimeInterface::ATOM),
+        ];
+
+        NavigationRegistry::register('test', [[
+            'type' => 'link',
+            'label' => 'Recovered Link',
+            'url' => ['controller' => 'Members', 'action' => 'index'],
+        ]]);
+
+        $user = new Member(['id' => 1, 'sca_name' => 'Test User']);
+        $items = NavigationRegistry::getNavigationItems($user);
+
+        $this->assertNotEmpty($items);
+        $this->assertSame('Recovered Link', $items[0]['label']);
     }
 }

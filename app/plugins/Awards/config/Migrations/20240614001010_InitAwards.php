@@ -11,6 +11,11 @@ require_once __DIR__ . '/../Seeds/InitAwardsSeed.php';
 class InitAwards extends BaseMigration
 {
     public bool $autoId = false;
+    /** Disable transaction wrapping so embedded seed failures don't roll back DDL on Postgres. */
+    public function useTransactions(): bool
+    {
+        return false;
+    }
     /**
      * Change Method.
      *
@@ -20,8 +25,7 @@ class InitAwards extends BaseMigration
      */
     public function up(): void
     {
-
-        $this->table("awards_domains")
+        $this->table("awards_domains", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -63,7 +67,7 @@ class InitAwards extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("awards_levels")
+        $this->table("awards_levels", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -110,7 +114,7 @@ class InitAwards extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("awards_awards")
+        $this->table("awards_awards", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -200,7 +204,7 @@ class InitAwards extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("awards_events")
+        $this->table("awards_events", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -264,7 +268,7 @@ class InitAwards extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("awards_recommendations")
+        $this->table("awards_recommendations", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -386,7 +390,7 @@ class InitAwards extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("awards_recommendations_events")
+        $this->table("awards_recommendations_events", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -497,6 +501,9 @@ class InitAwards extends BaseMigration
         $manager->seed($seeder);
     }
 
+    /**
+     * Reverse the migration.
+     */
     public function down()
     {
         $this->table("awards_recommendation_event")

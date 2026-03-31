@@ -25,17 +25,27 @@ class AddWarrantableToMembers extends BaseMigration
             'null' => false,
         ]);
         $table->update();
-        // Load the MembersTable
-        $membersTable = \Cake\ORM\TableRegistry::getTableLocator()->get('Members');
 
-        // Fetch all members
-        $members = $membersTable->find('all');
+        // Pre-compute warrantable status for existing members.
+        // Column defaults to false; this is a best-effort optimization.
+        // If it fails (e.g. schema cache issues on Postgres), members
+        // will be updated on their next save/login.
+        try {
+            $connName = $this->getAdapter()->getConnection()->configName();
+            $conn = \Cake\Datasource\ConnectionManager::get($connName);
+            (new \Cake\Database\SchemaCache($conn))->clear();
+            \Cake\ORM\TableRegistry::getTableLocator()->clear();
 
-        foreach ($members as $member) {
-            // Compute warrantable status
-            $member->warrantableReview();
-            // Save without triggering beforeSave to avoid recursion
-            $membersTable->save($member, ['checkRules' => false, 'callbacks' => false]);
+            $membersTable = \Cake\ORM\TableRegistry::getTableLocator()->get('Members');
+            $members = $membersTable->find('all');
+
+            foreach ($members as $member) {
+                $member->warrantableReview();
+                $membersTable->save($member, ['checkRules' => false, 'callbacks' => false]);
+            }
+        } catch (\Exception $e) {
+            // Non-fatal: members default to warrantable=false
+            echo "  [warn] warrantable pre-compute skipped: " . $e->getMessage() . "\n";
         }
     }
     public function down(): void

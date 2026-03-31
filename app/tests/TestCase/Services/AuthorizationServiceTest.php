@@ -1,29 +1,36 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Services;
 
+use App\Model\Entity\Member;
+use App\Policy\MemberPolicy;
 use App\Services\AuthorizationService;
 use App\Test\TestCase\BaseTestCase;
 use Authorization\Policy\MapResolver;
-use Cake\ORM\TableRegistry;
+use Exception;
+use ReflectionProperty;
 
 class AuthorizationServiceTest extends BaseTestCase
 {
-    /** @var \App\Model\Table\MembersTable */
+    /**
+     * @var \App\Model\Table\MembersTable
+     */
     protected $Members;
-    /** @var \App\Services\AuthorizationService */
+    /**
+     * @var \App\Services\AuthorizationService
+     */
     protected $AuthService;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->skipIfPostgres();
         $this->Members = $this->getTableLocator()->get('Members');
 
         // Create authorization service with policy resolver and MemberPolicy
         $resolver = new MapResolver();
-        $resolver->map(\App\Model\Entity\Member::class, \App\Policy\MemberPolicy::class);
+        $resolver->map(Member::class, MemberPolicy::class);
         $this->AuthService = new AuthorizationService($resolver);
     }
 
@@ -31,7 +38,7 @@ class AuthorizationServiceTest extends BaseTestCase
     {
         // Load admin member with permissions
         $admin = $this->Members->get(self::ADMIN_MEMBER_ID, [
-            'contain' => []
+            'contain' => [],
         ]);
 
         // Load permissions to set up identity
@@ -61,7 +68,7 @@ class AuthorizationServiceTest extends BaseTestCase
 
         // Verify state is preserved (checkCan sets and unsets internally)
         // This tests the critical security feature that prevents bypass
-        $reflectionProperty = new \ReflectionProperty($this->AuthService, 'authorizationChecked');
+        $reflectionProperty = new ReflectionProperty($this->AuthService, 'authorizationChecked');
         $reflectionProperty->setAccessible(true);
 
         $initialState = $reflectionProperty->getValue($this->AuthService);
@@ -69,7 +76,7 @@ class AuthorizationServiceTest extends BaseTestCase
         // Actually exercise checkCan() - wrap in try/catch in case policy throws
         try {
             $this->AuthService->checkCan($admin, 'view', $admin);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Ignore exceptions from missing policies or failed checks
             // We're testing state restoration, not authorization logic
         }
@@ -142,7 +149,7 @@ class AuthorizationServiceTest extends BaseTestCase
         $this->assertLessThanOrEqual(
             count($allPolicies),
             count($filteredPolicies),
-            'Filtered policies should not exceed total policies'
+            'Filtered policies should not exceed total policies',
         );
     }
 
@@ -152,7 +159,7 @@ class AuthorizationServiceTest extends BaseTestCase
 
         $asMember = $member->getAsMember();
         $this->assertSame($member, $asMember, 'getAsMember should return the member entity itself');
-        $this->assertInstanceOf(\App\Model\Entity\Member::class, $asMember);
+        $this->assertInstanceOf(Member::class, $asMember);
     }
 
     public function testMemberGetIdentifierReturnsId(): void

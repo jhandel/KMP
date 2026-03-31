@@ -1,15 +1,18 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Model\Table;
 
-use Cake\ORM\Table;
-use Cake\Validation\Validator;
-use Cake\ORM\RulesChecker;
-use Cake\Event\EventInterface;
+use ArrayObject;
 use Cake\Datasource\EntityInterface;
+use Cake\Event\EventInterface;
+use Cake\ORM\Query\SelectQuery;
+use Cake\ORM\RulesChecker;
+use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
+use Cake\Validation\Validator;
+use DateTimeZone;
+use Exception;
 
 /**
  * Gatherings Model
@@ -22,7 +25,6 @@ use Cake\ORM\TableRegistry;
  * @property \App\Model\Table\GatheringScheduledActivitiesTable&\Cake\ORM\Association\HasMany $GatheringScheduledActivities
  * @property \App\Model\Table\GatheringStaffTable&\Cake\ORM\Association\HasMany $GatheringStaff
  * @property \Waivers\Model\Table\GatheringWaiversTable&\Cake\ORM\Association\HasMany $GatheringWaivers
- *
  * @method \App\Model\Entity\Gathering newEmptyEntity()
  * @method \App\Model\Entity\Gathering newEntity(array $data, array $options = [])
  * @method \App\Model\Entity\Gathering[] newEntities(array $data, array $options = [])
@@ -52,7 +54,7 @@ class GatheringsTable extends Table
         $this->addBehavior('Timestamp');
         $this->addBehavior('Muffin/Footprint.Footprint');
         $this->addBehavior('Muffin/Trash.Trash', [
-            'field' => 'deleted'
+            'field' => 'deleted',
         ]);
         $this->addBehavior('PublicId');
 
@@ -170,9 +172,10 @@ class GatheringsTable extends Table
                     }
                     // Validate using PHP's timezone list
                     try {
-                        new \DateTimeZone($value);
+                        new DateTimeZone($value);
+
                         return true;
-                    } catch (\Exception $e) {
+                    } catch (Exception $e) {
                         return false;
                     }
                 },
@@ -222,7 +225,7 @@ class GatheringsTable extends Table
      * @param array $options Options including 'start' and 'end'
      * @return \Cake\ORM\Query\SelectQuery
      */
-    public function findByDateRange(\Cake\ORM\Query\SelectQuery $query, array $options): \Cake\ORM\Query\SelectQuery
+    public function findByDateRange(SelectQuery $query, array $options): SelectQuery
     {
         if (isset($options['start'])) {
             $query->where(['Gatherings.start_date >=' => $options['start']]);
@@ -241,7 +244,7 @@ class GatheringsTable extends Table
      * @param array $options Options including 'branch_id'
      * @return \Cake\ORM\Query\SelectQuery
      */
-    public function findByBranch(\Cake\ORM\Query\SelectQuery $query, array $options): \Cake\ORM\Query\SelectQuery
+    public function findByBranch(SelectQuery $query, array $options): SelectQuery
     {
         if (isset($options['branch_id'])) {
             $query->where(['Gatherings.branch_id' => $options['branch_id']]);
@@ -257,7 +260,7 @@ class GatheringsTable extends Table
      * @param array $options Options including 'gathering_type_id'
      * @return \Cake\ORM\Query\SelectQuery
      */
-    public function findByType(\Cake\ORM\Query\SelectQuery $query, array $options): \Cake\ORM\Query\SelectQuery
+    public function findByType(SelectQuery $query, array $options): SelectQuery
     {
         if (isset($options['gathering_type_id'])) {
             $query->where(['Gatherings.gathering_type_id' => $options['gathering_type_id']]);
@@ -278,7 +281,7 @@ class GatheringsTable extends Table
      * @param \ArrayObject $options Options passed to save
      * @return void
      */
-    public function afterSave(EventInterface $event, EntityInterface $entity, \ArrayObject $options): void
+    public function afterSave(EventInterface $event, EntityInterface $entity, ArrayObject $options): void
     {
         // Skip template sync when cloning (clone manages activities from the source gathering)
         if (!empty($options['skipTemplateSync'])) {
@@ -297,14 +300,15 @@ class GatheringsTable extends Table
      * This method:
      * 1. Fetches all template activities for the gathering type
      * 2. Adds any missing activities to the gathering
-     * 3. Sets the not_removable flag based on the template
+     * 3. Re-evaluates not_removable for all existing activities based on the current template
      *
      * @param \Cake\Datasource\EntityInterface $gathering The gathering entity
      * @return void
      */
     public function syncTemplateActivities(EntityInterface $gathering): void
     {
-        $gatheringTypeGatheringActivitiesTable = TableRegistry::getTableLocator()->get('GatheringTypeGatheringActivities');
+        $gatheringTypeGatheringActivitiesTable =
+            TableRegistry::getTableLocator()->get('GatheringTypeGatheringActivities');
         $gatheringsGatheringActivitiesTable = TableRegistry::getTableLocator()->get('GatheringsGatheringActivities');
 
         // Get template activities for this gathering type
@@ -313,10 +317,6 @@ class GatheringsTable extends Table
             ->contain(['GatheringActivities'])
             ->all();
 
-        if ($templateActivities->isEmpty()) {
-            return;
-        }
-
         // Get existing activities for this gathering
         $existingActivities = $gatheringsGatheringActivitiesTable->find()
             ->where(['gathering_id' => $gathering->id])
@@ -324,35 +324,55 @@ class GatheringsTable extends Table
             ->indexBy('gathering_activity_id')
             ->toArray();
 
+        $templateNotRemovableByActivity = [];
+        foreach ($templateActivities as $templateActivity) {
+            $templateNotRemovableByActivity[$templateActivity->gathering_activity_id] =
+                (bool)$templateActivity->not_removable;
+        }
+
         // Find the max sort order to append new activities
         $maxSortOrder = 0;
         if (!empty($existingActivities)) {
             $maxSortOrder = max(array_column($existingActivities, 'sort_order'));
         }
 
-        // Add missing template activities
-        foreach ($templateActivities as $templateActivity) {
-            $activityId = $templateActivity->gathering_activity_id;
+        $connection = $gatheringsGatheringActivitiesTable->getConnection();
+        $connection->transactional(function () use (
+            $templateActivities,
+            $existingActivities,
+            $templateNotRemovableByActivity,
+            $gatheringsGatheringActivitiesTable,
+            $gathering,
+            &$maxSortOrder,
+        ): void {
+            // Add missing template activities
+            foreach ($templateActivities as $templateActivity) {
+                $activityId = $templateActivity->gathering_activity_id;
 
-            if (!isset($existingActivities[$activityId])) {
-                // Activity doesn't exist, add it
-                $maxSortOrder++;
-                $newActivity = $gatheringsGatheringActivitiesTable->newEntity([
-                    'gathering_id' => $gathering->id,
-                    'gathering_activity_id' => $activityId,
-                    'sort_order' => $maxSortOrder
-                ]);
+                if (!isset($existingActivities[$activityId])) {
+                    // Activity doesn't exist, add it
+                    $maxSortOrder++;
+                    $newActivity = $gatheringsGatheringActivitiesTable->newEntity([
+                        'gathering_id' => $gathering->id,
+                        'gathering_activity_id' => $activityId,
+                        'sort_order' => $maxSortOrder,
+                    ]);
 
-                $newActivity->not_removable = $templateActivity->not_removable;
-                $gatheringsGatheringActivitiesTable->save($newActivity);
-            } else {
-                // Activity exists, update not_removable if template says it should be
-                if ($templateActivity->not_removable && !$existingActivities[$activityId]->not_removable) {
-                    $existingActivity = $existingActivities[$activityId];
-                    $existingActivity->not_removable = true;
-                    $gatheringsGatheringActivitiesTable->save($existingActivity);
+                    $newActivity->not_removable = $templateActivity->not_removable;
+                    $gatheringsGatheringActivitiesTable->saveOrFail($newActivity);
                 }
             }
-        }
+
+            // Re-evaluate not_removable against the new gathering type template.
+            // Activities not present in the template must be removable.
+            foreach ($existingActivities as $existingActivity) {
+                $desiredNotRemovable =
+                    $templateNotRemovableByActivity[$existingActivity->gathering_activity_id] ?? false;
+                if ((bool)$existingActivity->not_removable !== $desiredNotRemovable) {
+                    $existingActivity->not_removable = $desiredNotRemovable;
+                    $gatheringsGatheringActivitiesTable->saveOrFail($existingActivity);
+                }
+            }
+        });
     }
 }

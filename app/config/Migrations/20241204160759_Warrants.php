@@ -10,6 +10,11 @@ require_once __DIR__ . '/../Seeds/InitWarrantsSeed.php';
 class Warrants extends BaseMigration
 {
     public bool $autoId = false;
+    /** Disable transaction wrapping so embedded seed failures don't roll back DDL on Postgres. */
+    public function useTransactions(): bool
+    {
+        return false;
+    }
     /**
      * Change Method.
      *
@@ -19,7 +24,7 @@ class Warrants extends BaseMigration
      */
     public function up()
     {
-        $this->table('warrant_periods')
+        $this->table('warrant_periods', ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -49,7 +54,7 @@ class Warrants extends BaseMigration
             ->addPrimaryKey(["id"])
             ->create();
 
-        $this->table("warrants")
+        $this->table("warrants", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -143,7 +148,7 @@ class Warrants extends BaseMigration
             ->addIndex(["expires_on"])
             ->create();
 
-        $this->table("warrant_rosters")
+        $this->table("warrant_rosters", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -193,7 +198,7 @@ class Warrants extends BaseMigration
             ->addPrimaryKey(["id"])
             ->create();
 
-        $this->table("warrant_roster_approvals")
+        $this->table("warrant_roster_approvals", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,

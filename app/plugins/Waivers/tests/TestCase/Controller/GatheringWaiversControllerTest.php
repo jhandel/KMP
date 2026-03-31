@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Waivers\Test\TestCase\Controller;
 
 use App\Test\TestCase\Support\HttpIntegrationTestCase;
+use Cake\Core\Configure;
 
 /**
  * Waivers\Controller\GatheringWaiversController Test Case
@@ -179,13 +180,16 @@ class GatheringWaiversControllerTest extends HttpIntegrationTestCase
         }
 
         // Create a temporary file at the expected storage path
-        $basePath = WWW_ROOT . '..' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'uploaded' . DIRECTORY_SEPARATOR;
+        $basePath = (string)Configure::read(
+            'Documents.storage.local.path',
+            WWW_ROOT . '..' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'uploaded'
+        );
+        $basePath = rtrim($basePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         $filePath = $basePath . str_replace('/', DIRECTORY_SEPARATOR, $waiver->document->file_path);
         $dir = dirname($filePath);
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
-        $createdDir = !is_dir($dir); // track if we created it
         file_put_contents($filePath, '%PDF-1.4 test content');
         $this->_testFilePath = $filePath;
 
@@ -217,7 +221,11 @@ class GatheringWaiversControllerTest extends HttpIntegrationTestCase
         }
 
         // Create a temporary file at the expected storage path
-        $basePath = WWW_ROOT . '..' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'uploaded' . DIRECTORY_SEPARATOR;
+        $basePath = (string)Configure::read(
+            'Documents.storage.local.path',
+            WWW_ROOT . '..' . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'uploaded'
+        );
+        $basePath = rtrim($basePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         $filePath = $basePath . str_replace('/', DIRECTORY_SEPARATOR, $waiver->document->file_path);
         $dir = dirname($filePath);
         if (!is_dir($dir)) {
@@ -233,6 +241,247 @@ class GatheringWaiversControllerTest extends HttpIntegrationTestCase
         if (file_exists($filePath)) {
             unlink($filePath);
         }
+    }
+
+    /**
+     * Test dashboard loads successfully
+     *
+     * Verifies the dashboard action and its internal queries work,
+     * including the _getGatheringsNeedingClosed query that joins
+     * GatheringActivityWaivers → GatheringActivities → Gatherings.
+     *
+     * @return void
+     * @uses \Waivers\Controller\GatheringWaiversController::dashboard()
+     */
+    public function testDashboard(): void
+    {
+        $this->get('/waivers/gathering-waivers/dashboard');
+        $this->assertResponseOk();
+    }
+
+    /**
+     * Test dashboard sets expected view variables
+     *
+     * @return void
+     * @uses \Waivers\Controller\GatheringWaiversController::dashboard()
+     */
+    public function testDashboardSetsViewVariables(): void
+    {
+        $this->get('/waivers/gathering-waivers/dashboard');
+        $this->assertResponseOk();
+
+        $statistics = $this->viewVariable('statistics');
+        $this->assertNotNull($statistics, 'Dashboard should set statistics');
+        $this->assertArrayHasKey('totalWaivers', $statistics);
+        $this->assertArrayHasKey('recentWaivers', $statistics);
+        $this->assertArrayHasKey('gatheringsMissingCount', $statistics);
+        $this->assertArrayHasKey('gatheringsNeedingCount', $statistics);
+
+        $this->assertNotNull($this->viewVariable('waiverTypesSummary'), 'Dashboard should set waiverTypesSummary');
+        $this->assertNotNull($this->viewVariable('complianceDays'), 'Dashboard should set complianceDays');
+    }
+
+    /**
+     * Test dashboard includes gatherings that start exactly 30 days out.
+     *
+     * @return void
+     * @uses \Waivers\Controller\GatheringWaiversController::dashboard()
+     */
+    public function testDashboardIncludesThirtyDayBoundaryGathering(): void
+    {
+        $Gatherings = $this->getTableLocator()->get('Gatherings');
+        $GatheringActivityWaivers = $this->getTableLocator()->get('Waivers.GatheringActivityWaivers');
+
+        $existingGathering = $Gatherings->find()
+            ->select(['branch_id', 'gathering_type_id'])
+            ->where(['Gatherings.deleted IS' => null])
+            ->first();
+        $requiredActivity = $GatheringActivityWaivers->find()
+            ->select(['gathering_activity_id'])
+            ->where(['deleted IS' => null])
+            ->first();
+
+        if (!$existingGathering || !$requiredActivity) {
+            $this->markTestSkipped('Seed data missing required gathering/activity records');
+        }
+
+        $boundaryStart = (new \DateTimeImmutable('now'))->modify('+30 days')->setTime(12, 0, 0);
+        $boundaryEnd = $boundaryStart->modify('+1 day');
+
+        $testGathering = $Gatherings->newEntity([
+            'branch_id' => (int)$existingGathering->branch_id,
+            'gathering_type_id' => (int)$existingGathering->gathering_type_id,
+            'name' => 'Waiver Dashboard Boundary Test ' . uniqid('', true),
+            'description' => 'Boundary test gathering',
+            'start_date' => $boundaryStart->format('Y-m-d H:i:s'),
+            'end_date' => $boundaryEnd->format('Y-m-d H:i:s'),
+            'location' => 'Test Location',
+            'created_by' => self::ADMIN_MEMBER_ID,
+            'gathering_activities' => [
+                '_ids' => [(int)$requiredActivity->gathering_activity_id],
+            ],
+        ], [
+            'associated' => ['GatheringActivities'],
+        ]);
+        $savedGathering = $Gatherings->saveOrFail($testGathering);
+
+        $this->get('/waivers/gathering-waivers/dashboard');
+        $this->assertResponseOk();
+
+        $gatheringsNeedingWaivers = $this->viewVariable('gatheringsNeedingWaivers');
+        $boundaryGathering = array_filter(
+            $gatheringsNeedingWaivers,
+            fn($gathering) => (int)$gathering->id === (int)$savedGathering->id
+        );
+
+        $this->assertNotEmpty($boundaryGathering, 'Expected day-30 boundary gathering to appear in upcoming waivers.');
+    }
+
+    /**
+     * Test dashboard includes all gatherings that share the same required activity.
+     *
+     * @return void
+     * @uses \Waivers\Controller\GatheringWaiversController::dashboard()
+     */
+    public function testDashboardIncludesAllGatheringsSharingRequiredActivity(): void
+    {
+        $Gatherings = $this->getTableLocator()->get('Gatherings');
+        $GatheringActivityWaivers = $this->getTableLocator()->get('Waivers.GatheringActivityWaivers');
+
+        $existingGathering = $Gatherings->find()
+            ->select(['branch_id', 'gathering_type_id'])
+            ->where(['Gatherings.deleted IS' => null])
+            ->first();
+        $requiredActivity = $GatheringActivityWaivers->find()
+            ->select(['gathering_activity_id'])
+            ->where(['deleted IS' => null])
+            ->first();
+
+        if (!$existingGathering || !$requiredActivity) {
+            $this->markTestSkipped('Seed data missing required gathering/activity records');
+        }
+
+        $startOne = (new \DateTimeImmutable('now'))->modify('+7 days')->setTime(10, 0, 0);
+        $startTwo = (new \DateTimeImmutable('now'))->modify('+8 days')->setTime(10, 0, 0);
+
+        $firstGathering = $Gatherings->saveOrFail($Gatherings->newEntity([
+            'branch_id' => (int)$existingGathering->branch_id,
+            'gathering_type_id' => (int)$existingGathering->gathering_type_id,
+            'name' => 'Waiver Shared Activity Test A ' . uniqid('', true),
+            'description' => 'Shared activity mapping test A',
+            'start_date' => $startOne->format('Y-m-d H:i:s'),
+            'end_date' => $startOne->modify('+2 hours')->format('Y-m-d H:i:s'),
+            'location' => 'Test Location',
+            'created_by' => self::ADMIN_MEMBER_ID,
+            'gathering_activities' => [
+                '_ids' => [(int)$requiredActivity->gathering_activity_id],
+            ],
+        ], [
+            'associated' => ['GatheringActivities'],
+        ]));
+
+        $secondGathering = $Gatherings->saveOrFail($Gatherings->newEntity([
+            'branch_id' => (int)$existingGathering->branch_id,
+            'gathering_type_id' => (int)$existingGathering->gathering_type_id,
+            'name' => 'Waiver Shared Activity Test B ' . uniqid('', true),
+            'description' => 'Shared activity mapping test B',
+            'start_date' => $startTwo->format('Y-m-d H:i:s'),
+            'end_date' => $startTwo->modify('+2 hours')->format('Y-m-d H:i:s'),
+            'location' => 'Test Location',
+            'created_by' => self::ADMIN_MEMBER_ID,
+            'gathering_activities' => [
+                '_ids' => [(int)$requiredActivity->gathering_activity_id],
+            ],
+        ], [
+            'associated' => ['GatheringActivities'],
+        ]));
+
+        $this->get('/waivers/gathering-waivers/dashboard');
+        $this->assertResponseOk();
+
+        $gatheringsNeedingWaivers = $this->viewVariable('gatheringsNeedingWaivers');
+        $upcomingGatheringIds = array_map(
+            static fn($gathering) => (int)$gathering->id,
+            $gatheringsNeedingWaivers
+        );
+
+        $this->assertContains((int)$firstGathering->id, $upcomingGatheringIds);
+        $this->assertContains((int)$secondGathering->id, $upcomingGatheringIds);
+    }
+
+    /**
+     * Test calendarData emits dates in the gathering's timezone.
+     *
+     * @return void
+     * @uses \Waivers\Controller\GatheringWaiversController::calendarData()
+     */
+    public function testCalendarDataUsesGatheringTimezoneForEventDates(): void
+    {
+        $Gatherings = $this->getTableLocator()->get('Gatherings');
+        $GatheringActivityWaivers = $this->getTableLocator()->get('Waivers.GatheringActivityWaivers');
+
+        $existingGathering = $Gatherings->find()
+            ->select(['branch_id', 'gathering_type_id'])
+            ->where(['Gatherings.deleted IS' => null])
+            ->first();
+        $requiredActivity = $GatheringActivityWaivers->find()
+            ->select(['gathering_activity_id'])
+            ->where(['deleted IS' => null])
+            ->first();
+
+        if (!$existingGathering || !$requiredActivity) {
+            $this->markTestSkipped('Seed data missing required gathering/activity records');
+        }
+
+        $utcStart = new \DateTimeImmutable('2026-03-15 01:30:00', new \DateTimeZone('UTC'));
+        $utcEnd = $utcStart->modify('+2 hours');
+
+        $testGathering = $Gatherings->saveOrFail($Gatherings->newEntity([
+            'branch_id' => (int)$existingGathering->branch_id,
+            'gathering_type_id' => (int)$existingGathering->gathering_type_id,
+            'name' => 'Waiver Calendar TZ Test ' . uniqid('', true),
+            'description' => 'Calendar timezone conversion test',
+            'timezone' => 'America/Los_Angeles',
+            'start_date' => $utcStart->format('Y-m-d H:i:s'),
+            'end_date' => $utcEnd->format('Y-m-d H:i:s'),
+            'location' => 'Test Location',
+            'created_by' => self::ADMIN_MEMBER_ID,
+            'gathering_activities' => [
+                '_ids' => [(int)$requiredActivity->gathering_activity_id],
+            ],
+        ], [
+            'associated' => ['GatheringActivities'],
+        ]));
+
+        $this->get('/waivers/gathering-waivers/calendar-data?year=2026&month=3');
+        $this->assertResponseOk();
+        $this->assertContentType('application/json');
+
+        $response = json_decode((string)$this->_response->getBody(), true);
+        $this->assertIsArray($response);
+        $this->assertArrayHasKey('events', $response);
+
+        $matchingEvents = array_values(array_filter(
+            $response['events'],
+            static fn(array $event): bool => (int)($event['id'] ?? 0) === (int)$testGathering->id
+        ));
+
+        $this->assertNotEmpty($matchingEvents, 'Expected timezone test gathering in calendar payload.');
+        $this->assertSame('2026-03-14', $matchingEvents[0]['start_date']);
+        $this->assertSame('2026-03-14', $matchingEvents[0]['end_date']);
+        $this->assertFalse((bool)$matchingEvents[0]['multi_day']);
+    }
+
+    /**
+     * Test dashboard requires authentication
+     *
+     * @return void
+     */
+    public function testDashboardRequiresAuthentication(): void
+    {
+        $this->session(['Auth' => null]);
+        $this->get('/waivers/gathering-waivers/dashboard');
+        $this->assertRedirect();
     }
 
     /**

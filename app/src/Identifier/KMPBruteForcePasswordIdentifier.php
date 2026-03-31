@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Identifier;
@@ -9,7 +8,6 @@ use ArrayAccess;
 use Authentication\Identifier\PasswordIdentifier;
 use Cake\I18n\DateTime;
 use Cake\ORM\TableRegistry;
-use App\KMP\StaticHelpers;
 
 class KMPBruteForcePasswordIdentifier extends PasswordIdentifier
 {
@@ -55,13 +53,11 @@ class KMPBruteForcePasswordIdentifier extends PasswordIdentifier
                 $this->_errors[] = 'Account Disabled';
 
                 return null;
-                break;
             case Member::STATUS_MINOR_MEMBERSHIP_VERIFIED:
             case Member::STATUS_UNVERIFIED_MINOR:
                 $this->_errors[] = 'Account Not Verified';
 
                 return null;
-                break;
         }
         //check if the password is correct
         if (array_key_exists('password', $credentials)) {
@@ -81,6 +77,12 @@ class KMPBruteForcePasswordIdentifier extends PasswordIdentifier
         return $identity;
     }
 
+    /**
+     * Internal: find identity.
+     *
+     * @param mixed $username
+     * @return \ArrayAccess|array|null
+     */
     protected function _findIdentity($username): ArrayAccess|array|null
     {
         $finder = $this->getConfig('finder', 'all');
@@ -93,6 +95,13 @@ class KMPBruteForcePasswordIdentifier extends PasswordIdentifier
         return $user;
     }
 
+    /**
+     * Internal: log successful login.
+     *
+     * @param mixed $user
+     * @param mixed $MembersTable
+     * @return void
+     */
     protected function _logSuccessfulLogin($user, $MembersTable): void
     {
         $user->failed_login_attempts = 0;
@@ -102,13 +111,16 @@ class KMPBruteForcePasswordIdentifier extends PasswordIdentifier
         $user->last_login = DateTime::now();
         $user->setDirty('modified', true);
         $user->setDirty('modified_by', true);
-        //if the user mobile token isn't set set, set it now
-        if (empty($user->mobile_card_token)) {
-            $user->mobile_card_token = StaticHelpers::generateToken(16);
-        }
         $MembersTable->save($user);
     }
 
+    /**
+     * Internal: add failed login attempt.
+     *
+     * @param mixed $user
+     * @param mixed $MembersTable
+     * @return void
+     */
     protected function _addFailedLoginAttempt($user, $MembersTable): void
     {
         $user->failed_login_attempts++;

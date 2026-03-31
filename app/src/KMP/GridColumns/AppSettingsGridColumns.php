@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\KMP\GridColumns;
@@ -54,6 +53,11 @@ class AppSettingsGridColumns extends BaseGridColumns
         ];
     }
 
+    /**
+     * Get columns.
+     *
+     * @return array
+     */
     public static function getColumns(): array
     {
         return [
@@ -109,6 +113,7 @@ class AppSettingsGridColumns extends BaseGridColumns
                     ['value' => 'string', 'label' => 'String'],
                     ['value' => 'json', 'label' => 'JSON'],
                     ['value' => 'yaml', 'label' => 'YAML'],
+                    ['value' => 'password', 'label' => 'Password'],
                 ],
             ],
 
@@ -169,6 +174,7 @@ class AppSettingsGridColumns extends BaseGridColumns
                 $searchable[] = $col['queryField'] ?? $key;
             }
         }
+
         return $searchable;
     }
 }

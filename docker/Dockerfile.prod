@@ -1,0 +1,118 @@
+# KMP Production Container
+#
+# 3-stage build designed for fast rebuilds:
+#
+#   Stage 1 (node-builder):   --platform=$BUILDPLATFORM  → runs NATIVE on CI (no QEMU)
+#   Stage 2 (php-deps):       --platform=$BUILDPLATFORM  → runs NATIVE on CI (no QEMU)
+#   Stage 3 (runtime):        FROM kmp-base              → COPY only, zero compilation
+#
+# PHP extension compilation lives in docker/Dockerfile.base (built infrequently).
+# Expected app-image build time: 5-10 min (vs ~90 min previously).
+
+# Base image with all PHP extensions pre-compiled.
+# Falls back to php:8.3-apache-bookworm if the base image hasn't been built yet.
+ARG BASE_IMAGE=ghcr.io/jhandel/kmp-base:php83
+ARG APP_VERSION=dev
+
+# =============================================================================
+# Stage 1: Frontend assets
+# --platform=$BUILDPLATFORM: always runs on the CI runner's native arch (amd64)
+# No QEMU penalty for Node.js/webpack even in multi-platform builds.
+# =============================================================================
+FROM --platform=$BUILDPLATFORM node:20-alpine AS node-builder
+
+WORKDIR /build
+
+# Layer-cache npm installs separately from app code
+COPY app/package.json app/package-lock.json ./
+COPY app/patches ./patches
+RUN npm ci --no-audit --no-fund
+
+# Copy everything webpack needs
+COPY app/assets ./assets
+COPY app/plugins ./plugins
+COPY app/webpack.mix.js ./
+COPY app/webroot ./webroot
+
+RUN npm run prod
+# Result: /build/webroot/ has compiled JS, CSS, fonts, and mix-manifest.json
+
+# =============================================================================
+# Stage 2: PHP dependencies
+# --platform=$BUILDPLATFORM: always runs native, no extension compilation needed.
+# --ignore-platform-reqs: skips PHP extension checks at install time (extensions
+# are present at runtime in the base image).
+# =============================================================================
+FROM --platform=$BUILDPLATFORM composer:2 AS php-deps
+
+WORKDIR /app
+
+# Layer-cache composer install separately from app source
+COPY app/composer.json app/composer.lock ./
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --prefer-dist \
+    --no-scripts \
+    --ignore-platform-reqs \
+    --no-autoloader
+
+# Copy full app source, then generate optimized autoloader
+COPY app/ ./
+RUN composer dump-autoload --optimize --no-dev --ignore-platform-reqs \
+    || composer dump-autoload --no-dev --ignore-platform-reqs
+# Result: /app/ has all PHP source + vendor/, no node_modules
+
+# =============================================================================
+# Stage 3: Production runtime
+# Uses pre-built base image — this stage only does COPY operations.
+# Under QEMU (arm64) this is ~30 seconds instead of ~60 minutes.
+# =============================================================================
+# hadolint ignore=DL3006
+FROM ${BASE_IMAGE} AS runtime
+
+# Re-declare so the value is available in this stage
+ARG APP_VERSION=dev
+ARG RELEASE_CHANNEL=release
+
+LABEL org.opencontainers.image.source="https://github.com/jhandel/KMP"
+LABEL org.opencontainers.image.description="Kingdom Management Portal"
+
+WORKDIR /var/www/html
+
+RUN (a2dismod mpm_event mpm_worker || true) && a2enmod mpm_prefork
+
+# Copy PHP application (source + vendor/, no node_modules)
+COPY --from=php-deps /app/ ./
+
+# Stamp version and channel from build-args
+RUN echo "${APP_VERSION}" > config/version.txt \
+    && echo "${RELEASE_CHANNEL}" > config/channel.txt
+
+# Overwrite webroot with compiled frontend assets (JS, CSS, fonts, manifest)
+COPY --from=node-builder /build/webroot/ ./webroot/
+
+# Runtime config and volume setup
+RUN mkdir -p /opt/docker
+COPY docker/app_local.php /opt/docker/app_local.php
+
+RUN mkdir -p \
+    /var/www/html/logs \
+    /var/www/html/tmp \
+    /var/www/html/images/uploaded \
+    /var/www/html/images/cache
+
+VOLUME ["/var/www/html/logs", "/var/www/html/tmp", "/var/www/html/images/uploaded", "/var/www/html/images/cache"]
+
+RUN chown -R www-data:www-data /var/www/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -f http://localhost/health || exit 1
+
+COPY docker/entrypoint.prod.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["apache2-foreground"]

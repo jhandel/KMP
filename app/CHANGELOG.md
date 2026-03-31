@@ -3,10 +3,88 @@
 Stay up to date with the latest features, improvements, and announcements for the Kingdom Management Portal.
 
 <!-- CHANGELOG_SYNC_MARKER: This line is used by the sync-changelog prompt to track the last synced commit -->
-<!-- LAST_SYNCED_COMMIT: 1f3747e56f054dab4f640aac4f6d23ba295952e1 -->
-<!-- LAST_SYNCED_DATE: 2026-02-06 -->
+<!-- LAST_SYNCED_COMMIT: 9ef4fb16ab83e9575c16f6221aa37be6b9f91803 -->
+<!-- LAST_SYNCED_DATE: 2026-03-04 -->
+
+## March 2026
+
+### Mobile Login Improvements: Remember ID, Quick Login PIN, and Device Management
+
+Mobile sign-in now supports a faster and clearer device-aware flow, while preserving account security and giving members control over where quick login is enabled.
+
+- Added **Remember my ID** on login screens to save and prefill the member email/ID on future sign-ins
+- Added optional **Quick login on this device** setup after standard email/password login, with a 4-10 digit PIN
+- Quick login is now device-bound and can be used for faster sign-in when configured
+- Added stronger mobile privacy handling so PIN-protected quick login can gate re-entry on device/fresh-open scenarios
+- Added a **Quick login devices** tab on member profile pages so members can review enrolled quick-login devices and disable them as needed
+- Device-management details include useful metadata (such as OS/browser and network/location hints) to help identify registered devices
+
+📅 March 5, 2026 · `New Feature`
+
+---
+
+### Profile Photo Uploads for Member Profiles and Mobile Cards
+
+Members can now upload and manage a profile photo that appears on their profile and mobile authorization card.
+
+- New profile photo upload/remove flow on member profile pages (for users with partial edit access)
+- Mobile card view now supports profile photo upload and full-screen zoom
+- Face-photo validation checks for a single clear, front-facing face before allowing submit
+- Profile photos are stored as linked documents for durable file management
+
+📅 March 4, 2026 · `New Feature`
+
+---
+
+### Awards Recommendation Gathering Autocomplete Enhancements
+
+Award recommendation editing now has improved gathering selection across edit, quick edit, and bulk edit flows.
+
+- Added gathering autocomplete endpoints for recommendation edit and bulk edit forms
+- Bulk edit "Plan to Give At" now uses autocomplete instead of a static select list
+- Gathering awards tab now renders the bulk edit modal when bulk edit is permitted
+
+📅 March 4, 2026 · `Improvement`
+
+---
+
+### Waiver Calendar and Upload Workflow Improvements
+
+Waiver workflows now better reflect real-world permissions and timezone-aware event dates.
+
+- Waiver calendar event dates now use timezone-aware date conversion
+- Uploads are blocked after closure except for authorized waiver closers
+
+📅 March 4, 2026 · `Improvement`
 
 ## February 2026
+
+### Branch Hamlet Mode
+
+Branches can now operate in "Hamlet" mode — a lightweight configuration where a branch has members but no officers. Instead of a full officer roster, hamlet-mode branches designate a single **Point of Contact** selected from members with active membership.
+
+- New "Can Have Officers" toggle on branch settings (defaults to on for existing branches)
+- When officers are disabled, the Officers tab is automatically hidden from the branch view
+- New "Point of Contact" field with member autocomplete search for selecting a contact
+- Contact information is visible only to logged-in users — it is never exposed through the public API
+- Existing branches are unaffected; hamlet mode is opt-in per branch
+
+📅 February 12, 2026 · `New Feature`
+
+---
+
+### Children Tab for Parent Accounts
+
+Parents and guardians can now see and manage their linked minor accounts directly from their member profile. A new "Children" tab appears automatically when minor accounts are linked, giving parents a clear overview of their children's membership status.
+
+- View all linked children with their SCA name, age, and current membership status
+- Navigate to a child's full profile with one click
+- Minor registration notifies the Kingdom Secretary for verification and parent linking
+- Minors are automatically transitioned to adult status when they turn 18, and the parent link is removed
+
+📅 February 12, 2026 · `New Feature`
+
+---
 
 ### iCalendar Subscription Feeds
 

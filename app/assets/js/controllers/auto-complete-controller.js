@@ -94,6 +94,7 @@ class AutoComplete extends Controller {
         minLength: Number,
         allowOther: Boolean,
         required: Boolean,
+        showOnFocus: { type: Boolean, default: false },
         initSelection: Object,
         delay: { type: Number, default: 300 },
         queryParam: { type: String, default: "q" },
@@ -108,7 +109,7 @@ class AutoComplete extends Controller {
     // Getter for the value property
     get value() {
         // if there is a hidden value return that
-        if (this.hasHiddenTarget.value != "") {
+        if (this.hasHiddenTarget && this.hiddenTarget.value != "") {
             return this.hiddenTarget.value;
         } else {
             //if we allow other values return the input value
@@ -172,10 +173,6 @@ class AutoComplete extends Controller {
         this.clearBtnTarget.disabled = true;
         this.inputTarget.disabled = false;
     }
-    get value() {
-        return this.hiddenTarget.value;
-    }
-
     get disabled() {
         return this.inputTarget.disabled;
     }
@@ -276,6 +273,10 @@ class AutoComplete extends Controller {
                 this.hiddenTarget.value = this.initSelectionValue.value;
                 this.hiddenTextTarget.value = this.initSelectionValue.text;
                 this.inputTarget.value = this.initSelectionValue.text;
+                if (this.initSelectionValue.value) {
+                    this.inputTarget.disabled = true;
+                    this.clearBtnTarget.disabled = false;
+                }
             }
         }
     }
@@ -388,7 +389,7 @@ class AutoComplete extends Controller {
 
     onInputClick = (event) => {
         this.state = "start";
-        if (this.hasDataListTarget) {
+        if (this.hasDataListTarget || (this.hasUrlValue && this.showOnFocusValue)) {
             const query = this.inputTarget.value.trim()
             this.fetchResults(query);
         }

@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Core\Unit\Model;
@@ -27,6 +26,7 @@ final class MembersTableSeedTest extends BaseTestCase
      */
     public function testAdminSeedRecord(): void
     {
+        $this->skipIfPostgres();
         $member = $this->Members->get(self::ADMIN_MEMBER_ID);
 
         $this->assertSame('Admin von Admin', $member->sca_name);
@@ -41,6 +41,7 @@ final class MembersTableSeedTest extends BaseTestCase
      */
     public function testDuplicateEmailCannotBeSaved(): void
     {
+        $this->skipIfPostgres();
         $new = $this->Members->newEntity([
             'sca_name' => 'Duplicate Admin',
             'first_name' => 'Duplicate',

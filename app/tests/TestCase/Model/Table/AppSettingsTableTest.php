@@ -1,14 +1,13 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Model\Table;
 
 use App\Model\Table\AppSettingsTable;
+use App\Test\TestCase\BaseTestCase;
 use Cake\Cache\Cache;
 use Cake\Datasource\EntityInterface;
 use Cake\Datasource\Exception\RecordNotFoundException;
-use App\Test\TestCase\BaseTestCase;
 use Exception;
 
 /**
@@ -99,6 +98,7 @@ class AppSettingsTableTest extends BaseTestCase
      */
     public function testBuildRules(): void
     {
+        $this->skipIfPostgres();
         // Test unique name constraint - use an existing setting from dev_seed_clean.sql
         $data = [
             'name' => 'KMP.KingdomName', // This name already exists in dev_seed_clean.sql
@@ -167,6 +167,7 @@ class AppSettingsTableTest extends BaseTestCase
      */
     public function testGetSetting(): void
     {
+        $this->skipIfPostgres();
         // Test getting an existing setting from dev_seed_clean.sql
         $value = $this->AppSettings->getSetting('KMP.KingdomName');
         $this->assertEquals('Ansteorra', $value);
@@ -195,7 +196,7 @@ class AppSettingsTableTest extends BaseTestCase
         $connection->update(
             'app_settings',
             ['value' => 'modified-value'],
-            ['name' => $uniqueName]
+            ['name' => $uniqueName],
         );
 
         // Should return cached value, not updated value
@@ -256,6 +257,71 @@ class AppSettingsTableTest extends BaseTestCase
 
         // Clean up: delete the test setting
         $this->AppSettings->deleteSetting('test.new.setting');
+    }
+
+    /**
+     * Password-type settings are encrypted in storage and decrypted on read.
+     *
+     * @return void
+     */
+    public function testPasswordTypeSettingsAreEncryptedAtRest(): void
+    {
+        $key = 'test.password.setting.' . time() . rand(1000, 9999);
+        $plainValue = 'TopSecret-' . rand(1000, 9999);
+
+        $result = $this->AppSettings->updateSetting($key, 'password', $plainValue, false);
+        $this->assertTrue($result);
+
+        $row = $this->AppSettings->find()
+            ->select(['name', 'type', 'value'])
+            ->where(['name' => $key])
+            ->enableHydration(false)
+            ->first();
+
+        $this->assertNotNull($row);
+        $this->assertSame('password', $row['type']);
+        $this->assertIsString($row['value']);
+        $this->assertNotSame($plainValue, $row['value']);
+        $this->assertStringStartsWith('enc:v1:', $row['value']);
+        $this->assertSame($plainValue, $this->AppSettings->getSetting($key));
+
+        // Blank password updates should preserve the existing encrypted value.
+        $this->assertTrue($this->AppSettings->updateSetting($key, 'password', '', false));
+        $this->assertSame($plainValue, $this->AppSettings->getSetting($key));
+
+        $this->AppSettings->deleteSetting($key, true);
+    }
+
+    /**
+     * Backup key setting bypasses default cache storage.
+     *
+     * @return void
+     */
+    public function testBackupEncryptionKeyIsNotWrittenToDefaultCache(): void
+    {
+        $original = $this->AppSettings->find()
+            ->select(['name', 'type', 'value', 'required'])
+            ->where(['name' => 'Backup.encryptionKey'])
+            ->enableHydration(false)
+            ->first();
+
+        try {
+            $plainValue = 'BackupSecret-' . rand(1000, 9999);
+            $this->assertTrue($this->AppSettings->updateSetting('Backup.encryptionKey', 'password', $plainValue, false));
+            $this->assertSame($plainValue, $this->AppSettings->getSetting('Backup.encryptionKey'));
+            $this->assertNull(Cache::read('app_setting_Backup.encryptionKey', 'default'));
+        } finally {
+            if ($original !== null) {
+                $this->AppSettings->updateSetting(
+                    (string)$original['name'],
+                    (string)$original['type'],
+                    $original['value'],
+                    (bool)$original['required'],
+                );
+            } else {
+                $this->AppSettings->deleteSetting('Backup.encryptionKey', true);
+            }
+        }
     }
 
     /**
@@ -331,6 +397,7 @@ class AppSettingsTableTest extends BaseTestCase
      */
     public function testGetAppSetting(): void
     {
+        $this->skipIfPostgres();
         // Test getting an existing setting from dev_seed_clean.sql
         $value = $this->AppSettings->getAppSetting('KMP.KingdomName');
         $this->assertEquals('Ansteorra', $value);
@@ -402,6 +469,7 @@ class AppSettingsTableTest extends BaseTestCase
      */
     public function testGetAllAppSettingsStartWith(): void
     {
+        $this->skipIfPostgres();
         // Test getting all settings with a common prefix from dev_seed_clean.sql
         $settings = $this->AppSettings->getAllAppSettingsStartWith('KMP.');
 

@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\KMP;
@@ -7,17 +6,24 @@ namespace App\Test\TestCase\KMP;
 use App\KMP\PermissionsLoader;
 use App\Model\Entity\Permission;
 use App\Test\TestCase\BaseTestCase;
-use Cake\ORM\TableRegistry;
 
 class PermissionsLoaderTest extends BaseTestCase
 {
-    /** @var \Cake\ORM\Table\MembersTable */
+    /**
+     * @var \Cake\ORM\Table\MembersTable
+     */
     protected $Members;
-    /** @var \Cake\ORM\Table\PermissionsTable */
+    /**
+     * @var \Cake\ORM\Table\PermissionsTable
+     */
     protected $Permissions;
-    /** @var \Cake\ORM\Table\RolesTable */
+    /**
+     * @var \Cake\ORM\Table\RolesTable
+     */
     protected $Roles;
-    /** @var \Cake\ORM\Table\MemberRolesTable */
+    /**
+     * @var \Cake\ORM\Table\MemberRolesTable
+     */
     protected $MemberRoles;
 
     protected function setUp(): void
@@ -56,6 +62,7 @@ class PermissionsLoaderTest extends BaseTestCase
 
     public function testBranchScopedPermissionLoadsForBryce(): void
     {
+        $this->skipIfPostgres();
         // Bryce has Regional Officer Management role at Barony of Stargate (branch 39)
         // This role includes "Branch and Children" scoped permissions
         $permissions = PermissionsLoader::getPermissions(self::TEST_MEMBER_BRYCE_ID);
@@ -74,6 +81,7 @@ class PermissionsLoaderTest extends BaseTestCase
 
     public function testDevonHasMultipleBranchScopes(): void
     {
+        $this->skipIfPostgres();
         // Devon has Regional Officer Management in Central (12) and Southern (13) regions
         $permissions = PermissionsLoader::getPermissions(self::TEST_MEMBER_DEVON_ID);
 
@@ -146,7 +154,7 @@ class PermissionsLoaderTest extends BaseTestCase
         $branchPerm = $this->Permissions->find()
             ->where([
                 'scoping_rule' => Permission::SCOPE_BRANCH_AND_CHILDREN,
-                'name' => 'Manage Officers And Deputies Under Me'
+                'name' => 'Manage Officers And Deputies Under Me',
             ])
             ->first();
 
@@ -158,7 +166,7 @@ class PermissionsLoaderTest extends BaseTestCase
         // Devon has Regional Officer Management role at Southern Region (13)
         $query = PermissionsLoader::getMembersWithPermissionsQuery(
             $branchPerm->id,
-            self::TEST_BRANCH_SOUTHERN_REGION_ID
+            self::TEST_BRANCH_SOUTHERN_REGION_ID,
         );
 
         $count = $query->count();

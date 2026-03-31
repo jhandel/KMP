@@ -1,11 +1,13 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Services;
 
 use App\Model\Entity\Member;
 use Cake\Core\StaticConfigTrait;
+use Cake\Http\Session;
+use DateTimeImmutable;
+use DateTimeInterface;
 
 /**
  * Centralized registry for application navigation items from core and plugins.
@@ -19,6 +21,8 @@ use Cake\Core\StaticConfigTrait;
 class NavigationRegistry
 {
     use StaticConfigTrait;
+
+    private const NAVIGATION_CACHE_VERSION = 2;
 
     /**
      * @var array [source => ['items' => [...], 'callback' => callable|null]]
@@ -51,26 +55,24 @@ class NavigationRegistry
 
     /**
      * Get all registered navigation items for a user
-     * 
+     *
      * Retrieves navigation items from all registered sources, processes dynamic callbacks,
      * and applies session caching for performance. Items are returned in registration order
      * but can be sorted by the view layer using the 'order' property.
-     * 
+     *
      * The session caching mechanism stores computed navigation items to avoid regenerating
      * them on every request. This cache is cleared when the session is destroyed or when
      * navigation registration changes.
-     * 
+     *
      * Dynamic callbacks receive the current user and request parameters, allowing them to:
      * - Generate user-specific navigation items
      * - Include data-driven badges (e.g., pending count indicators)
      * - Modify items based on user permissions or roles
      * - Respond to current application context
-     * 
-     * @param Member $user The current authenticated user
+     *
+     * @param \App\Model\Entity\Member $user The current authenticated user
      * @param array $params Request parameters for context (controller, action, etc.)
-     * 
      * @return array All navigation items from registered sources
-     * 
      * @example
      * ```php
      * $navigationService = new NavigationService();
@@ -78,7 +80,7 @@ class NavigationRegistry
      *     'controller' => 'Members',
      *     'action' => 'index'
      * ]);
-     * 
+     *
      * // Items structure:
      * // [
      * //     ['type' => 'parent', 'label' => 'Members', 'icon' => 'bi-people'],
@@ -87,25 +89,33 @@ class NavigationRegistry
      * // ]
      * ```
      */
-    public static function getNavigationItems(Member $user, array $params = []): array
+    public static function getNavigationItems(Member $user, array $params = [], ?Session $session = null): array
     {
         self::ensureInitialized();
+        $latestRestoreCompletion = self::getLatestRestoreCompletionTimestamp();
+        $hasRegisteredSources = !empty(self::$navigationItems);
 
         $allItems = [];
         // Check for cached items in session for performance
-        if (isset($_SESSION['navigation_items']) && is_array($_SESSION['navigation_items'])) {
+        $cached = $session?->read('navigation_items');
+        if ($cached === null && isset($_SESSION['navigation_items']) && is_array($_SESSION['navigation_items'])) {
             $cached = $_SESSION['navigation_items'];
+        }
+        if (is_array($cached)) {
             if (
                 isset($cached['user_id'], $cached['items'])
                 && (int)$cached['user_id'] === (int)$user->id
                 && is_array($cached['items'])
+                && (int)($cached['nav_version'] ?? 0) === self::NAVIGATION_CACHE_VERSION
+                && !self::isCachedNavigationStaleForRestore($cached, $latestRestoreCompletion)
+                && (!$hasRegisteredSources || $cached['items'] !== [])
             ) {
                 return $cached['items'];
             }
         }
 
         // Process all registered sources
-        foreach (self::$navigationItems as $source => $registration) {
+        foreach (self::$navigationItems as $registration) {
             $items = $registration['items'];
 
             // Execute dynamic callback if provided
@@ -118,31 +128,44 @@ class NavigationRegistry
 
             $allItems = array_merge($allItems, $items);
         }
-
         // Cache processed items in session for performance
-        $_SESSION['navigation_items'] = [
-            'user_id' => (int)$user->id,
-            'items' => $allItems,
-        ];
+        if (!$hasRegisteredSources || $allItems !== []) {
+            $payload = [
+                'user_id' => (int)$user->id,
+                'items' => $allItems,
+                'nav_version' => self::NAVIGATION_CACHE_VERSION,
+                'generated_at' => (new DateTimeImmutable('now'))->format(DateTimeInterface::ATOM),
+            ];
+            if ($session !== null) {
+                $session->write('navigation_items', $payload);
+            } else {
+                $_SESSION['navigation_items'] = $payload;
+            }
+        } else {
+            if ($session !== null) {
+                $session->delete('navigation_items');
+            } else {
+                unset($_SESSION['navigation_items']);
+            }
+        }
+
         return $allItems;
     }
 
     /**
      * Remove navigation items from a specific source
-     * 
+     *
      * Unregisters all navigation items and callbacks from the specified source.
      * Useful for plugin cleanup or dynamic navigation management. This operation
      * will clear the session cache to ensure stale items are not displayed.
-     * 
+     *
      * @param string $source Source identifier to remove
-     * 
      * @return void
-     * 
      * @example
      * ```php
      * // Remove plugin navigation during plugin unload
      * NavigationRegistry::unregister('Awards');
-     * 
+     *
      * // Clear core navigation (typically not recommended)
      * NavigationRegistry::unregister('core');
      * ```
@@ -156,22 +179,20 @@ class NavigationRegistry
 
     /**
      * Get navigation items from a specific source
-     * 
+     *
      * Retrieves navigation items from a single registered source, including any
      * dynamic items generated by the source's callback. Useful for debugging,
      * testing, or building specialized navigation displays.
-     * 
+     *
      * @param string $source Source identifier to retrieve
-     * @param Member $user The current authenticated user  
+     * @param \App\Model\Entity\Member $user The current authenticated user
      * @param array $params Request parameters for callback context
-     * 
      * @return array Navigation items from the specified source, or empty array if not found
-     * 
      * @example
      * ```php
      * // Get only core navigation items
      * $coreItems = NavigationRegistry::getNavigationItemsFromSource('core', $user);
-     * 
+     *
      * // Get plugin-specific items with context
      * $awardItems = NavigationRegistry::getNavigationItemsFromSource('Awards', $user, [
      *     'current_branch' => $branchId
@@ -208,6 +229,7 @@ class NavigationRegistry
     public static function getRegisteredSources(): array
     {
         self::ensureInitialized();
+
         return array_keys(self::$navigationItems);
     }
 
@@ -234,6 +256,7 @@ class NavigationRegistry
     public static function isRegistered(string $source): bool
     {
         self::ensureInitialized();
+
         return isset(self::$navigationItems[$source]);
     }
 
@@ -280,5 +303,48 @@ class NavigationRegistry
 
         // Any initialization logic can go here
         self::$initialized = true;
+    }
+
+    /**
+     * @param array<string, mixed> $cached
+     */
+    private static function isCachedNavigationStaleForRestore(array $cached, ?int $latestRestoreCompletion): bool
+    {
+        if ($latestRestoreCompletion === null) {
+            return false;
+        }
+
+        $generatedAt = $cached['generated_at'] ?? null;
+        if (!is_string($generatedAt) || $generatedAt === '') {
+            return true;
+        }
+
+        $generatedTs = strtotime($generatedAt);
+        if (!is_int($generatedTs)) {
+            return true;
+        }
+
+        return $generatedTs < $latestRestoreCompletion;
+    }
+
+    /**
+     * Get latest restore completion timestamp.
+     *
+     * @return ?int
+     */
+    private static function getLatestRestoreCompletionTimestamp(): ?int
+    {
+        $status = (new RestoreStatusService())->getStatus();
+        $completedAt = $status['completed_at'] ?? null;
+        if (!is_string($completedAt) || $completedAt === '') {
+            return null;
+        }
+
+        $timestamp = strtotime($completedAt);
+        if (!is_int($timestamp)) {
+            return null;
+        }
+
+        return $timestamp;
     }
 }

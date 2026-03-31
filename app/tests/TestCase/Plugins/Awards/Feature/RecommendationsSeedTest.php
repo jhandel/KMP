@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Plugins\Awards\Feature;
@@ -15,6 +14,7 @@ final class RecommendationsSeedTest extends PluginIntegrationTestCase
 
     public function testSeededRecommendationIsReachable(): void
     {
+        $this->skipIfPostgres();
         $recommendations = $this->getTableLocator()->get('Awards.Recommendations');
 
         $record = $recommendations->get(579);

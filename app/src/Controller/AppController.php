@@ -1,10 +1,9 @@
 <?php
-
 declare(strict_types=1);
 
 /**
  * Base controller for KMP application.
- * 
+ *
  * Provides shared functionality: request detection, navigation history,
  * plugin validation, view cell management, and Turbo/AJAX handling.
  *
@@ -18,12 +17,14 @@ namespace App\Controller;
 use App\KMP\StaticHelpers;
 use App\Model\Entity\Member;
 use App\Services\ImpersonationService;
+use App\Services\RestoreStatusService;
 use App\Services\ViewCellRegistry;
 use Cake\Controller\Controller;
 use Cake\Core\Configure;
 use Cake\Event\Event;
 use Cake\Event\EventInterface;
 use Cake\Event\EventManager;
+use Cake\Http\Response;
 
 class AppController extends Controller
 {
@@ -33,10 +34,14 @@ class AppController extends Controller
     /** @var string Event for plugin view data enhancement */
     public const VIEW_DATA_EVENT = 'KMP.plugins.callForViewData';
 
-    /** @var array View cells from plugins for current request */
+    /**
+     * @var array View cells from plugins for current request
+     */
     protected array $pluginViewCells = [];
 
-    /** @var bool Whether current request is for CSV export (.csv extension) */
+    /**
+     * @var bool Whether current request is for CSV export (.csv extension)
+     */
     protected bool $isCsvRequest = false;
 
     /**
@@ -55,8 +60,8 @@ class AppController extends Controller
      * Handles: CSV detection, plugin validation, navigation history,
      * view cell loading, and Turbo Frame detection.
      *
-     * @param EventInterface $event The beforeFilter event
-     * @return void
+     * @param \Cake\Event\EventInterface $event The beforeFilter event
+     * @return \Cake\Http\Response|null|void
      */
     public function beforeFilter(EventInterface $event)
     {
@@ -78,7 +83,12 @@ class AppController extends Controller
                 $this->Flash->error("The plugin $plugin is not enabled.");
                 $currentUser = $this->request->getAttribute('identity');
                 if ($currentUser != null) {
-                    $this->redirect(['plugin' => null, 'controller' => 'Members', 'action' => 'view', $currentUser->id]);
+                    $this->redirect([
+                        'plugin' => null,
+                        'controller' => 'Members',
+                        'action' => 'view',
+                        $currentUser->id,
+                    ]);
                 } else {
                     $this->redirect(['plugin' => null, 'controller' => 'Members', 'action' => 'login']);
                 }
@@ -86,6 +96,11 @@ class AppController extends Controller
         }
 
         parent::beforeFilter($event);
+
+        $lockResponse = $this->enforceRestoreLock($event);
+        if ($lockResponse !== null) {
+            return $lockResponse;
+        }
 
         // Extract URL parameters
         $params = [
@@ -132,7 +147,8 @@ class AppController extends Controller
         }
 
         // Exclude AJAX/Turbo/POST requests from history
-        $isAjax = $this->request->is('ajax') || $this->request->is('json') || $this->request->is('xml') || $this->request->is('csv');
+        $isAjax = $this->request
+            ->is('ajax') || $this->request->is('json') || $this->request->is('xml') || $this->request->is('csv');
         $turboRequest = $this->request->getHeader('Turbo-Frame') != null;
         $isAjax = $isAjax || $turboRequest;
         if (!$isNoStack) {
@@ -155,7 +171,6 @@ class AppController extends Controller
 
             if ($pageStack[$historyCount - 1] != $currentUrl) {
                 $pageStack[] = $currentUrl;
-                $historyCount++;
             }
         }
 
@@ -174,7 +189,7 @@ class AppController extends Controller
 
         $currentUser = $this->request->getAttribute('identity');
         // ViewCellRegistry expects a Member entity; pass null for non-Member identities (e.g. ServicePrincipal)
-        $memberUser = ($currentUser instanceof Member) ? $currentUser : null;
+        $memberUser = $currentUser instanceof Member ? $currentUser : null;
         $impersonationService = new ImpersonationService();
         $impersonationState = $impersonationService->getState($session);
         $this->pluginViewCells = ViewCellRegistry::getViewCells($urlParams, $memberUser);
@@ -199,7 +214,7 @@ class AppController extends Controller
         } elseif (is_array($recordId) && count($recordId) == 0) {
             $recordId = -1;
         } elseif (is_array($recordId)) {
-            foreach ($recordId as $key => $value) {
+            foreach ($recordId as $value) {
                 $recordId .= $value . ', ';
             }
         }
@@ -214,6 +229,76 @@ class AppController extends Controller
         // Dispatch view data event for plugins
         $event = new Event(static::VIEW_DATA_EVENT, $this, ['url' => $params]);
         EventManager::instance()->dispatch($event);
+    }
+
+    /**
+     * Redirect/block requests while a restore lock is active.
+     */
+    private function enforceRestoreLock(EventInterface $event): ?Response
+    {
+        $restoreStatusService = new RestoreStatusService();
+        if (!$restoreStatusService->isLocked()) {
+            return null;
+        }
+
+        $controller = strtolower((string)$this->request->getParam('controller'));
+        $action = strtolower((string)$this->request->getParam('action'));
+        if ($this->isRestoreLockBypassRoute($controller, $action)) {
+            return null;
+        }
+
+        $status = $restoreStatusService->getStatus();
+        $message = (string)($status['message'] ?? 'A restore is currently running. Please try again shortly.');
+
+        if ($this->request->is('ajax') || $this->request->accepts('application/json') || $this->request->is('json')) {
+            $response = $this->response
+                ->withType('application/json')
+                ->withStatus(423)
+                ->withStringBody((string)json_encode([
+                    'status' => 'locked',
+                    'message' => $message,
+                    'restore' => $status,
+                ]));
+            $event->stopPropagation();
+            $event->setResult($response);
+
+            return $response;
+        }
+
+        $this->Flash->warning($message);
+        $response = $this->redirect(['controller' => 'Backups', 'action' => 'index']);
+        $event->stopPropagation();
+        $event->setResult($response);
+
+        return $response;
+    }
+
+    /**
+     * Check if restore lock bypass route.
+     *
+     * @param string $controller
+     * @param string $action
+     * @return bool
+     */
+    private function isRestoreLockBypassRoute(string $controller, string $action): bool
+    {
+        if ($controller === 'backups' && in_array($action, ['index', 'status', 'restore'], true)) {
+            return true;
+        }
+
+        if ($controller === 'health' && $action === 'index') {
+            return true;
+        }
+
+        if ($controller === 'members' && in_array($action, ['login', 'logout'], true)) {
+            return true;
+        }
+
+        if ($controller === 'sessions' && $action === 'keepalive') {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -300,30 +385,29 @@ class AppController extends Controller
         // Get current user identity
         $currentUser = $this->request->getAttribute('identity');
 
-        $this->Flash->success(__('Switched to {0} view.', $mode));
+        if (!$currentUser) {
+            $this->Flash->error(__('Please sign in to use {0} view.', $mode));
 
-        // Redirect based on mode
+            return $this->redirect(['controller' => 'Members', 'action' => 'login', 'plugin' => null]);
+        }
+
         if ($mode === 'mobile') {
-            // Redirect to mobile card view with user's token
-            if ($currentUser && $currentUser->mobile_card_token) {
-                return $this->redirect([
-                    'controller' => 'Members',
-                    'action' => 'viewMobileCard',
-                    'plugin' => null,
-                    $currentUser->mobile_card_token
-                ]);
-            } else {
-                // Fallback if no mobile card token exists
-                $this->Flash->error(__('Mobile card not available. Please contact an administrator.'));
-                return $this->redirect(['controller' => 'Members', 'action' => 'index', 'plugin' => null]);
-            }
-        } else {
-            // Redirect to desktop profile view
+            $this->Flash->success(__('Switched to {0} view.', $mode));
+
             return $this->redirect([
                 'controller' => 'Members',
-                'action' => 'profile',
-                'plugin' => null
+                'action' => 'viewMobileCard',
+                'plugin' => null,
             ]);
         }
+
+        $this->Flash->success(__('Switched to {0} view.', $mode));
+
+        // Redirect to desktop profile view
+        return $this->redirect([
+            'controller' => 'Members',
+            'action' => 'profile',
+            'plugin' => null,
+        ]);
     }
 }

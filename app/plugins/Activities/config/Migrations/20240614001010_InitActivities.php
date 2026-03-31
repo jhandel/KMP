@@ -11,6 +11,12 @@ require_once __DIR__ . '/../Seeds/InitActivitiesSeed.php';
 class InitActivities extends BaseMigration
 {
     public bool $autoId = false;
+
+    /** Disable transaction wrapping so embedded seed failures don't roll back DDL on Postgres. */
+    public function useTransactions(): bool
+    {
+        return false;
+    }
     /**
      * Change Method.
      *
@@ -20,8 +26,7 @@ class InitActivities extends BaseMigration
      */
     public function up(): void
     {
-
-        $this->table("activities_activity_groups")
+        $this->table("activities_activity_groups", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -63,7 +68,7 @@ class InitActivities extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("activities_activities")
+        $this->table("activities_activities", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -146,7 +151,7 @@ class InitActivities extends BaseMigration
             ->addIndex(["deleted"])
             ->create();
 
-        $this->table("activities_authorizations")
+        $this->table("activities_authorizations", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -178,8 +183,8 @@ class InitActivities extends BaseMigration
                 "limit" => null,
                 "null" => true,
             ])
-            ->addColumn("created", "timestamp", [
-                "default" => "CURRENT_TIMESTAMP",
+            ->addColumn("created", "datetime", [
+                "default" => null,
                 "limit" => null,
                 "null" => false,
             ])
@@ -215,7 +220,7 @@ class InitActivities extends BaseMigration
             ->addIndex(["expires_on"])
             ->create();
 
-        $this->table("activities_authorization_approvals")
+        $this->table("activities_authorization_approvals", ['id' => false])
             ->addColumn("id", "integer", [
                 "autoIncrement" => true,
                 "default" => null,
@@ -310,6 +315,9 @@ class InitActivities extends BaseMigration
         $manager->seed($seeder);
     }
 
+    /**
+     * Reverse the migration.
+     */
     public function down()
     {
         $this->table("activities_authorization_approvals")

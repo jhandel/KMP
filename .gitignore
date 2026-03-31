@@ -23,3 +23,15 @@ uat_dump.sql
 prod_dump.sql
 /test-results/
 /.playwright-cli/
+.beads/
+installer/kmp
+installers/bin
+installer/bin/
+installer/bin/kmp
+app/backups
+/*.png
+
+# Test artifacts
+app/tests/mutation-reports/
+app/cookies.txt
+app/tests/nav-debug.png

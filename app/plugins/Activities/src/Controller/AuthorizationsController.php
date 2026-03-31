@@ -28,6 +28,11 @@ class AuthorizationsController extends AppController
 {
     use DataverseGridTrait;
 
+    /**
+     * Run before controller action execution.
+     *
+     * @param \Cake\Event\EventInterface $event
+     */
     public function beforeFilter(\Cake\Event\EventInterface $event)
     {
         parent::beforeFilter($event);
@@ -37,6 +42,12 @@ class AuthorizationsController extends AppController
         ]);
     }
 
+    /**
+     * Revoke.
+     *
+     * @param AuthorizationManagerInterface $maService
+     * @param mixed $id
+     */
     public function revoke(AuthorizationManagerInterface $maService, $id = null)
     {
         $this->request->allowMethod(["post"]);
@@ -415,6 +426,12 @@ class AuthorizationsController extends AppController
         return $counts;
     }
 
+    /**
+     * Activity authorizations.
+     *
+     * @param mixed $state
+     * @param mixed $id
+     */
     public function activityAuthorizations($state, $id)
     {
         if ($state != 'current' && $state != 'pending' && $state != 'previous') {
@@ -532,9 +549,13 @@ class AuthorizationsController extends AppController
         return $this->response;
     }
     */
+    /**
+     * Add conditions for members.
+     *
+     * @param SelectQuery $q
+     */
     protected function addConditionsForMembers(SelectQuery $q)
     {
-
         $rejectFragment = $q->func()->concat([
             "Authorizations.status" => 'identifier',
             ' - ',
@@ -581,9 +602,13 @@ class AuthorizationsController extends AppController
             ]);
     }
 
+    /**
+     * Add conditions for activities.
+     *
+     * @param mixed $q
+     */
     protected function addConditionsForActivities($q)
     {
-
         $rejectFragment = $q->func()->concat([
             "Authorizations.status" => 'identifier',
             ' - ',
@@ -643,13 +668,10 @@ class AuthorizationsController extends AppController
 
         // Check if request came from mobile interface
         if (strpos($referer, '/mobile') !== false || strpos($referer, 'view-mobile-card') !== false) {
-            // Get the member's mobile card URL
-            $member = $this->Authorizations->Members->get($memberId, ['fields' => ['id', 'mobile_card_token']]);
             return $this->redirect([
                 'controller' => 'Members',
                 'action' => 'viewMobileCard',
                 'plugin' => null,
-                $member->mobile_card_token
             ]);
         }
 
