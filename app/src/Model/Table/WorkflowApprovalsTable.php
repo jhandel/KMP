@@ -119,6 +119,10 @@ class WorkflowApprovalsTable extends BaseTable
             ->dateTime('deadline')
             ->allowEmptyDateTime('deadline');
 
+        $validator
+            ->integer('version')
+            ->notEmptyString('version');
+
         return $validator;
     }
 

@@ -23,6 +23,7 @@ namespace App\Model\Entity;
  * @property bool $allow_parallel
  * @property \Cake\I18n\DateTime|null $deadline
  * @property array|null $escalation_config
+ * @property int $version
  * @property \Cake\I18n\DateTime|null $created
  * @property \Cake\I18n\DateTime|null $modified
  *
@@ -62,6 +63,7 @@ class WorkflowApproval extends BaseEntity
         'allow_parallel' => true,
         'deadline' => true,
         'escalation_config' => true,
+        'version' => true,
     ];
 
     /**

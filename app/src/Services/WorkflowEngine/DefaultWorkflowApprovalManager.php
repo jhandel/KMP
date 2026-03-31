@@ -22,151 +22,239 @@ use Cake\ORM\TableRegistry;
 class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
 {
     /**
+     * Maximum retry attempts for optimistic lock conflicts.
+     */
+    private const MAX_OPTIMISTIC_RETRIES = 3;
+
+    /**
+     * Base delay in microseconds between optimistic lock retries (50ms).
+     */
+    private const RETRY_DELAY_US = 50000;
+
+    /**
      * @inheritDoc
+     *
+     * Uses a three-layer concurrency defense:
+     *  1. FOR UPDATE row lock — serialises concurrent transactions
+     *  2. Atomic SQL increment — prevents lost count updates
+     *  3. Optimistic version check — detects any out-of-band modification
      */
     public function recordResponse(int $approvalId, int $memberId, string $decision, ?string $comment = null, ?int $nextApproverId = null): ServiceResult
     {
-        try {
-            $connection = ConnectionManager::get('default');
+        $lastException = null;
 
-            return $connection->transactional(function () use ($approvalId, $memberId, $decision, $comment, $nextApproverId) {
-                $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
-                $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
+        for ($attempt = 1; $attempt <= self::MAX_OPTIMISTIC_RETRIES; $attempt++) {
+            try {
+                $result = $this->attemptRecordResponse($approvalId, $memberId, $decision, $comment, $nextApproverId);
 
-                // Lock the approval row to prevent concurrent modifications
-                /** @var \App\Model\Entity\WorkflowApproval|null $approval */
-                $approval = $approvalsTable->find()
-                    ->where(['WorkflowApprovals.id' => $approvalId])
-                    ->epilog('FOR UPDATE')
-                    ->first();
+                return $result;
+            } catch (OptimisticLockException $e) {
+                $lastException = $e;
+                Log::warning(
+                    "Optimistic lock conflict on approval {$approvalId}, attempt {$attempt}/"
+                    . self::MAX_OPTIMISTIC_RETRIES . ": {$e->getMessage()}"
+                );
 
-                if (!$approval) {
-                    return new ServiceResult(false, 'Approval not found.');
+                if ($attempt < self::MAX_OPTIMISTIC_RETRIES) {
+                    usleep(self::RETRY_DELAY_US * $attempt);
                 }
+            } catch (\Exception $e) {
+                Log::error("Error recording approval response: {$e->getMessage()}");
 
-                if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
-                    return new ServiceResult(false, 'Approval is no longer pending.');
-                }
+                return new ServiceResult(false, 'An unexpected error occurred.');
+            }
+        }
 
-                // Check eligibility before accepting the response
-                if (!$this->isMemberEligible($approval, $memberId)) {
-                    return new ServiceResult(false, 'You are not eligible to respond to this approval.');
-                }
+        Log::error(
+            "Optimistic lock retries exhausted for approval {$approvalId} after "
+            . self::MAX_OPTIMISTIC_RETRIES . " attempts"
+        );
 
-                // Check for duplicate response
-                $existing = $responsesTable->find()
-                    ->where([
-                        'workflow_approval_id' => $approvalId,
-                        'member_id' => $memberId,
-                    ])
-                    ->first();
+        return new ServiceResult(false, 'Approval was modified concurrently. Please retry.');
+    }
 
-                if ($existing) {
-                    return new ServiceResult(false, 'Member has already responded to this approval.');
-                }
+    /**
+     * Single transactional attempt to record an approval response.
+     *
+     * @throws OptimisticLockException When the version check fails.
+     */
+    private function attemptRecordResponse(int $approvalId, int $memberId, string $decision, ?string $comment, ?int $nextApproverId): ServiceResult
+    {
+        $connection = ConnectionManager::get('default');
 
-                // Create response
-                $response = $responsesTable->newEntity([
+        /** @var ServiceResult $result */
+        $result = $connection->transactional(function () use ($approvalId, $memberId, $decision, $comment, $nextApproverId) {
+            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+            $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
+
+            // Layer 1: Lock the approval row to prevent concurrent modifications
+            /** @var \App\Model\Entity\WorkflowApproval|null $approval */
+            $approval = $approvalsTable->find()
+                ->where(['WorkflowApprovals.id' => $approvalId])
+                ->epilog('FOR UPDATE')
+                ->first();
+
+            if (!$approval) {
+                return new ServiceResult(false, 'Approval not found.');
+            }
+
+            if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
+                return new ServiceResult(false, 'Approval is no longer pending.');
+            }
+
+            // Capture version at read time for optimistic lock check
+            $currentVersion = (int)($approval->version ?? 1);
+
+            // Check eligibility before accepting the response
+            if (!$this->isMemberEligible($approval, $memberId)) {
+                return new ServiceResult(false, 'You are not eligible to respond to this approval.');
+            }
+
+            // Check for duplicate response
+            $existing = $responsesTable->find()
+                ->where([
                     'workflow_approval_id' => $approvalId,
                     'member_id' => $memberId,
-                    'decision' => $decision,
-                    'comment' => $comment,
-                    'responded_at' => DateTime::now(),
-                ]);
+                ])
+                ->first();
 
-                if (!$responsesTable->save($response)) {
-                    Log::error("Failed to save approval response for approval {$approvalId}");
-                    return new ServiceResult(false, 'Failed to save response.');
+            if ($existing) {
+                return new ServiceResult(false, 'Member has already responded to this approval.');
+            }
+
+            // Create response
+            $response = $responsesTable->newEntity([
+                'workflow_approval_id' => $approvalId,
+                'member_id' => $memberId,
+                'decision' => $decision,
+                'comment' => $comment,
+                'responded_at' => DateTime::now(),
+            ]);
+
+            if (!$responsesTable->save($response)) {
+                Log::error("Failed to save approval response for approval {$approvalId}");
+                return new ServiceResult(false, 'Failed to save response.');
+            }
+
+            // Layer 2: Atomic increment of counts to prevent lost updates
+            // Layer 3: Optimistic version check — ensures no concurrent modification
+            if ($decision === WorkflowApprovalResponse::DECISION_APPROVE) {
+                $affectedRows = $approvalsTable->updateAll(
+                    ['approved_count = approved_count + 1', 'version' => $currentVersion + 1],
+                    ['id' => $approval->id, 'version' => $currentVersion]
+                );
+            } elseif ($decision === WorkflowApprovalResponse::DECISION_REJECT) {
+                $affectedRows = $approvalsTable->updateAll(
+                    ['rejected_count = rejected_count + 1', 'version' => $currentVersion + 1],
+                    ['id' => $approval->id, 'version' => $currentVersion]
+                );
+            } else {
+                // Non-counted decision (e.g. abstain) — still bump version
+                $affectedRows = $approvalsTable->updateAll(
+                    ['version' => $currentVersion + 1],
+                    ['id' => $approval->id, 'version' => $currentVersion]
+                );
+            }
+
+            if ($affectedRows === 0) {
+                throw new OptimisticLockException(
+                    "Approval {$approvalId} was modified concurrently (expected version {$currentVersion})."
+                );
+            }
+
+            // Reload approval to get accurate counts after atomic increment
+            $approval = $approvalsTable->get($approval->id);
+
+            // Check for serial pick-next mode
+            $approverConfig = $approval->approver_config ?? [];
+            $isSerialPickNext = !empty($approverConfig['serial_pick_next']);
+
+            // Check resolution: threshold met or any rejection
+            if ($approval->approved_count >= $approval->required_count) {
+                $approval->status = WorkflowApproval::STATUS_APPROVED;
+            } elseif ($approval->rejected_count > 0) {
+                $approval->status = WorkflowApproval::STATUS_REJECTED;
+            } elseif ($isSerialPickNext && $decision === WorkflowApprovalResponse::DECISION_APPROVE) {
+                // Serial pick-next: more approvals needed, update approver_config
+                if ($nextApproverId) {
+                    $approverConfig['current_approver_id'] = $nextApproverId;
+                } else {
+                    // No next approver specified — clear current to allow any eligible
+                    unset($approverConfig['current_approver_id']);
                 }
 
-                // Atomic increment of counts to prevent lost updates
-                if ($decision === WorkflowApprovalResponse::DECISION_APPROVE) {
-                    $approvalsTable->updateAll(
-                        ['approved_count = approved_count + 1'],
-                        ['id' => $approval->id]
-                    );
-                } elseif ($decision === WorkflowApprovalResponse::DECISION_REJECT) {
-                    $approvalsTable->updateAll(
-                        ['rejected_count = rejected_count + 1'],
-                        ['id' => $approval->id]
-                    );
-                }
+                // Append to approval chain for audit trail
+                $chain = $approverConfig['approval_chain'] ?? [];
+                $chain[] = [
+                    'approver_id' => $memberId,
+                    'responded_at' => DateTime::now()->toIso8601String(),
+                    'next_picked' => $nextApproverId,
+                ];
+                $approverConfig['approval_chain'] = $chain;
 
-                // Reload approval to get accurate counts after atomic increment
-                $approval = $approvalsTable->get($approval->id);
+                // Track already-used approvers in exclude list
+                $excludeIds = $approverConfig['exclude_member_ids'] ?? [];
+                $excludeIds[] = $memberId;
+                $approverConfig['exclude_member_ids'] = array_unique(array_map('intval', $excludeIds));
 
-                // Check for serial pick-next mode
-                $approverConfig = $approval->approver_config ?? [];
-                $isSerialPickNext = !empty($approverConfig['serial_pick_next']);
+                $approval->approver_config = $approverConfig;
+                // Status stays PENDING — don't resolve yet
 
-                // Check resolution: threshold met or any rejection
-                if ($approval->approved_count >= $approval->required_count) {
-                    $approval->status = WorkflowApproval::STATUS_APPROVED;
-                } elseif ($approval->rejected_count > 0) {
-                    $approval->status = WorkflowApproval::STATUS_REJECTED;
-                } elseif ($isSerialPickNext && $decision === WorkflowApprovalResponse::DECISION_APPROVE) {
-                    // Serial pick-next: more approvals needed, update approver_config
-                    if ($nextApproverId) {
-                        $approverConfig['current_approver_id'] = $nextApproverId;
-                    } else {
-                        // No next approver specified — clear current to allow any eligible
-                        unset($approverConfig['current_approver_id']);
-                    }
+                // Version-gated save for serial pick-next config update
+                $this->saveWithVersionCheck($approvalsTable, $approval);
 
-                    // Append to approval chain for audit trail
-                    $chain = $approverConfig['approval_chain'] ?? [];
-                    $chain[] = [
-                        'approver_id' => $memberId,
-                        'responded_at' => DateTime::now()->toIso8601String(),
-                        'next_picked' => $nextApproverId,
-                    ];
-                    $approverConfig['approval_chain'] = $chain;
-
-                    // Track already-used approvers in exclude list
-                    $excludeIds = $approverConfig['exclude_member_ids'] ?? [];
-                    $excludeIds[] = $memberId;
-                    $approverConfig['exclude_member_ids'] = array_unique(array_map('intval', $excludeIds));
-
-                    $approval->approver_config = $approverConfig;
-                    // Status stays PENDING — don't resolve yet
-
-                    if (!$approvalsTable->save($approval)) {
-                        Log::error("Failed to update approval {$approvalId} approver_config for serial pick-next");
-                        return new ServiceResult(false, 'Failed to update approval for next approver.');
-                    }
-
-                    return new ServiceResult(true, null, [
-                        'approvalStatus' => 'pending',
-                        'needsMore' => true,
-                        'instanceId' => $approval->workflow_instance_id,
-                        'nodeId' => $approval->node_id,
-                        'nextApproverId' => $nextApproverId,
-                    ]);
-                }
-
-                if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
-                    if (!$approvalsTable->save($approval)) {
-                        Log::error("Failed to update approval {$approvalId} after response");
-                        return new ServiceResult(false, 'Failed to update approval status.');
-                    }
-                }
-
-                $returnData = [
-                    'approvalStatus' => $approval->status,
+                return new ServiceResult(true, null, [
+                    'approvalStatus' => 'pending',
+                    'needsMore' => true,
                     'instanceId' => $approval->workflow_instance_id,
                     'nodeId' => $approval->node_id,
-                ];
+                    'nextApproverId' => $nextApproverId,
+                ]);
+            }
 
-                // Flag parallel non-final approvals so the controller can fire intermediate actions
-                if ($approval->status === WorkflowApproval::STATUS_PENDING) {
-                    $returnData['needsMore'] = true;
-                }
+            if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
+                // Version-gated save for status resolution
+                $this->saveWithVersionCheck($approvalsTable, $approval);
+            }
 
-                return new ServiceResult(true, null, $returnData);
-            });
-        } catch (\Exception $e) {
-            Log::error("Error recording approval response: {$e->getMessage()}");
-            return new ServiceResult(false, 'An unexpected error occurred.');
+            $returnData = [
+                'approvalStatus' => $approval->status,
+                'instanceId' => $approval->workflow_instance_id,
+                'nodeId' => $approval->node_id,
+            ];
+
+            // Flag parallel non-final approvals so the controller can fire intermediate actions
+            if ($approval->status === WorkflowApproval::STATUS_PENDING) {
+                $returnData['needsMore'] = true;
+            }
+
+            return new ServiceResult(true, null, $returnData);
+        });
+
+        if ($result === false) {
+            return new ServiceResult(false, 'Transaction failed.');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Save an approval entity with optimistic version bump.
+     *
+     * Increments the version on save and verifies the row was updated.
+     * Must be called within a transaction that already holds the FOR UPDATE lock.
+     *
+     * @throws OptimisticLockException When the version has been changed by another process.
+     */
+    private function saveWithVersionCheck($approvalsTable, WorkflowApproval $approval): void
+    {
+        $approval->version = ($approval->version ?? 1) + 1;
+
+        if (!$approvalsTable->save($approval)) {
+            Log::error("Failed to save approval {$approval->id} with version check");
+            throw new OptimisticLockException(
+                "Failed to save approval {$approval->id} — possible concurrent modification."
+            );
         }
     }
 
@@ -200,6 +288,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 'status' => WorkflowApproval::STATUS_PENDING,
                 'allow_parallel' => $allowParallel,
                 'deadline' => $deadline,
+                'version' => 1,
             ]);
 
             if (!$approvalsTable->save($approval)) {
