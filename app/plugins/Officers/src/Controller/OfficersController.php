@@ -5,17 +5,19 @@ declare(strict_types=1);
 namespace Officers\Controller;
 
 use App\Controller\DataverseGridTrait;
+use App\Controller\WorkflowDispatchTrait;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\CsvExportService;
-use Officers\Services\OfficerManagerInterface;
-use App\Services\WarrantManager\WarrantManagerInterface;
 use App\Services\ServiceResult;
+use App\Services\WarrantManager\WarrantManagerInterface;
 use App\Services\WarrantManager\WarrantRequest;
-use App\Model\Entity\Warrant;
-use Cake\I18n\DateTime;
-use Cake\I18n\Date;
-use Officers\Model\Entity\Officer;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Model\Entity\Member;
+use App\Model\Entity\Warrant;
+use Cake\I18n\Date;
+use Cake\I18n\DateTime;
+use Officers\Model\Entity\Officer;
+use Officers\Services\OfficerManagerInterface;
 
 /**
  * Officers Controller
@@ -28,6 +30,7 @@ use App\Model\Entity\Member;
 class OfficersController extends AppController
 {
     use DataverseGridTrait;
+    use WorkflowDispatchTrait;
 
     /**
      * Initialize controller with authentication and authorization settings.
@@ -45,17 +48,16 @@ class OfficersController extends AppController
      * Assign an officer to an office position.
      *
      * @param \Officers\Services\OfficerManagerInterface $oManager Officer business logic service
+     * @param \App\Services\WorkflowEngine\TriggerDispatcher $dispatcher Workflow trigger dispatcher
      * @return \Cake\Http\Response|null|void Redirects on completion or error
      */
-    public function assign(OfficerManagerInterface $oManager)
+    public function assign(OfficerManagerInterface $oManager, TriggerDispatcher $dispatcher)
     {
         if ($this->request->is('post')) {
             $officer = $this->Officers->newEmptyEntity();
             $user = $this->Authentication->getIdentity();
             $branchId = (int)$this->request->getData('branch_id');
             $this->Authorization->authorize($officer);
-            $user = $this->Authentication->getIdentity();
-            //begin transaction
 
             $memberId = (int)$this->request->getData('member_id');
             $officeId = (int)$this->request->getData('office_id');
@@ -64,6 +66,7 @@ class OfficersController extends AppController
             if (!in_array($officeId, $canHireOffices)) {
                 $this->Flash->error(__('You do not have permission to assign this officer.'));
                 $this->redirect($this->referer());
+
                 return;
             }
             $startOn = new DateTime($this->request->getData('start_on'));
@@ -71,38 +74,39 @@ class OfficersController extends AppController
             $endOn = null;
             if ($this->request->getData('end_on') !== null && $this->request->getData('end_on') !== "") {
                 $endOn = new DateTime($this->request->getData('end_on'));
-            } else {
-                $endOn = null;
             }
             $approverId = (int)$user->id;
             $deputyDescription = $this->request->getData('deputy_description');
 
-            // Check if officer-hire workflow is active (no transaction needed)
-            $wfActive = false;
-            try {
-                $wfTable = $this->fetchTable('WorkflowDefinitions');
-                $wf = $wfTable->find()->where(['slug' => 'officer-hire', 'is_active' => true])->first();
-                $wfActive = ($wf !== null);
-            } catch (\Exception $e) {
-                // Workflow table may not exist yet
-            }
+            $context = [
+                'member_id' => $memberId,
+                'office_id' => $officeId,
+                'branch_id' => $branchId,
+                'start_on' => $startOn->toDateTimeString(),
+                'end_on' => $endOn?->toDateTimeString(),
+                'deputy_description' => $deputyDescription,
+                'approver_id' => $approverId,
+                'email_address' => $emailAddress,
+            ];
 
-            if (!$wfActive) {
+            $result = $this->dispatchOrLegacy($dispatcher, 'officer-hire', 'Officers.HireRequested', $context, function () use ($oManager, $officeId, $memberId, $branchId, $startOn, $endOn, $deputyDescription, $approverId, $emailAddress) {
                 $this->Officers->getConnection()->begin();
-            }
-            $omResult = $oManager->assign($officeId, $memberId, $branchId, $startOn, $endOn, $deputyDescription, $approverId, $emailAddress);
-            if (!$omResult->success) {
-                if (!$wfActive) {
+                $omResult = $oManager->assign($officeId, $memberId, $branchId, $startOn, $endOn, $deputyDescription, $approverId, $emailAddress);
+                if (!$omResult->success) {
                     $this->Officers->getConnection()->rollback();
+                    $this->Flash->error(__($omResult->reason));
+
+                    return $omResult;
                 }
-                $this->Flash->error(__($omResult->reason));
-                $this->redirect($this->referer());
-                return;
-            }
-            if (!$wfActive) {
                 $this->Officers->getConnection()->commit();
+                $this->Flash->success(__('The officer has been saved.'));
+
+                return $omResult;
+            });
+
+            if (is_array($result)) {
+                $this->Flash->success(__('The officer assignment workflow has been initiated.'));
             }
-            $this->Flash->success(__('The officer has been saved.'));
             $this->redirect($this->referer());
         }
     }
@@ -111,10 +115,11 @@ class OfficersController extends AppController
      * Release an officer from their assignment.
      *
      * @param \Officers\Services\OfficerManagerInterface $oManager Officer business logic service
+     * @param \App\Services\WorkflowEngine\TriggerDispatcher $dispatcher Workflow trigger dispatcher
      * @return \Cake\Http\Response|null|void Redirects on completion or error
      * @throws \Cake\Http\Exception\NotFoundException When officer not found
      */
-    public function release(OfficerManagerInterface $oManager)
+    public function release(OfficerManagerInterface $oManager, TriggerDispatcher $dispatcher)
     {
         $officer = $this->Officers->get($this->request->getData('id'));
         if (!$officer) {
@@ -126,17 +131,31 @@ class OfficersController extends AppController
             $revokeDate = new DateTime($this->request->getData('revoked_on'));
             $revokerId = $this->Authentication->getIdentity()->getIdentifier();
 
-            //begin transaction
-            $this->Officers->getConnection()->begin();
-            $omResult = $oManager->release($officer->id, $revokerId, $revokeDate, $revokeReason);
-            if (!$omResult->success) {
-                $this->Officers->getConnection()->rollback();
-                $this->Flash->error(__('The officer could not be released. Please, try again.'));
-                $this->redirect($this->referer());
+            $context = [
+                'officer_id' => $officer->id,
+                'released_by' => $revokerId,
+                'reason' => $revokeReason,
+                'revoked_on' => $revokeDate->toDateTimeString(),
+            ];
+
+            $result = $this->dispatchOrLegacy($dispatcher, 'officers-release', 'Officers.Released', $context, function () use ($oManager, $officer, $revokerId, $revokeDate, $revokeReason) {
+                $this->Officers->getConnection()->begin();
+                $omResult = $oManager->release($officer->id, $revokerId, $revokeDate, $revokeReason);
+                if (!$omResult->success) {
+                    $this->Officers->getConnection()->rollback();
+                    $this->Flash->error(__('The officer could not be released. Please, try again.'));
+
+                    return $omResult;
+                }
+                $this->Officers->getConnection()->commit();
+                $this->Flash->success(__('The officer has been released.'));
+
+                return $omResult;
+            });
+
+            if (is_array($result)) {
+                $this->Flash->success(__('The officer release workflow has been initiated.'));
             }
-            //commit transaction
-            $this->Officers->getConnection()->commit();
-            $this->Flash->success(__('The officer has been released.'));
             $this->redirect($this->referer());
         }
     }
@@ -169,11 +188,12 @@ class OfficersController extends AppController
      * Request a warrant for an officer assignment.
      *
      * @param \App\Services\WarrantManager\WarrantManagerInterface $wManager Warrant management service
+     * @param \App\Services\WorkflowEngine\TriggerDispatcher $dispatcher Workflow trigger dispatcher
      * @param int $id Officer ID for warrant request
      * @return \Cake\Http\Response|null|void Redirects on completion or error
      * @throws \Cake\Http\Exception\NotFoundException When officer not found
      */
-    public function requestWarrant(WarrantManagerInterface $wManager, $id)
+    public function requestWarrant(WarrantManagerInterface $wManager, TriggerDispatcher $dispatcher, $id)
     {
         $officer = $this->Officers->find()->where(['Officers.id' => $id])->contain(["Offices", "Branches", "Members"])->first();
         $userid = $this->Authentication->getIdentity()->getIdentifier();
@@ -189,14 +209,37 @@ class OfficersController extends AppController
             $branchName = $officer->branch->name;
             $warrantRequest = new WarrantRequest("Manual Request Warrant: $branchName - $officeName", 'Officers.Officers', $officer->id, $userid, $officer->member_id, $officer->start_on, $officer->expires_on, $officer->granted_member_role_id);
             $memberName = $officer->member->sca_name;
-            $wmResult = $wManager->request("$officeName : $memberName", "", [$warrantRequest]);
-            if (!$wmResult->success) {
-                $this->Flash->error("Could not request Warrant: " . __($wmResult->reason));
-                $this->redirect($this->referer());
-                return;
+
+            $context = [
+                'officer_id' => $officer->id,
+                'member_id' => $officer->member_id,
+                'office_id' => $officer->office->id,
+                'branch_id' => $officer->branch->id,
+                'office_name' => $officeName,
+                'branch_name' => $branchName,
+                'member_name' => $memberName,
+                'start_on' => $officer->start_on?->toDateTimeString(),
+                'expires_on' => $officer->expires_on?->toDateTimeString(),
+                'requested_by' => $userid,
+            ];
+
+            $result = $this->dispatchOrLegacy($dispatcher, 'warrants-roster-approval', 'Warrants.RosterCreated', $context, function () use ($wManager, $warrantRequest, $officeName, $memberName) {
+                $wmResult = $wManager->request("$officeName : $memberName", "", [$warrantRequest]);
+                if (!$wmResult->success) {
+                    $this->Flash->error("Could not request Warrant: " . __($wmResult->reason));
+
+                    return $wmResult;
+                }
+                $this->Flash->success(__('The warrant request has been sent.'));
+
+                return $wmResult;
+            });
+
+            if (is_array($result)) {
+                $this->Flash->success(__('The warrant request workflow has been initiated.'));
             }
-            $this->Flash->success(__('The warrant request has been sent.'));
             $this->redirect($this->referer());
+
             return;
         }
     }
