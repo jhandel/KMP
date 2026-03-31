@@ -34,6 +34,7 @@ use Officers\Services\Api\DefaultReadOnlyDepartmentService;
 use Officers\Services\Api\DefaultReadOnlyOfficeService;
 use Officers\Services\Api\DefaultReadOnlyOfficerRosterService;
 use Officers\Services\OfficerWorkflowActions;
+use Officers\Services\OfficerWorkflowConditions;
 
 /**
  * Officers Plugin - Officer assignment management and hierarchical organization
@@ -215,6 +216,9 @@ class OfficersPlugin extends BasePlugin implements KMPPluginInterface, KMPApiPlu
         $container->add(OfficerWorkflowActions::class)
             ->addArgument(ActiveWindowManagerInterface::class)
             ->addArgument(WarrantManagerInterface::class);
+
+        // OfficerWorkflowConditions — workflow conditions (no constructor dependencies)
+        $container->add(OfficerWorkflowConditions::class);
 
         $container->add(
             ReadOnlyDepartmentServiceInterface::class,

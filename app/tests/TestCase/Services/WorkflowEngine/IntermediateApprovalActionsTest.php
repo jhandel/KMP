@@ -55,8 +55,17 @@ class IntermediateApprovalActionsTest extends BaseTestCase
     {
         parent::setUp();
 
+        $tracker = new IntermediateActionTracker();
         $container = $this->createMock(ContainerInterface::class);
-        $container->method('has')->willReturn(false);
+        $container->method('has')->willReturnCallback(function (string $id) {
+            return $id === IntermediateActionTracker::class;
+        });
+        $container->method('get')->willReturnCallback(function (string $id) use ($tracker) {
+            if ($id === IntermediateActionTracker::class) {
+                return $tracker;
+            }
+            throw new \RuntimeException("Service '{$id}' not registered in test container.");
+        });
         $this->engine = new DefaultWorkflowEngine($container);
 
         $this->defTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');

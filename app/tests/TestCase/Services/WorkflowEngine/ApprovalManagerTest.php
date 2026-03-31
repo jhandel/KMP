@@ -8,6 +8,7 @@ use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WorkflowApprovalResponse;
 use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
 use App\Test\TestCase\BaseTestCase;
+use Cake\Core\ContainerInterface;
 use Cake\ORM\TableRegistry;
 
 /**
@@ -22,7 +23,8 @@ class ApprovalManagerTest extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->manager = new DefaultWorkflowApprovalManager();
+        $container = $this->createMock(ContainerInterface::class);
+        $this->manager = new DefaultWorkflowApprovalManager($container);
         $this->approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
         $this->responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
     }

@@ -66,6 +66,8 @@ use App\Services\ImpersonationService;
 use App\Services\ICalendarService;
 use App\Services\WarrantManager\DefaultWarrantManager;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WorkflowEngine\Actions\CoreActions;
+use App\Services\WorkflowEngine\Conditions\CoreConditions;
 use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
 use App\Services\WorkflowEngine\DefaultWorkflowEngine;
 use App\Services\WorkflowEngine\TriggerDispatcher;
@@ -564,7 +566,7 @@ class Application extends BaseApplication implements
         $container->add(
             WorkflowApprovalManagerInterface::class,
             DefaultWorkflowApprovalManager::class,
-        );
+        )->addArgument(ContainerInterface::class);
 
         // Register WorkflowVersionManager for workflow version lifecycle management
         $container->add(
@@ -582,6 +584,10 @@ class Application extends BaseApplication implements
         $container->add(
             TriggerDispatcher::class,
         )->addArgument(WorkflowEngineInterface::class);
+
+        // Core workflow actions and conditions (no constructor dependencies)
+        $container->add(CoreActions::class);
+        $container->add(CoreConditions::class);
 
         // WarrantWorkflowActions — workflow actions delegating to WarrantManager
         $container->add(WarrantWorkflowActions::class)
