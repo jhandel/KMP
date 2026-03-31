@@ -1,0 +1,80 @@
+{
+    "nodes": {
+        "trigger-release": {
+            "type": "trigger",
+            "label": "Officer Released",
+            "config": {
+                "event": "Officers.Released",
+                "entityIdField": "officerId",
+                "inputMapping": {
+                    "officerId": "$.event.officerId",
+                    "memberId": "$.event.memberId",
+                    "officeId": "$.event.officeId",
+                    "branchId": "$.event.branchId",
+                    "releasedById": "$.event.releasedById",
+                    "reason": "$.event.reason"
+                }
+            },
+            "position": { "x": 50, "y": 200 },
+            "outputs": [
+                { "port": "next", "target": "release-officer" }
+            ]
+        },
+        "release-officer": {
+            "type": "action",
+            "label": "Release Officer Record",
+            "config": {
+                "action": "Officers.ReleaseOfficer",
+                "params": {
+                    "officerId": "$.trigger.officerId",
+                    "releasedById": "$.trigger.releasedById",
+                    "reason": "$.trigger.reason"
+                }
+            },
+            "position": { "x": 350, "y": 200 },
+            "outputs": [
+                { "port": "next", "target": "recalculate-office" }
+            ]
+        },
+        "recalculate-office": {
+            "type": "action",
+            "label": "Recalculate Officers for Office",
+            "config": {
+                "action": "Officers.RecalculateOfficersForOffice",
+                "params": {
+                    "officeId": "$.trigger.officeId",
+                    "branchId": "$.trigger.branchId"
+                }
+            },
+            "position": { "x": 650, "y": 200 },
+            "outputs": [
+                { "port": "next", "target": "send-release-notification" }
+            ]
+        },
+        "send-release-notification": {
+            "type": "action",
+            "label": "Send Release Notification",
+            "config": {
+                "action": "Officers.SendReleaseNotification",
+                "params": {
+                    "officerId": "$.trigger.officerId",
+                    "memberId": "$.trigger.memberId",
+                    "officeId": "$.trigger.officeId",
+                    "branchId": "$.trigger.branchId"
+                }
+            },
+            "position": { "x": 950, "y": 200 },
+            "outputs": [
+                { "port": "next", "target": "end-complete" }
+            ]
+        },
+        "end-complete": {
+            "type": "end",
+            "label": "Release Complete",
+            "config": {},
+            "position": { "x": 1250, "y": 200 },
+            "outputs": []
+        }
+    },
+    "startNode": "trigger-release"
+}

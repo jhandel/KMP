@@ -1,0 +1,84 @@
+{
+    "nodes": {
+        "trigger-ready-to-close": {
+            "type": "trigger",
+            "label": "Waiver Collection Ready to Close",
+            "config": {
+                "event": "Waivers.ReadyToClose",
+                "entityIdField": "collectionId",
+                "inputMapping": {
+                    "collectionId": "$.event.collectionId",
+                    "organizerEmail": "$.event.organizerEmail",
+                    "organizerName": "$.event.organizerName",
+                    "gatheringName": "$.event.gatheringName"
+                }
+            },
+            "position": { "x": 50, "y": 200 },
+            "outputs": [
+                { "port": "next", "target": "check-ready-to-close" }
+            ]
+        },
+        "check-ready-to-close": {
+            "type": "condition",
+            "label": "Is Ready to Close?",
+            "config": {
+                "condition": "Waivers.IsReadyToClose",
+                "collectionId": "$.trigger.collectionId"
+            },
+            "position": { "x": 350, "y": 200 },
+            "outputs": [
+                { "port": "true", "target": "close-collection", "label": "Ready" },
+                { "port": "false", "target": "end-not-ready", "label": "Not Ready" }
+            ]
+        },
+        "close-collection": {
+            "type": "action",
+            "label": "Close Waiver Collection",
+            "config": {
+                "action": "Waivers.CloseWaiverCollection",
+                "params": {
+                    "collectionId": "$.trigger.collectionId"
+                }
+            },
+            "position": { "x": 650, "y": 100 },
+            "outputs": [
+                { "port": "next", "target": "notify-organizer" }
+            ]
+        },
+        "notify-organizer": {
+            "type": "action",
+            "label": "Notify Organizer of Closure",
+            "config": {
+                "action": "Core.SendEmail",
+                "params": {
+                    "template": "waiver_collection_closed",
+                    "to": "$.trigger.organizerEmail",
+                    "data": {
+                        "organizerName": "$.trigger.organizerName",
+                        "gatheringName": "$.trigger.gatheringName",
+                        "collectionId": "$.trigger.collectionId"
+                    }
+                }
+            },
+            "position": { "x": 950, "y": 100 },
+            "outputs": [
+                { "port": "next", "target": "end-closed" }
+            ]
+        },
+        "end-closed": {
+            "type": "end",
+            "label": "Collection Closed",
+            "config": {},
+            "position": { "x": 1250, "y": 100 },
+            "outputs": []
+        },
+        "end-not-ready": {
+            "type": "end",
+            "label": "Not Ready to Close",
+            "config": {},
+            "position": { "x": 650, "y": 300 },
+            "outputs": []
+        }
+    },
+    "startNode": "trigger-ready-to-close"
+}

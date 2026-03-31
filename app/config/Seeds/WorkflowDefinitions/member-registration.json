@@ -1,0 +1,123 @@
+{
+    "nodes": {
+        "trigger-registration": {
+            "type": "trigger",
+            "label": "Member Registered",
+            "config": {
+                "event": "Members.Registered",
+                "entityIdField": "memberId",
+                "inputMapping": {
+                    "memberId": "$.event.memberId",
+                    "email": "$.event.email",
+                    "scaName": "$.event.scaName",
+                    "dateOfBirth": "$.event.dateOfBirth",
+                    "branchId": "$.event.branchId"
+                }
+            },
+            "position": { "x": 50, "y": 200 },
+            "outputs": [
+                { "port": "next", "target": "check-is-minor" }
+            ]
+        },
+        "check-is-minor": {
+            "type": "condition",
+            "label": "Is Minor?",
+            "config": {
+                "condition": "Members.IsMinor",
+                "memberId": "$.trigger.memberId"
+            },
+            "position": { "x": 350, "y": 200 },
+            "outputs": [
+                { "port": "true", "target": "assign-minor-role", "label": "Minor" },
+                { "port": "false", "target": "assign-member-role", "label": "Adult" }
+            ]
+        },
+        "assign-minor-role": {
+            "type": "action",
+            "label": "Assign Minor Role",
+            "config": {
+                "action": "Core.AssignRole",
+                "params": {
+                    "memberId": "$.trigger.memberId",
+                    "role": "minor"
+                }
+            },
+            "position": { "x": 650, "y": 100 },
+            "outputs": [
+                { "port": "next", "target": "set-minor-status" }
+            ]
+        },
+        "set-minor-status": {
+            "type": "action",
+            "label": "Set Minor Member Status",
+            "config": {
+                "action": "Members.UpdateMemberField",
+                "params": {
+                    "memberId": "$.trigger.memberId",
+                    "field": "status",
+                    "value": "active-minor"
+                }
+            },
+            "position": { "x": 950, "y": 100 },
+            "outputs": [
+                { "port": "next", "target": "send-welcome-email" }
+            ]
+        },
+        "assign-member-role": {
+            "type": "action",
+            "label": "Assign Member Role",
+            "config": {
+                "action": "Core.AssignRole",
+                "params": {
+                    "memberId": "$.trigger.memberId",
+                    "role": "member"
+                }
+            },
+            "position": { "x": 650, "y": 300 },
+            "outputs": [
+                { "port": "next", "target": "set-active-status" }
+            ]
+        },
+        "set-active-status": {
+            "type": "action",
+            "label": "Set Active Member Status",
+            "config": {
+                "action": "Members.Activate",
+                "params": {
+                    "memberId": "$.trigger.memberId"
+                }
+            },
+            "position": { "x": 950, "y": 300 },
+            "outputs": [
+                { "port": "next", "target": "send-welcome-email" }
+            ]
+        },
+        "send-welcome-email": {
+            "type": "action",
+            "label": "Send Welcome Email",
+            "config": {
+                "action": "Core.SendEmail",
+                "params": {
+                    "template": "member_welcome",
+                    "to": "$.trigger.email",
+                    "data": {
+                        "scaName": "$.trigger.scaName",
+                        "memberId": "$.trigger.memberId"
+                    }
+                }
+            },
+            "position": { "x": 1250, "y": 200 },
+            "outputs": [
+                { "port": "next", "target": "end-complete" }
+            ]
+        },
+        "end-complete": {
+            "type": "end",
+            "label": "Registration Complete",
+            "config": {},
+            "position": { "x": 1550, "y": 200 },
+            "outputs": []
+        }
+    },
+    "startNode": "trigger-registration"
+}

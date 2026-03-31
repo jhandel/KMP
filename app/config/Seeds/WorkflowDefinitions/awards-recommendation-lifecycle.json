@@ -1,0 +1,340 @@
+{
+    "nodes": {
+        "trigger-recommendation": {
+            "type": "trigger",
+            "label": "Recommendation Submitted",
+            "config": {
+                "event": "Awards.RecommendationSubmitted",
+                "entityIdField": "recommendationId",
+                "inputMapping": {
+                    "recommendationId": "$.event.recommendationId",
+                    "awardId": "$.event.awardId",
+                    "awardName": "$.event.awardName",
+                    "memberId": "$.event.memberId",
+                    "submittedById": "$.event.submittedById",
+                    "branchId": "$.event.branchId",
+                    "domainId": "$.event.domainId"
+                }
+            },
+            "position": { "x": 50, "y": 250 },
+            "outputs": [
+                { "port": "next", "target": "validate-fields" }
+            ]
+        },
+        "validate-fields": {
+            "type": "condition",
+            "label": "Has Required Fields?",
+            "config": {
+                "condition": "Awards.HasRequiredFields",
+                "recommendationId": "$.trigger.recommendationId",
+                "awardId": "$.trigger.awardId"
+            },
+            "position": { "x": 350, "y": 250 },
+            "outputs": [
+                { "port": "true", "target": "log-submitted", "label": "Valid" },
+                { "port": "false", "target": "end-invalid", "label": "Invalid" }
+            ]
+        },
+        "log-submitted": {
+            "type": "action",
+            "label": "Log Submitted State",
+            "config": {
+                "action": "Awards.CreateStateLog",
+                "params": {
+                    "recommendationId": "$.trigger.recommendationId",
+                    "fromState": null,
+                    "toState": "submitted",
+                    "memberId": "$.trigger.submittedById"
+                }
+            },
+            "position": { "x": 650, "y": 250 },
+            "outputs": [
+                { "port": "next", "target": "state-machine" }
+            ]
+        },
+        "state-machine": {
+            "type": "stateMachine",
+            "label": "Award Recommendation Lifecycle",
+            "config": {
+                "entityTable": "Awards.Recommendations",
+                "entityIdKey": "$.trigger.recommendationId",
+                "statusField": "status",
+                "initialState": "submitted",
+                "states": {
+                    "submitted": {
+                        "label": "Submitted",
+                        "onEnter": [],
+                        "transitions": [
+                            {
+                                "to": "under_review",
+                                "trigger": "manual",
+                                "guard": "Awards.IsValidTransition",
+                                "actions": [
+                                    {
+                                        "action": "Awards.TransitionState",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "toState": "under_review"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.CreateStateLog",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "fromState": "submitted",
+                                            "toState": "under_review"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "to": "declined",
+                                "trigger": "manual",
+                                "guard": "Awards.IsValidTransition",
+                                "actions": [
+                                    {
+                                        "action": "Awards.TransitionState",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "toState": "declined"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.CreateStateLog",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "fromState": "submitted",
+                                            "toState": "declined"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "under_review": {
+                        "label": "Under Review",
+                        "onEnter": [
+                            {
+                                "action": "Awards.ApplyStateRules",
+                                "params": {
+                                    "recommendationId": "$.trigger.recommendationId",
+                                    "state": "under_review"
+                                }
+                            }
+                        ],
+                        "transitions": [
+                            {
+                                "to": "scheduled",
+                                "trigger": "manual",
+                                "guard": "Awards.IsValidTransition",
+                                "guardConfig": {
+                                    "additionalCheck": "Awards.RequiresGathering"
+                                },
+                                "actions": [
+                                    {
+                                        "action": "Awards.AssignGathering",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.TransitionState",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "toState": "scheduled"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.CreateStateLog",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "fromState": "under_review",
+                                            "toState": "scheduled"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.PullCourtPreferences",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "to": "declined",
+                                "trigger": "manual",
+                                "guard": "Awards.IsValidTransition",
+                                "actions": [
+                                    {
+                                        "action": "Awards.TransitionState",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "toState": "declined"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.CreateStateLog",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "fromState": "under_review",
+                                            "toState": "declined"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "scheduled": {
+                        "label": "Scheduled for Court",
+                        "onEnter": [
+                            {
+                                "action": "Awards.ApplyStateRules",
+                                "params": {
+                                    "recommendationId": "$.trigger.recommendationId",
+                                    "state": "scheduled"
+                                }
+                            }
+                        ],
+                        "transitions": [
+                            {
+                                "to": "given",
+                                "trigger": "manual",
+                                "guard": "Awards.IsValidTransition",
+                                "guardConfig": {
+                                    "additionalCheck": "Awards.RequiresGivenDate"
+                                },
+                                "actions": [
+                                    {
+                                        "action": "Awards.TransitionState",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "toState": "given"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.CreateStateLog",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "fromState": "scheduled",
+                                            "toState": "given"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "to": "under_review",
+                                "trigger": "manual",
+                                "guard": "Awards.IsValidTransition",
+                                "actions": [
+                                    {
+                                        "action": "Awards.TransitionState",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "toState": "under_review"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.CreateStateLog",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "fromState": "scheduled",
+                                            "toState": "under_review"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "to": "declined",
+                                "trigger": "manual",
+                                "guard": "Awards.IsValidTransition",
+                                "actions": [
+                                    {
+                                        "action": "Awards.TransitionState",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "toState": "declined"
+                                        }
+                                    },
+                                    {
+                                        "action": "Awards.CreateStateLog",
+                                        "params": {
+                                            "recommendationId": "$.trigger.recommendationId",
+                                            "fromState": "scheduled",
+                                            "toState": "declined"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "given": {
+                        "label": "Given",
+                        "isFinal": true,
+                        "onEnter": [
+                            {
+                                "action": "Awards.ApplyStateRules",
+                                "params": {
+                                    "recommendationId": "$.trigger.recommendationId",
+                                    "state": "given"
+                                }
+                            },
+                            {
+                                "action": "Core.SendEmail",
+                                "params": {
+                                    "template": "award_given",
+                                    "to": "$.trigger.memberId",
+                                    "data": {
+                                        "awardName": "$.trigger.awardName",
+                                        "recommendationId": "$.trigger.recommendationId"
+                                    }
+                                }
+                            }
+                        ],
+                        "transitions": []
+                    },
+                    "declined": {
+                        "label": "Declined",
+                        "isFinal": true,
+                        "onEnter": [
+                            {
+                                "action": "Awards.ApplyStateRules",
+                                "params": {
+                                    "recommendationId": "$.trigger.recommendationId",
+                                    "state": "declined"
+                                }
+                            }
+                        ],
+                        "transitions": []
+                    }
+                }
+            },
+            "position": { "x": 950, "y": 250 },
+            "outputs": [
+                { "port": "given", "target": "end-given" },
+                { "port": "declined", "target": "end-declined" }
+            ]
+        },
+        "end-given": {
+            "type": "end",
+            "label": "Award Given",
+            "config": {},
+            "position": { "x": 1350, "y": 150 },
+            "outputs": []
+        },
+        "end-declined": {
+            "type": "end",
+            "label": "Recommendation Declined",
+            "config": {},
+            "position": { "x": 1350, "y": 350 },
+            "outputs": []
+        },
+        "end-invalid": {
+            "type": "end",
+            "label": "Invalid — Missing Fields",
+            "config": {},
+            "position": { "x": 650, "y": 400 },
+            "outputs": []
+        }
+    },
+    "startNode": "trigger-recommendation"
+}
