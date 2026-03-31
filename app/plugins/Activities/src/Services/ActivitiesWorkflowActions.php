@@ -254,6 +254,143 @@ class ActivitiesWorkflowActions
     }
 
     /**
+     * Revoke an active authorization.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with authorizationId, revokerId, revokedReason
+     * @return array Output with revoked boolean
+     */
+    public function revokeAuthorization(array $context, array $config): array
+    {
+        try {
+            $authorizationId = (int)$this->resolveValue($config['authorizationId'], $context);
+            $revokerId = (int)$this->resolveValue($config['revokerId'], $context);
+            $revokedReason = (string)$this->resolveValue($config['revokedReason'] ?? 'Revoked via workflow', $context);
+
+            $result = $this->authManager->revoke($authorizationId, $revokerId, $revokedReason);
+
+            return ['revoked' => $result->success];
+        } catch (\Throwable $e) {
+            Log::error('Workflow RevokeAuthorization failed: ' . $e->getMessage());
+            return ['revoked' => false];
+        }
+    }
+
+    /**
+     * Retract (cancel) a pending authorization request.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with authorizationId, requesterId
+     * @return array Output with retracted boolean
+     */
+    public function retractAuthorization(array $context, array $config): array
+    {
+        try {
+            $authorizationId = (int)$this->resolveValue($config['authorizationId'], $context);
+            $requesterId = (int)$this->resolveValue($config['requesterId'], $context);
+
+            $result = $this->authManager->retract($authorizationId, $requesterId);
+
+            return ['retracted' => $result->success];
+        } catch (\Throwable $e) {
+            Log::error('Workflow RetractAuthorization failed: ' . $e->getMessage());
+            return ['retracted' => false];
+        }
+    }
+
+    /**
+     * Check if a member is eligible to renew an authorization for an activity.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with memberId, activityId
+     * @return array Output with eligible boolean and reason string
+     */
+    public function validateRenewalEligibility(array $context, array $config): array
+    {
+        try {
+            $memberId = (int)$this->resolveValue($config['memberId'], $context);
+            $activityId = (int)$this->resolveValue($config['activityId'], $context);
+
+            $authTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
+
+            // Check for existing approved, non-expired authorization
+            $existingAuth = $authTable->find()
+                ->where([
+                    'member_id' => $memberId,
+                    'activity_id' => $activityId,
+                    'status' => 'Approved',
+                    'expires_on >' => DateTime::now(),
+                ])
+                ->first();
+
+            if (!$existingAuth) {
+                return ['eligible' => false, 'reason' => 'No active authorization exists to renew'];
+            }
+
+            // Check for existing pending request
+            $pendingCount = $authTable->find()
+                ->where([
+                    'member_id' => $memberId,
+                    'activity_id' => $activityId,
+                    'status' => 'Pending',
+                ])
+                ->count();
+
+            if ($pendingCount > 0) {
+                return ['eligible' => false, 'reason' => 'A pending request already exists for this activity'];
+            }
+
+            return ['eligible' => true, 'reason' => 'Member is eligible for renewal'];
+        } catch (\Throwable $e) {
+            Log::error('Workflow ValidateRenewalEligibility failed: ' . $e->getMessage());
+            return ['eligible' => false, 'reason' => 'Error checking renewal eligibility'];
+        }
+    }
+
+    /**
+     * Resolve eligible approvers for an activity in a branch.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with activityId, branchId, excludeMemberIds (optional)
+     * @return array Output with approvers array
+     */
+    public function resolveApprovers(array $context, array $config): array
+    {
+        try {
+            $activityId = (int)$this->resolveValue($config['activityId'], $context);
+            $branchId = (int)$this->resolveValue($config['branchId'], $context);
+            $excludeMemberIds = $this->resolveValue($config['excludeMemberIds'] ?? [], $context);
+            if (!is_array($excludeMemberIds)) {
+                $excludeMemberIds = [];
+            }
+
+            $activitiesTable = TableRegistry::getTableLocator()->get('Activities.Activities');
+            $activity = $activitiesTable->get($activityId);
+
+            $query = $activity->getApproversQuery($branchId);
+
+            if (!empty($excludeMemberIds)) {
+                $query->where(['Members.id NOT IN' => $excludeMemberIds]);
+            }
+
+            $query->select(['Members.id', 'Members.sca_name']);
+
+            $approvers = [];
+            foreach ($query->all() as $member) {
+                $approvers[] = [
+                    'id' => $member->id,
+                    'sca_name' => $member->sca_name,
+                ];
+            }
+
+            return ['approvers' => $approvers];
+        } catch (\Throwable $e) {
+            Log::error('Workflow ResolveApprovers failed: ' . $e->getMessage());
+            return ['approvers' => []];
+        }
+    }
+
+    /**
      * Send status update email to requesting member.
      *
      * @param array $context Current workflow context

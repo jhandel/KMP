@@ -6,6 +6,7 @@ namespace Activities\Services;
 
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowApproverResolverRegistry;
+use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Services\WorkflowRegistry\WorkflowTriggerRegistry;
 
 /**
@@ -24,6 +25,7 @@ class ActivitiesWorkflowProvider
     {
         self::registerTriggers();
         self::registerActions();
+        self::registerConditions();
         self::registerResolvers();
     }
 
@@ -176,6 +178,112 @@ class ActivitiesWorkflowProvider
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'notifyRequester',
                 'isAsync' => true,
+            ],
+            [
+                'action' => 'Activities.RevokeAuthorization',
+                'label' => 'Revoke Authorization',
+                'description' => 'Revoke an active authorization, stopping ActiveWindow and updating status',
+                'inputSchema' => [
+                    'authorizationId' => ['type' => 'integer', 'label' => 'Authorization ID', 'required' => true],
+                    'revokerId' => ['type' => 'integer', 'label' => 'Revoker ID', 'required' => true],
+                    'revokedReason' => ['type' => 'string', 'label' => 'Revoked Reason', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'revoked' => ['type' => 'boolean', 'label' => 'Revocation Successful'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'revokeAuthorization',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Activities.RetractAuthorization',
+                'label' => 'Retract Authorization',
+                'description' => 'Member cancels own pending authorization request',
+                'inputSchema' => [
+                    'authorizationId' => ['type' => 'integer', 'label' => 'Authorization ID', 'required' => true],
+                    'requesterId' => ['type' => 'integer', 'label' => 'Requester ID', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'retracted' => ['type' => 'boolean', 'label' => 'Retraction Successful'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'retractAuthorization',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Activities.ValidateRenewalEligibility',
+                'label' => 'Validate Renewal Eligibility',
+                'description' => 'Check if member is eligible to renew an authorization',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                    'activityId' => ['type' => 'integer', 'label' => 'Activity ID', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'eligible' => ['type' => 'boolean', 'label' => 'Eligible for Renewal'],
+                    'reason' => ['type' => 'string', 'label' => 'Reason'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'validateRenewalEligibility',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Activities.ResolveApprovers',
+                'label' => 'Resolve Approvers',
+                'description' => 'Find eligible approvers for an activity in a branch',
+                'inputSchema' => [
+                    'activityId' => ['type' => 'integer', 'label' => 'Activity ID', 'required' => true],
+                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID', 'required' => true],
+                    'excludeMemberIds' => ['type' => 'array', 'label' => 'Exclude Member IDs'],
+                ],
+                'outputSchema' => [
+                    'approvers' => ['type' => 'array', 'label' => 'Eligible Approvers'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'resolveApprovers',
+                'isAsync' => false,
+            ],
+        ]);
+    }
+
+    /**
+     * @return void
+     */
+    private static function registerConditions(): void
+    {
+        $conditionsClass = ActivitiesWorkflowConditions::class;
+
+        WorkflowConditionRegistry::register(self::SOURCE, [
+            [
+                'condition' => 'Activities.IsRenewalEligible',
+                'label' => 'Is Renewal Eligible',
+                'description' => 'Check if member has an active authorization eligible for renewal',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                    'activityId' => ['type' => 'integer', 'label' => 'Activity ID', 'required' => true],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'isRenewalEligible',
+            ],
+            [
+                'condition' => 'Activities.HasRequiredApprovals',
+                'label' => 'Has Required Approvals',
+                'description' => 'Check if authorization has met the required approval count',
+                'inputSchema' => [
+                    'authorizationId' => ['type' => 'integer', 'label' => 'Authorization ID', 'required' => true],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'hasRequiredApprovals',
+            ],
+            [
+                'condition' => 'Activities.MemberMeetsAgeRequirement',
+                'label' => 'Member Meets Age Requirement',
+                'description' => 'Check if member meets the minimum and maximum age requirements for an activity',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                    'activityId' => ['type' => 'integer', 'label' => 'Activity ID', 'required' => true],
+                ],
+                'evaluatorClass' => $conditionsClass,
+                'evaluatorMethod' => 'memberMeetsAgeRequirement',
             ],
         ]);
     }
