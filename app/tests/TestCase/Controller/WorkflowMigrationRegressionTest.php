@@ -72,17 +72,39 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
             public function __construct(?int $identityId)
             {
                 $identity = $identityId !== null
-                    ? new class ($identityId) {
+                    ? new class ($identityId) implements \ArrayAccess {
                         private int $id;
+                        private array $data;
 
                         public function __construct(int $id)
                         {
                             $this->id = $id;
+                            $this->data = ['id' => $id];
                         }
 
                         public function getIdentifier(): int
                         {
                             return $this->id;
+                        }
+
+                        public function offsetExists(mixed $offset): bool
+                        {
+                            return isset($this->data[$offset]);
+                        }
+
+                        public function offsetGet(mixed $offset): mixed
+                        {
+                            return $this->data[$offset] ?? null;
+                        }
+
+                        public function offsetSet(mixed $offset, mixed $value): void
+                        {
+                            $this->data[$offset] = $value;
+                        }
+
+                        public function offsetUnset(mixed $offset): void
+                        {
+                            unset($this->data[$offset]);
                         }
                     }
                     : null;
@@ -755,6 +777,8 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
         );
 
         $this->assertCount(1, $this->dispatched);
-        $this->assertEquals($context, $this->dispatched[0]['data'], 'Context must be forwarded verbatim');
+        // Kingdom-aware trait adds kingdom_id to context
+        $expected = $context + ['kingdom_id' => null];
+        $this->assertEquals($expected, $this->dispatched[0]['data'], 'Context must be forwarded with kingdom_id');
     }
 }
