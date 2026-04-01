@@ -163,8 +163,6 @@
 /******/ 			"css/dashboard": 0,
 /******/ 			"css/cover": 0,
 /******/ 			"css/signin": 0,
-/******/ 			"css/drawflow": 0,
-/******/ 			"css/workflow-designer": 0,
 /******/ 			"css/waiver-upload": 0
 /******/ 		};
 /******/ 		
