@@ -7,8 +7,8 @@
                 "event": "Waivers.ReadyToClose",
                 "entityIdField": "collectionId",
                 "inputMapping": {
-                    "collectionId": "$.event.collectionId",
-                    "gatheringId": "$.event.gatheringId"
+                    "gatheringId": "$.event.gatheringId",
+                    "closedBy": "$.event.closedBy"
                 }
             },
             "position": { "x": 50, "y": 200 },
@@ -21,7 +21,7 @@
             "label": "Is Ready to Close?",
             "config": {
                 "condition": "Waivers.IsReadyToClose",
-                "collectionId": "$.trigger.collectionId"
+                "gatheringId": "$.trigger.gatheringId"
             },
             "position": { "x": 350, "y": 200 },
             "outputs": [
@@ -35,8 +35,8 @@
             "config": {
                 "action": "Waivers.CloseWaiverCollection",
                 "params": {
-                    "collectionId": "$.trigger.collectionId",
-                    "gatheringId": "$.trigger.gatheringId"
+                    "gatheringId": "$.trigger.gatheringId",
+                    "closedBy": "$.trigger.closedBy"
                 }
             },
             "position": { "x": 650, "y": 100 },

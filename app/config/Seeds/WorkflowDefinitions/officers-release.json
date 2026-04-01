@@ -12,7 +12,8 @@
                     "officeId": "$.event.officeId",
                     "branchId": "$.event.branchId",
                     "releasedById": "$.event.releasedById",
-                    "reason": "$.event.reason"
+                    "reason": "$.event.reason",
+                    "expiresOn": "$.event.expiresOn"
                 }
             },
             "position": { "x": 50, "y": 200 },
@@ -27,7 +28,7 @@
                 "action": "Officers.ReleaseOfficer",
                 "params": {
                     "officerId": "$.trigger.officerId",
-                    "releasedById": "$.trigger.releasedById",
+                    "expiresOn": "$.trigger.expiresOn",
                     "reason": "$.trigger.reason"
                 }
             },
@@ -43,7 +44,7 @@
                 "action": "Officers.RecalculateOfficersForOffice",
                 "params": {
                     "officeId": "$.trigger.officeId",
-                    "branchId": "$.trigger.branchId"
+                    "updaterId": "$.trigger.releasedById"
                 }
             },
             "position": { "x": 650, "y": 200 },
@@ -58,9 +59,7 @@
                 "action": "Officers.SendReleaseNotification",
                 "params": {
                     "officerId": "$.trigger.officerId",
-                    "memberId": "$.trigger.memberId",
-                    "officeId": "$.trigger.officeId",
-                    "branchId": "$.trigger.branchId"
+                    "reason": "$.trigger.reason"
                 }
             },
             "position": { "x": 950, "y": 200 },

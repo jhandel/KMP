@@ -44,7 +44,9 @@
                     "recommendationId": "$.trigger.recommendationId",
                     "fromState": null,
                     "toState": "submitted",
-                    "memberId": "$.trigger.submittedById"
+                    "fromStatus": null,
+                    "toStatus": "submitted",
+                    "actorId": "$.trigger.submittedById"
                 }
             },
             "position": { "x": 650, "y": 250 },

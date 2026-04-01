@@ -60,7 +60,7 @@
                 "params": {
                     "officeId": "$.trigger.officeId",
                     "branchId": "$.trigger.branchId",
-                    "newMemberId": "$.trigger.memberId"
+                    "newOfficerStartDate": "$.trigger.startOn"
                 }
             },
             "position": { "x": 950, "y": 50 },
@@ -121,7 +121,7 @@
                 "action": "Officers.RecalculateOfficersForOffice",
                 "params": {
                     "officeId": "$.trigger.officeId",
-                    "branchId": "$.trigger.branchId"
+                    "updaterId": "$.trigger.memberId"
                 }
             },
             "position": { "x": 1850, "y": 250 },

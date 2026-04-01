@@ -10,7 +10,7 @@
                     "authorizationId": "$.event.authorizationId",
                     "memberId": "$.event.memberId",
                     "activityId": "$.event.activityId",
-                    "activityName": "$.event.activityName",
+                    "branchId": "$.event.branchId",
                     "approverId": "$.event.approverId",
                     "isRenewal": "$.event.isRenewal",
                     "requiredApprovals": "$.event.requiredApprovals"
@@ -44,7 +44,8 @@
                 "action": "Activities.ResolveApprovers",
                 "params": {
                     "activityId": "$.trigger.activityId",
-                    "memberId": "$.trigger.memberId"
+                    "branchId": "$.trigger.branchId",
+                    "excludeMemberIds": []
                 }
             },
             "position": { "x": 650, "y": 200 },
@@ -59,9 +60,9 @@
                 "action": "Activities.NotifyApprover",
                 "params": {
                     "activityId": "$.trigger.activityId",
-                    "memberId": "$.trigger.memberId",
-                    "activityName": "$.trigger.activityName",
-                    "approverIds": "$.nodes.resolve-approvers.result.approverIds"
+                    "requesterId": "$.trigger.memberId",
+                    "approverId": "$.nodes.resolve-approvers.result.approverIds[0]",
+                    "authorizationToken": "$.nodes.validate-request.result.authorizationToken"
                 }
             },
             "position": { "x": 950, "y": 200 },
@@ -132,7 +133,8 @@
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
                     "approverId": "$.resumeData.approverId",
-                    "status": "approved"
+                    "status": "approved",
+                    "nextApproverId": null
                 }
             },
             "position": { "x": 1850, "y": 100 },
@@ -165,7 +167,8 @@
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
                     "approverId": "$.resumeData.approverId",
-                    "status": "denied"
+                    "status": "denied",
+                    "nextApproverId": null
                 }
             },
             "position": { "x": 1850, "y": 300 },

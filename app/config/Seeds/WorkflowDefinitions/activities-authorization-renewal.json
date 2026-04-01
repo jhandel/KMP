@@ -42,9 +42,8 @@
             "config": {
                 "action": "Activities.ValidateRenewalEligibility",
                 "params": {
-                    "authorizationId": "$.trigger.authorizationId",
-                    "previousAuthorizationId": "$.trigger.previousAuthorizationId",
-                    "memberId": "$.trigger.memberId"
+                    "memberId": "$.trigger.memberId",
+                    "activityId": "$.trigger.activityId"
                 }
             },
             "position": { "x": 650, "y": 100 },
@@ -81,8 +80,7 @@
                 "action": "Activities.ActivateAuthorization",
                 "params": {
                     "authorizationId": "$.trigger.authorizationId",
-                    "approverId": "$.resumeData.approverId",
-                    "isRenewal": true
+                    "approverId": "$.resumeData.approverId"
                 }
             },
             "position": { "x": 1250, "y": 50 },
@@ -97,7 +95,7 @@
                 "action": "Activities.RetractAuthorization",
                 "params": {
                     "authorizationId": "$.trigger.previousAuthorizationId",
-                    "reason": "Renewed by new authorization"
+                    "requesterId": "$.trigger.memberId"
                 }
             },
             "position": { "x": 1550, "y": 50 },
@@ -114,7 +112,8 @@
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
                     "approverId": "$.resumeData.approverId",
-                    "status": "approved"
+                    "status": "approved",
+                    "nextApproverId": null
                 }
             },
             "position": { "x": 1850, "y": 50 },
@@ -147,7 +146,8 @@
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
                     "approverId": "$.resumeData.approverId",
-                    "status": "denied"
+                    "status": "denied",
+                    "nextApproverId": null
                 }
             },
             "position": { "x": 1550, "y": 200 },
@@ -163,7 +163,9 @@
                 "params": {
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
-                    "status": "ineligible"
+                    "status": "ineligible",
+                    "approverId": null,
+                    "nextApproverId": null
                 }
             },
             "position": { "x": 650, "y": 350 },
