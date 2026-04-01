@@ -133,9 +133,11 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
             $this->WorkflowVersions->saveOrFail($version);
 
             $existing->current_version_id = $version->id;
-            $existing->is_active = true;
-            $this->WorkflowDefinitions->saveOrFail($existing);
         }
+
+        // Ensure the definition is active (may have been seeded as inactive)
+        $existing->is_active = true;
+        $this->WorkflowDefinitions->saveOrFail($existing);
     }
 
     /**

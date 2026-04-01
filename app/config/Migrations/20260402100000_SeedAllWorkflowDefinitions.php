@@ -53,7 +53,7 @@ class SeedAllWorkflowDefinitions extends AbstractMigration
 
             $this->execute(
                 "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
-                "VALUES ('{$name}', '{$slug}', '{$desc}', '{$meta['trigger_type']}', '{$triggerConfig}', '{$entityType}', 1, NULL, 1, 1, '{$now}', '{$now}')"
+                "VALUES ('{$name}', '{$slug}', '{$desc}', '{$meta['trigger_type']}', '{$triggerConfig}', '{$entityType}', 0, NULL, 1, 1, '{$now}', '{$now}')"
             );
 
             $this->execute(

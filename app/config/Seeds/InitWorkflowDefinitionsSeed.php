@@ -159,7 +159,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_type' => $meta['trigger_type'],
                 'trigger_config' => json_encode($meta['trigger_config']),
                 'entity_type' => $meta['entity_type'],
-                'is_active' => true,
+                'is_active' => false,
                 'current_version_id' => null,
                 'created_by' => 1,
                 'modified_by' => 1,

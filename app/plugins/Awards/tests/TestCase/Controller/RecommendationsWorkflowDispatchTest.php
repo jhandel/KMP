@@ -98,9 +98,11 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
             $versions->saveOrFail($version);
 
             $def->current_version_id = $version->id;
-            $def->is_active = true;
-            $definitions->saveOrFail($def);
         }
+
+        // Ensure the definition is active (may have been seeded as inactive)
+        $def->is_active = true;
+        $definitions->saveOrFail($def);
 
         return (int)$def->id;
     }
