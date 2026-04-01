@@ -71,25 +71,36 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
         $definitions = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
         $versions = TableRegistry::getTableLocator()->get('WorkflowVersions');
 
-        $def = $definitions->newEntity([
-            'name' => 'Test Workflow - ' . $slug,
-            'slug' => $slug,
-            'description' => 'Activated for test',
-            'trigger_type' => 'event',
-            'is_active' => true,
-        ]);
-        $definitions->saveOrFail($def);
+        $def = $definitions->find()->where(['slug' => $slug])->first();
 
-        $version = $versions->newEntity([
-            'workflow_definition_id' => $def->id,
-            'version_number' => 1,
-            'status' => 'published',
-            'definition' => json_encode(['nodes' => [], 'edges' => []]),
-        ]);
-        $versions->saveOrFail($version);
+        if ($def && $def->is_active && $def->current_version_id) {
+            return (int)$def->id;
+        }
 
-        $def->current_version_id = $version->id;
-        $definitions->saveOrFail($def);
+        if (!$def) {
+            $def = $definitions->newEntity([
+                'name' => 'Test Workflow - ' . $slug,
+                'slug' => $slug,
+                'description' => 'Activated for test',
+                'trigger_type' => 'event',
+                'is_active' => true,
+            ]);
+            $definitions->saveOrFail($def);
+        }
+
+        if (!$def->current_version_id) {
+            $version = $versions->newEntity([
+                'workflow_definition_id' => $def->id,
+                'version_number' => 1,
+                'status' => 'published',
+                'definition' => json_encode(['nodes' => [], 'edges' => []]),
+            ]);
+            $versions->saveOrFail($version);
+
+            $def->current_version_id = $version->id;
+            $def->is_active = true;
+            $definitions->saveOrFail($def);
+        }
 
         return (int)$def->id;
     }
@@ -145,26 +156,46 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
     /**
      * Build a stub object that uses WorkflowDispatchTrait with a mock request.
      */
-    private function buildTraitStub(?int $identityId = null): object
+    private function buildTraitStub(?int $identityId = null, ?int $branchId = null): object
     {
-        return new class ($identityId) {
+        $branchId = $branchId ?? self::KINGDOM_BRANCH_ID;
+
+        return new class ($identityId, $branchId) {
             use \App\Controller\WorkflowDispatchTrait;
             use \Cake\ORM\Locator\LocatorAwareTrait;
 
             public object $request;
 
-            public function __construct(?int $identityId)
+            public function __construct(?int $identityId, ?int $branchId)
             {
                 $identity = $identityId !== null
-                    ? new class ($identityId) {
+                    ? new class ($identityId, $branchId) implements \ArrayAccess {
                         private int $id;
-                        public function __construct(int $id)
+                        private array $data;
+                        public function __construct(int $id, ?int $branchId)
                         {
                             $this->id = $id;
+                            $this->data = ['id' => $id, 'branch_id' => $branchId];
                         }
                         public function getIdentifier(): int
                         {
                             return $this->id;
+                        }
+                        public function offsetExists(mixed $offset): bool
+                        {
+                            return isset($this->data[$offset]);
+                        }
+                        public function offsetGet(mixed $offset): mixed
+                        {
+                            return $this->data[$offset] ?? null;
+                        }
+                        public function offsetSet(mixed $offset, mixed $value): void
+                        {
+                            $this->data[$offset] = $value;
+                        }
+                        public function offsetUnset(mixed $offset): void
+                        {
+                            unset($this->data[$offset]);
                         }
                     }
                     : null;

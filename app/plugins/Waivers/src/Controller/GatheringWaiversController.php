@@ -6,6 +6,7 @@ namespace Waivers\Controller;
 use App\Controller\DataverseGridTrait;
 use App\KMP\StaticHelpers;
 use App\Services\CsvExportService;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\Http\Exception\BadRequestException;
 use Cake\Http\Exception\NotFoundException;
 use Cake\Log\Log;
@@ -146,7 +147,7 @@ class GatheringWaiversController extends AppController
      * @param string|null $gatheringId Gathering ID.
      * @return \Cake\Http\Response|null
      */
-    public function close(WaiverStateService $stateService, ?string $gatheringId = null)
+    public function close(WaiverStateService $stateService, TriggerDispatcher $dispatcher, ?string $gatheringId = null)
     {
         $this->request->allowMethod(['post']);
 
@@ -164,6 +165,7 @@ class GatheringWaiversController extends AppController
         $closedBy = $this->Authentication->getIdentity()->getIdentifier();
 
         $result = $this->dispatchOrLegacy(
+            $dispatcher,
             'waiver-closure',
             'Waivers.CollectionClosed',
             ['gathering_id' => (int)$gatheringId, 'closed_by' => $closedBy],
@@ -200,7 +202,7 @@ class GatheringWaiversController extends AppController
      * @param string|null $gatheringId Gathering ID.
      * @return \Cake\Http\Response|null
      */
-    public function reopen(WaiverStateService $stateService, ?string $gatheringId = null)
+    public function reopen(WaiverStateService $stateService, TriggerDispatcher $dispatcher, ?string $gatheringId = null)
     {
         $this->request->allowMethod(['post']);
 
@@ -219,7 +221,7 @@ class GatheringWaiversController extends AppController
 
         if ($result->success) {
             $this->Flash->success($result->reason);
-            $this->dispatchWorkflowEvent('Waivers.CollectionReopened', [
+            $this->dispatchWorkflowEvent($dispatcher, 'Waivers.CollectionReopened', [
                 'gathering_id' => (int)$gatheringId,
                 'reopened_by' => $this->Authentication->getIdentity()->getIdentifier(),
             ]);
@@ -249,7 +251,7 @@ class GatheringWaiversController extends AppController
      * @param string|null $gatheringId Gathering ID.
      * @return \Cake\Http\Response|null
      */
-    public function markReadyToClose(WaiverStateService $stateService, ?string $gatheringId = null)
+    public function markReadyToClose(WaiverStateService $stateService, TriggerDispatcher $dispatcher, ?string $gatheringId = null)
     {
         $this->request->allowMethod(['post']);
 
@@ -269,7 +271,7 @@ class GatheringWaiversController extends AppController
 
         if ($result->success) {
             $this->Flash->success($result->reason);
-            $this->dispatchWorkflowEvent('Waivers.ReadyToClose', [
+            $this->dispatchWorkflowEvent($dispatcher, 'Waivers.ReadyToClose', [
                 'gathering_id' => (int)$gatheringId,
                 'marked_by' => $markedBy,
             ]);
@@ -1083,7 +1085,7 @@ class GatheringWaiversController extends AppController
      * @return \Cake\Http\Response|null Redirects on success.
      * @throws \Cake\Http\Exception\NotFoundException When record not found.
      */
-    public function decline(WaiverStateService $stateService, ?string $id = null)
+    public function decline(WaiverStateService $stateService, TriggerDispatcher $dispatcher, ?string $id = null)
     {
         $this->request->allowMethod(['post', 'put', 'patch']);
 
@@ -1104,7 +1106,7 @@ class GatheringWaiversController extends AppController
 
         if ($result->success) {
             $this->Flash->success($result->reason);
-            $this->dispatchWorkflowEvent('Waivers.WaiverDeclined', [
+            $this->dispatchWorkflowEvent($dispatcher, 'Waivers.WaiverDeclined', [
                 'waiver_id' => (int)$gatheringWaiver->id,
                 'declined_by' => $declinedBy,
                 'reason' => $declineReason,

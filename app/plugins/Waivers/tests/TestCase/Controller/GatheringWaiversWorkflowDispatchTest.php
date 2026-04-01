@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Waivers\Test\TestCase\Controller;
 
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Test\TestCase\Support\HttpIntegrationTestCase;
+use Cake\Core\ContainerInterface;
 
 /**
  * Tests workflow dispatch integration in GatheringWaiversController.
@@ -15,12 +17,64 @@ use App\Test\TestCase\Support\HttpIntegrationTestCase;
  */
 class GatheringWaiversWorkflowDispatchTest extends HttpIntegrationTestCase
 {
+    /**
+     * Keys of mocked services that need DI argument clearing.
+     */
+    private array $mockedServiceKeys = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->enableCsrfToken();
         $this->enableSecurityToken();
         $this->authenticateAsSuperUser();
+
+        $this->mockServiceClean(ContainerInterface::class, function () {
+            return $this->createMock(ContainerInterface::class);
+        });
+
+        $this->mockServiceClean(TriggerDispatcher::class, function () {
+            $mock = $this->createMock(TriggerDispatcher::class);
+            $mock->method('dispatch')->willReturn([]);
+
+            return $mock;
+        });
+    }
+
+    protected function tearDown(): void
+    {
+        $this->mockedServiceKeys = [];
+        parent::tearDown();
+    }
+
+    /**
+     * Override modifyContainer to clear stale DI arguments after setConcrete.
+     */
+    public function modifyContainer(\Cake\Event\EventInterface $event, \Psr\Container\ContainerInterface $container): void
+    {
+        parent::modifyContainer($event, $container);
+
+        foreach ($this->mockedServiceKeys as $key) {
+            if ($container->has($key)) {
+                try {
+                    $def = $container->extend($key);
+                    $ref = new \ReflectionProperty($def, 'arguments');
+                    $ref->setAccessible(true);
+                    $ref->setValue($def, []);
+                } catch (\Exception $e) {
+                    // Definition may not exist in aggregate — ignore
+                }
+            }
+        }
+    }
+
+    /**
+     * Mock a service AND mark it for DI argument clearing.
+     */
+    protected function mockServiceClean(string $class, \Closure $factory): void
+    {
+        $this->mockService($class, $factory);
+        $this->mockedServiceKeys[] = $class;
     }
 
     /**
