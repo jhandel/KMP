@@ -22,7 +22,7 @@
         },
         "release-officer": {
             "type": "action",
-            "label": "Release Officer Record",
+            "label": "Release Officer (stop active window, cancel warrants)",
             "config": {
                 "action": "Officers.ReleaseOfficer",
                 "params": {

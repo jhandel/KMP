@@ -7,9 +7,7 @@
                 "event": "Members.AgeUpTriggered",
                 "entityIdField": "memberId",
                 "inputMapping": {
-                    "memberId": "$.event.memberId",
-                    "previousAge": "$.event.previousAge",
-                    "newAge": "$.event.newAge"
+                    "memberId": "$.event.memberId"
                 }
             },
             "position": { "x": 50, "y": 200 },
@@ -19,7 +17,7 @@
         },
         "age-up-member": {
             "type": "action",
-            "label": "Age Up Member",
+            "label": "Age Up Member (status transition + clear parent)",
             "config": {
                 "action": "Members.AgeUpMember",
                 "params": {
@@ -28,49 +26,6 @@
             },
             "position": { "x": 350, "y": 200 },
             "outputs": [
-                { "port": "next", "target": "check-now-adult" }
-            ]
-        },
-        "check-now-adult": {
-            "type": "condition",
-            "label": "Is Now Adult?",
-            "config": {
-                "condition": "Members.IsAdult",
-                "memberId": "$.trigger.memberId"
-            },
-            "position": { "x": 650, "y": 200 },
-            "outputs": [
-                { "port": "true", "target": "assign-member-role", "label": "Now Adult" },
-                { "port": "false", "target": "sync-warrantable", "label": "Still Minor" }
-            ]
-        },
-        "assign-member-role": {
-            "type": "action",
-            "label": "Upgrade to Member Role",
-            "config": {
-                "action": "Core.AssignRole",
-                "params": {
-                    "memberId": "$.trigger.memberId",
-                    "role": "member",
-                    "removeRole": "minor"
-                }
-            },
-            "position": { "x": 950, "y": 100 },
-            "outputs": [
-                { "port": "next", "target": "sync-warrantable" }
-            ]
-        },
-        "sync-warrantable": {
-            "type": "action",
-            "label": "Sync Warrantable Status",
-            "config": {
-                "action": "Members.SyncWarrantableStatus",
-                "params": {
-                    "memberId": "$.trigger.memberId"
-                }
-            },
-            "position": { "x": 1250, "y": 200 },
-            "outputs": [
                 { "port": "next", "target": "end-complete" }
             ]
         },
@@ -78,7 +33,7 @@
             "type": "end",
             "label": "Age-Up Complete",
             "config": {},
-            "position": { "x": 1550, "y": 200 },
+            "position": { "x": 650, "y": 200 },
             "outputs": []
         }
     },

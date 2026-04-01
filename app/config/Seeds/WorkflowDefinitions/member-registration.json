@@ -10,11 +10,24 @@
                     "memberId": "$.event.memberId",
                     "email": "$.event.email",
                     "scaName": "$.event.scaName",
-                    "dateOfBirth": "$.event.dateOfBirth",
                     "branchId": "$.event.branchId"
                 }
             },
             "position": { "x": 50, "y": 200 },
+            "outputs": [
+                { "port": "next", "target": "assign-status-and-tokens" }
+            ]
+        },
+        "assign-status-and-tokens": {
+            "type": "action",
+            "label": "Assign Status and Tokens",
+            "config": {
+                "action": "Members.AssignStatusAndTokens",
+                "params": {
+                    "memberId": "$.trigger.memberId"
+                }
+            },
+            "position": { "x": 350, "y": 200 },
             "outputs": [
                 { "port": "next", "target": "check-is-minor" }
             ]
@@ -26,87 +39,51 @@
                 "condition": "Members.IsMinor",
                 "memberId": "$.trigger.memberId"
             },
-            "position": { "x": 350, "y": 200 },
+            "position": { "x": 650, "y": 200 },
             "outputs": [
-                { "port": "true", "target": "assign-minor-role", "label": "Minor" },
-                { "port": "false", "target": "assign-member-role", "label": "Adult" }
+                { "port": "true", "target": "notify-secretary-minor", "label": "Minor" },
+                { "port": "false", "target": "send-registration-email", "label": "Adult" }
             ]
         },
-        "assign-minor-role": {
+        "send-registration-email": {
             "type": "action",
-            "label": "Assign Minor Role",
+            "label": "Send Registration Email with Reset Link",
             "config": {
-                "action": "Core.AssignRole",
+                "action": "Members.SendRegistrationEmail",
                 "params": {
                     "memberId": "$.trigger.memberId",
-                    "role": "minor"
-                }
-            },
-            "position": { "x": 650, "y": 100 },
-            "outputs": [
-                { "port": "next", "target": "set-minor-status" }
-            ]
-        },
-        "set-minor-status": {
-            "type": "action",
-            "label": "Set Minor Member Status",
-            "config": {
-                "action": "Members.UpdateMemberField",
-                "params": {
-                    "memberId": "$.trigger.memberId",
-                    "field": "status",
-                    "value": "active-minor"
-                }
-            },
-            "position": { "x": 950, "y": 100 },
-            "outputs": [
-                { "port": "next", "target": "send-welcome-email" }
-            ]
-        },
-        "assign-member-role": {
-            "type": "action",
-            "label": "Assign Member Role",
-            "config": {
-                "action": "Core.AssignRole",
-                "params": {
-                    "memberId": "$.trigger.memberId",
-                    "role": "member"
-                }
-            },
-            "position": { "x": 650, "y": 300 },
-            "outputs": [
-                { "port": "next", "target": "set-active-status" }
-            ]
-        },
-        "set-active-status": {
-            "type": "action",
-            "label": "Set Active Member Status",
-            "config": {
-                "action": "Members.Activate",
-                "params": {
-                    "memberId": "$.trigger.memberId"
+                    "email": "$.trigger.email"
                 }
             },
             "position": { "x": 950, "y": 300 },
             "outputs": [
-                { "port": "next", "target": "send-welcome-email" }
+                { "port": "next", "target": "notify-secretary-adult" }
             ]
         },
-        "send-welcome-email": {
+        "notify-secretary-adult": {
             "type": "action",
-            "label": "Send Welcome Email",
+            "label": "Notify Secretary of New Member",
             "config": {
-                "action": "Core.SendEmail",
+                "action": "Members.NotifySecretaryOfNewMember",
                 "params": {
-                    "template": "member_welcome",
-                    "to": "$.trigger.email",
-                    "data": {
-                        "scaName": "$.trigger.scaName",
-                        "memberId": "$.trigger.memberId"
-                    }
+                    "memberId": "$.trigger.memberId"
                 }
             },
-            "position": { "x": 1250, "y": 200 },
+            "position": { "x": 1250, "y": 300 },
+            "outputs": [
+                { "port": "next", "target": "end-complete" }
+            ]
+        },
+        "notify-secretary-minor": {
+            "type": "action",
+            "label": "Notify Secretary of New Minor",
+            "config": {
+                "action": "Members.NotifySecretaryOfNewMinorMember",
+                "params": {
+                    "memberId": "$.trigger.memberId"
+                }
+            },
+            "position": { "x": 950, "y": 100 },
             "outputs": [
                 { "port": "next", "target": "end-complete" }
             ]

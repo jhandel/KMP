@@ -8,9 +8,7 @@
                 "entityIdField": "collectionId",
                 "inputMapping": {
                     "collectionId": "$.event.collectionId",
-                    "organizerEmail": "$.event.organizerEmail",
-                    "organizerName": "$.event.organizerName",
-                    "gatheringName": "$.event.gatheringName"
+                    "gatheringId": "$.event.gatheringId"
                 }
             },
             "position": { "x": 50, "y": 200 },
@@ -37,30 +35,11 @@
             "config": {
                 "action": "Waivers.CloseWaiverCollection",
                 "params": {
-                    "collectionId": "$.trigger.collectionId"
+                    "collectionId": "$.trigger.collectionId",
+                    "gatheringId": "$.trigger.gatheringId"
                 }
             },
             "position": { "x": 650, "y": 100 },
-            "outputs": [
-                { "port": "next", "target": "notify-organizer" }
-            ]
-        },
-        "notify-organizer": {
-            "type": "action",
-            "label": "Notify Organizer of Closure",
-            "config": {
-                "action": "Core.SendEmail",
-                "params": {
-                    "template": "waiver_collection_closed",
-                    "to": "$.trigger.organizerEmail",
-                    "data": {
-                        "organizerName": "$.trigger.organizerName",
-                        "gatheringName": "$.trigger.gatheringName",
-                        "collectionId": "$.trigger.collectionId"
-                    }
-                }
-            },
-            "position": { "x": 950, "y": 100 },
             "outputs": [
                 { "port": "next", "target": "end-closed" }
             ]
@@ -69,7 +48,7 @@
             "type": "end",
             "label": "Collection Closed",
             "config": {},
-            "position": { "x": 1250, "y": 100 },
+            "position": { "x": 950, "y": 100 },
             "outputs": []
         },
         "end-not-ready": {

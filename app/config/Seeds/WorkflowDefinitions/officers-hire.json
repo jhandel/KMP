@@ -90,48 +90,15 @@
             },
             "position": { "x": 1250, "y": 150 },
             "outputs": [
-                { "port": "true", "target": "get-warrant-period", "label": "Yes" },
+                { "port": "true", "target": "create-officer", "label": "Yes" },
                 { "port": "false", "target": "end-rejected", "label": "No" }
-            ]
-        },
-        "get-warrant-period": {
-            "type": "action",
-            "label": "Get Warrant Period",
-            "config": {
-                "action": "Warrants.GetWarrantPeriod",
-                "params": {
-                    "officeId": "$.trigger.officeId",
-                    "branchId": "$.trigger.branchId"
-                }
-            },
-            "position": { "x": 1550, "y": 50 },
-            "outputs": [
-                { "port": "next", "target": "create-direct-warrant" }
-            ]
-        },
-        "create-direct-warrant": {
-            "type": "action",
-            "label": "Create Direct Warrant",
-            "config": {
-                "action": "Warrants.CreateDirectWarrant",
-                "params": {
-                    "memberId": "$.trigger.memberId",
-                    "officeId": "$.trigger.officeId",
-                    "branchId": "$.trigger.branchId",
-                    "startOn": "$.nodes.get-warrant-period.result.startOn",
-                    "expiresOn": "$.nodes.get-warrant-period.result.expiresOn"
-                }
-            },
-            "position": { "x": 1850, "y": 50 },
-            "outputs": [
-                { "port": "next", "target": "create-officer" }
             ]
         },
         "create-officer": {
             "type": "action",
-            "label": "Create Officer Record",
+            "label": "Create Officer with Active Window",
             "config": {
-                "action": "Officers.CreateOfficerRecord",
+                "action": "Officers.AssignOfficer",
                 "params": {
                     "memberId": "$.trigger.memberId",
                     "officeId": "$.trigger.officeId",
@@ -142,21 +109,7 @@
                     "deputyDescription": "$.trigger.deputyDescription"
                 }
             },
-            "position": { "x": 1550, "y": 350 },
-            "outputs": [
-                { "port": "next", "target": "calculate-reporting" }
-            ]
-        },
-        "calculate-reporting": {
-            "type": "action",
-            "label": "Calculate Reporting Fields",
-            "config": {
-                "action": "Officers.CalculateReportingFields",
-                "params": {
-                    "officerId": "$.nodes.create-officer.result.officerId"
-                }
-            },
-            "position": { "x": 1850, "y": 350 },
+            "position": { "x": 1550, "y": 250 },
             "outputs": [
                 { "port": "next", "target": "recalculate-office" }
             ]
@@ -171,7 +124,7 @@
                     "branchId": "$.trigger.branchId"
                 }
             },
-            "position": { "x": 2150, "y": 350 },
+            "position": { "x": 1850, "y": 250 },
             "outputs": [
                 { "port": "next", "target": "send-hire-notification" }
             ]
@@ -185,7 +138,7 @@
                     "officerId": "$.nodes.create-officer.result.officerId"
                 }
             },
-            "position": { "x": 2450, "y": 350 },
+            "position": { "x": 2150, "y": 250 },
             "outputs": [
                 { "port": "next", "target": "end-complete" }
             ]
@@ -194,14 +147,14 @@
             "type": "end",
             "label": "Hire Complete",
             "config": {},
-            "position": { "x": 2750, "y": 350 },
+            "position": { "x": 2450, "y": 250 },
             "outputs": []
         },
         "end-rejected": {
             "type": "end",
             "label": "Rejected — Not Warrantable",
             "config": {},
-            "position": { "x": 1550, "y": 150 },
+            "position": { "x": 1550, "y": 50 },
             "outputs": []
         }
     },
