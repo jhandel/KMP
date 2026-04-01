@@ -72,6 +72,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
      */
     private bool $isInTransaction = false;
 
+    /**
+     * Whether the current execution is ephemeral (in-memory, no persistence).
+     * Set per-execution based on the workflow definition's execution_mode.
+     */
+    private bool $ephemeral = false;
+
     public function __construct(ContainerInterface $container)
     {
         $this->container = $container;
@@ -89,6 +95,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         // Reset cycle-detection state for this execution pass
         $this->visitedNodes = [];
         $this->executionDepth = 0;
+        $this->ephemeral = false;
 
         return $this->executeInTransaction(function () use ($workflowSlug, $triggerData, $startedBy, $entityType, $entityId) {
             $definitionsTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
@@ -108,6 +115,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 return new ServiceResult(false, "No active workflow found for slug '{$workflowSlug}'.");
             }
 
+            // Set ephemeral mode from definition
+            $this->ephemeral = ($workflowDef->execution_mode ?? 'durable') === 'ephemeral';
+
             $version = $versionsTable->get($workflowDef->current_version_id);
             $definition = $version->definition;
 
@@ -115,37 +125,39 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 return new ServiceResult(false, 'Workflow definition has no nodes.');
             }
 
-            // Duplicate instance prevention: skip if a running/waiting instance already exists
-            $resolvedEntityType = $entityType ?? $workflowDef->entity_type;
-            $duplicateConditions = [
-                'workflow_definition_id' => $workflowDef->id,
-                'status IN' => [WorkflowInstance::STATUS_RUNNING, WorkflowInstance::STATUS_WAITING],
-            ];
-            if ($resolvedEntityType !== null) {
-                $duplicateConditions['entity_type'] = $resolvedEntityType;
-            }
-            if ($entityId !== null) {
-                $duplicateConditions['entity_id'] = $entityId;
-            }
-            $existingInstance = $instancesTable->find()
-                ->where($duplicateConditions)
-                ->first();
+            // Duplicate instance prevention — skip for ephemeral workflows
+            if (!$this->ephemeral) {
+                $resolvedEntityType = $entityType ?? $workflowDef->entity_type;
+                $duplicateConditions = [
+                    'workflow_definition_id' => $workflowDef->id,
+                    'status IN' => [WorkflowInstance::STATUS_RUNNING, WorkflowInstance::STATUS_WAITING],
+                ];
+                if ($resolvedEntityType !== null) {
+                    $duplicateConditions['entity_type'] = $resolvedEntityType;
+                }
+                if ($entityId !== null) {
+                    $duplicateConditions['entity_id'] = $entityId;
+                }
+                $existingInstance = $instancesTable->find()
+                    ->where($duplicateConditions)
+                    ->first();
 
-            if ($existingInstance) {
-                Log::warning(
-                    "WorkflowEngine: Duplicate instance prevented for definition '{$workflowSlug}'"
-                    . " entity_type={$resolvedEntityType} entity_id={$entityId}"
-                    . " — existing instance #{$existingInstance->id} is '{$existingInstance->status}'."
-                );
+                if ($existingInstance) {
+                    Log::warning(
+                        "WorkflowEngine: Duplicate instance prevented for definition '{$workflowSlug}'"
+                        . " entity_type={$resolvedEntityType} entity_id={$entityId}"
+                        . " — existing instance #{$existingInstance->id} is '{$existingInstance->status}'."
+                    );
 
-                return new ServiceResult(
-                    false,
-                    "A workflow instance is already active (#{$existingInstance->id}) for this entity.",
-                    ['existingInstanceId' => $existingInstance->id],
-                );
+                    return new ServiceResult(
+                        false,
+                        "A workflow instance is already active (#{$existingInstance->id}) for this entity.",
+                        ['existingInstanceId' => $existingInstance->id],
+                    );
+                }
             }
 
-            // Create instance
+            // Create instance — in-memory only for ephemeral
             $instance = $instancesTable->newEntity([
                 'workflow_definition_id' => $workflowDef->id,
                 'workflow_version_id' => $version->id,
@@ -163,28 +175,18 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 'started_at' => DateTime::now(),
             ]);
 
-            if (!$instancesTable->save($instance)) {
-                return new ServiceResult(false, 'Failed to create workflow instance.');
+            if (!$this->ephemeral) {
+                if (!$instancesTable->save($instance)) {
+                    return new ServiceResult(false, 'Failed to create workflow instance.');
+                }
             }
 
             // Find and execute trigger nodes
             $triggerNodes = $this->findNodesByType($definition, 'trigger');
-            $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
 
             foreach ($triggerNodes as $triggerNodeId => $triggerNode) {
-                // Log trigger node as completed
-                $log = $logsTable->newEntity([
-                    'workflow_instance_id' => $instance->id,
-                    'node_id' => $triggerNodeId,
-                    'node_type' => 'trigger',
-                    'attempt_number' => 1,
-                    'status' => WorkflowExecutionLog::STATUS_COMPLETED,
-                    'input_data' => $triggerData,
-                    'output_data' => $triggerData,
-                    'started_at' => DateTime::now(),
-                    'completed_at' => DateTime::now(),
-                ]);
-                $logsTable->save($log);
+                // Log trigger node as completed (skip for ephemeral)
+                $this->createExecutionLog($instance, $triggerNodeId, 'trigger', 1, $triggerData, $triggerData);
 
                 // Store trigger output in context
                 $context = $instance->context;
@@ -200,7 +202,10 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
             $this->updateInstance($instance, []);
 
-            return new ServiceResult(true, null, ['instanceId' => $instance->id]);
+            return new ServiceResult(true, null, [
+                'instanceId' => $this->ephemeral ? null : $instance->id,
+                'ephemeral' => $this->ephemeral,
+            ]);
         }, 'startWorkflow');
     }
 
@@ -490,23 +495,28 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $instance->active_nodes = $activeNodes;
         }
 
+        // Ephemeral workflows cannot use async node types
+        if ($this->ephemeral && in_array($nodeType, ['approval', 'humanTask', 'delay', 'subworkflow'], true)) {
+            throw new \RuntimeException(
+                "Ephemeral workflow cannot execute async node type '{$nodeType}' at node '{$nodeId}'. "
+                . "Change the workflow's execution_mode to 'durable' to use {$nodeType} nodes."
+            );
+        }
+
         // Retry logic: determine max attempts from node config
         $maxRetries = (int)($nodeConfig['maxRetries'] ?? $nodeConfig['retryCount'] ?? 0);
         $maxAttempts = $maxRetries + 1;
         $lastException = null;
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            // Create execution log for this attempt
-            $log = $logsTable->newEntity([
-                'workflow_instance_id' => $instance->id,
-                'node_id' => $nodeId,
-                'node_type' => $nodeType,
-                'attempt_number' => $attempt,
-                'status' => WorkflowExecutionLog::STATUS_RUNNING,
-                'input_data' => $this->resolveInputData($instance->context ?? [], $nodeConfig),
-                'started_at' => DateTime::now(),
-            ]);
-            $logsTable->save($log);
+            // Create execution log for this attempt (null in ephemeral mode)
+            $log = $this->createExecutionLog(
+                $instance,
+                $nodeId,
+                $nodeType,
+                $attempt,
+                $this->resolveInputData($instance->context ?? [], $nodeConfig),
+            );
 
             try {
                 switch ($nodeType) {
@@ -559,10 +569,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                         break;
 
                     default:
-                        $log->status = WorkflowExecutionLog::STATUS_FAILED;
-                        $log->error_message = "Unknown node type: {$nodeType}";
-                        $log->completed_at = DateTime::now();
-                        $logsTable->save($log);
+                        if ($log) {
+                            $log->status = WorkflowExecutionLog::STATUS_FAILED;
+                            $log->error_message = "Unknown node type: {$nodeType}";
+                            $log->completed_at = DateTime::now();
+                            $this->saveLog($log);
+                        }
                         break;
                 }
 
@@ -570,10 +582,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 return;
             } catch (Throwable $e) {
                 $lastException = $e;
-                $log->status = WorkflowExecutionLog::STATUS_FAILED;
-                $log->error_message = $e->getMessage();
-                $log->completed_at = DateTime::now();
-                $logsTable->save($log);
+                if ($log) {
+                    $log->status = WorkflowExecutionLog::STATUS_FAILED;
+                    $log->error_message = $e->getMessage();
+                    $log->completed_at = DateTime::now();
+                    $this->saveLog($log);
+                }
 
                 if ($attempt < $maxAttempts) {
                     // Exponential backoff: 1s, 2s, 4s, ...
@@ -609,10 +623,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
         array $definition,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $actionName = $node['config']['action'] ?? null;
 
         if (!$actionName) {
@@ -627,9 +640,11 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         // Async execution: queue the action instead of running inline
         $isAsync = !empty($node['config']['isAsync']) || !empty($actionConfig['isAsync']);
         if ($isAsync) {
-            $log->status = WorkflowExecutionLog::STATUS_WAITING;
-            $log->output_data = ['queued' => true, 'action' => $actionName];
-            $logsTable->save($log);
+            if ($log) {
+                $log->status = WorkflowExecutionLog::STATUS_WAITING;
+                $log->output_data = ['queued' => true, 'action' => $actionName];
+                $this->saveLog($log);
+            }
 
             $instance->status = WorkflowInstance::STATUS_WAITING;
             $this->updateInstance($instance, []);
@@ -678,10 +693,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $context['nodes'][$nodeId] = ['result' => $result];
         $instance->context = $context;
 
-        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-        $log->output_data = $result;
-        $log->completed_at = DateTime::now();
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->output_data = $result;
+            $log->completed_at = DateTime::now();
+            $this->saveLog($log);
+        }
 
         $this->removeFromActiveNodes($instance, $nodeId);
         $this->advanceToOutputs($instance, $nodeId, 'default', $definition);
@@ -694,10 +711,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
         array $definition,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $conditionName = $node['config']['condition'] ?? $node['config']['evaluator'] ?? null;
         $context = $instance->context ?? [];
         $result = false;
@@ -741,10 +757,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $context['nodes'][$nodeId] = ['result' => $result, 'port' => $outputPort];
         $instance->context = $context;
 
-        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-        $log->output_data = ['result' => $result, 'port' => $outputPort];
-        $log->completed_at = DateTime::now();
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->output_data = ['result' => $result, 'port' => $outputPort];
+            $log->completed_at = DateTime::now();
+            $this->saveLog($log);
+        }
 
         $this->removeFromActiveNodes($instance, $nodeId);
         $this->advanceToOutputs($instance, $nodeId, $outputPort, $definition);
@@ -757,9 +775,8 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
 
         $config = $node['config'] ?? [];
@@ -834,7 +851,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $approval = $approvalsTable->newEntity([
             'workflow_instance_id' => $instance->id,
             'node_id' => $nodeId,
-            'execution_log_id' => $log->id,
+            'execution_log_id' => $log?->id,
             'approver_type' => $config['approverType'] ?? WorkflowApproval::APPROVER_TYPE_PERMISSION,
             'approver_config' => $approverConfig,
             'required_count' => $requiredCount,
@@ -852,8 +869,10 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             Log::error('Failed to save workflow approval for node ' . $nodeId . ': ' . json_encode($approval->getErrors()));
         }
 
-        $log->status = WorkflowExecutionLog::STATUS_WAITING;
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_WAITING;
+            $this->saveLog($log);
+        }
 
         $instance->status = WorkflowInstance::STATUS_WAITING;
         $this->updateInstance($instance, []);
@@ -869,9 +888,8 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $tasksTable = TableRegistry::getTableLocator()->get('WorkflowTasks');
 
         $config = $node['config'] ?? [];
@@ -948,9 +966,11 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $instance->context = $context;
 
         // Set log to WAITING
-        $log->status = WorkflowExecutionLog::STATUS_WAITING;
-        $log->output_data = ['taskId' => $task->id];
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_WAITING;
+            $log->output_data = ['taskId' => $task->id];
+            $this->saveLog($log);
+        }
 
         // Pause workflow
         $instance->status = WorkflowInstance::STATUS_WAITING;
@@ -1083,14 +1103,14 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     protected function executeForkNode(
         WorkflowInstance $instance,
         string $nodeId,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
         array $definition,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
-
-        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-        $log->completed_at = DateTime::now();
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->completed_at = DateTime::now();
+            $this->saveLog($log);
+        }
 
         $this->removeFromActiveNodes($instance, $nodeId);
 
@@ -1108,10 +1128,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
         array $definition,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $context = $instance->context ?? [];
 
         // Track join state
@@ -1128,16 +1147,20 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         if (count($completedInputs) >= count($expectedInputs)) {
             // All inputs completed — advance
-            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-            $log->completed_at = DateTime::now();
-            $logsTable->save($log);
+            if ($log) {
+                $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+                $log->completed_at = DateTime::now();
+                $this->saveLog($log);
+            }
 
             $this->removeFromActiveNodes($instance, $nodeId);
             $this->advanceToOutputs($instance, $nodeId, 'default', $definition);
         } else {
             // Still waiting for other paths
-            $log->status = WorkflowExecutionLog::STATUS_WAITING;
-            $logsTable->save($log);
+            if ($log) {
+                $log->status = WorkflowExecutionLog::STATUS_WAITING;
+                $this->saveLog($log);
+            }
         }
     }
 
@@ -1148,10 +1171,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
         array $definition,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $context = $instance->context ?? [];
         $config = $node['config'] ?? [];
 
@@ -1163,10 +1185,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $context['_internal']['loopState'][$nodeId] = ['iteration' => $currentIteration];
         $instance->context = $context;
 
-        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-        $log->output_data = ['iteration' => $currentIteration, 'maxIterations' => $maxIterations];
-        $log->completed_at = DateTime::now();
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->output_data = ['iteration' => $currentIteration, 'maxIterations' => $maxIterations];
+            $log->completed_at = DateTime::now();
+            $this->saveLog($log);
+        }
 
         $this->removeFromActiveNodes($instance, $nodeId);
 
@@ -1190,10 +1214,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
         array $definition,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $context = $instance->context ?? [];
         $config = $node['config'] ?? [];
 
@@ -1272,11 +1295,13 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                     $instance->error_info = null;
                     $this->updateInstance($instance, []);
 
-                    $log->status = WorkflowExecutionLog::STATUS_FAILED;
-                    $log->error_message = "forEach failed at index {$index}: " . $e->getMessage();
-                    $log->output_data = $context['forEach'][$nodeId];
-                    $log->completed_at = DateTime::now();
-                    $logsTable->save($log);
+                    if ($log) {
+                        $log->status = WorkflowExecutionLog::STATUS_FAILED;
+                        $log->error_message = "forEach failed at index {$index}: " . $e->getMessage();
+                        $log->output_data = $context['forEach'][$nodeId];
+                        $log->completed_at = DateTime::now();
+                        $this->saveLog($log);
+                    }
 
                     $this->removeFromActiveNodes($instance, $nodeId);
 
@@ -1317,10 +1342,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         ];
         $instance->context = $context;
 
-        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-        $log->output_data = $context['forEach'][$nodeId];
-        $log->completed_at = DateTime::now();
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->output_data = $context['forEach'][$nodeId];
+            $log->completed_at = DateTime::now();
+            $this->saveLog($log);
+        }
 
         $this->removeFromActiveNodes($instance, $nodeId);
 
@@ -1360,13 +1387,13 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
-
-        $log->status = WorkflowExecutionLog::STATUS_WAITING;
-        $log->output_data = ['delayConfig' => $node['config'] ?? []];
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_WAITING;
+            $log->output_data = ['delayConfig' => $node['config'] ?? []];
+            $this->saveLog($log);
+        }
 
         $instance->status = WorkflowInstance::STATUS_WAITING;
         $this->updateInstance($instance, []);
@@ -1379,13 +1406,13 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     protected function executeEndNode(
         WorkflowInstance $instance,
         string $nodeId,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
-
-        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-        $log->completed_at = DateTime::now();
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->completed_at = DateTime::now();
+            $this->saveLog($log);
+        }
 
         $this->removeFromActiveNodes($instance, $nodeId);
 
@@ -1425,9 +1452,8 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $config = $node['config'] ?? [];
         $childSlug = $config['workflowSlug'] ?? null;
 
@@ -1462,9 +1488,11 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         ];
         $instance->context = $context;
 
-        $log->status = WorkflowExecutionLog::STATUS_WAITING;
-        $log->output_data = $childResult->data;
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_WAITING;
+            $log->output_data = $childResult->data;
+            $this->saveLog($log);
+        }
 
         $instance->status = WorkflowInstance::STATUS_WAITING;
         $this->updateInstance($instance, []);
@@ -1478,10 +1506,9 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         string $nodeId,
         array $node,
-        WorkflowExecutionLog $log,
+        ?WorkflowExecutionLog $log,
         array $definition,
     ): void {
-        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
         $context = $instance->context ?? [];
         $config = $node['config'] ?? [];
 
@@ -1503,10 +1530,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         );
 
         if (!$targetState || !$currentState) {
-            $log->status = WorkflowExecutionLog::STATUS_FAILED;
-            $log->error_message = 'State machine node requires both currentState and targetState.';
-            $log->completed_at = DateTime::now();
-            $logsTable->save($log);
+            if ($log) {
+                $log->status = WorkflowExecutionLog::STATUS_FAILED;
+                $log->error_message = 'State machine node requires both currentState and targetState.';
+                $log->completed_at = DateTime::now();
+                $this->saveLog($log);
+            }
 
             $this->removeFromActiveNodes($instance, $nodeId);
             $this->advanceToOutputs($instance, $nodeId, 'on_invalid', $definition);
@@ -1521,17 +1550,20 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $result = $handler->executeTransition($entityData, (string)$currentState, (string)$targetState, $config);
 
         if (!$result['success']) {
-            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-            $log->output_data = [
+            $invalidOutputData = [
                 'success' => false,
                 'error' => $result['error'],
                 'missingFields' => $result['missingFields'] ?? [],
             ];
-            $log->completed_at = DateTime::now();
-            $logsTable->save($log);
+            if ($log) {
+                $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+                $log->output_data = $invalidOutputData;
+                $log->completed_at = DateTime::now();
+                $this->saveLog($log);
+            }
 
             $context['nodes'][$nodeId] = [
-                'result' => $log->output_data,
+                'result' => $invalidOutputData,
                 'port' => 'on_invalid',
             ];
             $instance->context = $context;
@@ -1577,10 +1609,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         $context['trigger']['entityData'] = $result['entityData'];
         $instance->context = $context;
 
-        $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
-        $log->output_data = $outputData;
-        $log->completed_at = DateTime::now();
-        $logsTable->save($log);
+        if ($log) {
+            $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->output_data = $outputData;
+            $log->completed_at = DateTime::now();
+            $this->saveLog($log);
+        }
 
         $this->removeFromActiveNodes($instance, $nodeId);
 
@@ -1848,13 +1882,73 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
      */
     protected function updateInstance(WorkflowInstance $instance, array $changes): void
     {
-        $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
-
         foreach ($changes as $field => $value) {
             $instance->{$field} = $value;
         }
 
+        if ($this->ephemeral) {
+            return;
+        }
+
+        $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
         $instancesTable->save($instance);
+    }
+
+    /**
+     * Create an execution log entry. Returns null for ephemeral workflows.
+     *
+     * @param \App\Model\Entity\WorkflowInstance $instance Current instance
+     * @param string $nodeId Node identifier
+     * @param string $nodeType Node type
+     * @param int $attempt Attempt number
+     * @param array|null $inputData Input data for the node
+     * @param array|null $outputData Output data (for completed-on-create logs like triggers)
+     * @return \App\Model\Entity\WorkflowExecutionLog|null
+     */
+    protected function createExecutionLog(
+        WorkflowInstance $instance,
+        string $nodeId,
+        string $nodeType,
+        int $attempt,
+        ?array $inputData = null,
+        ?array $outputData = null,
+    ): ?WorkflowExecutionLog {
+        if ($this->ephemeral) {
+            return null;
+        }
+
+        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
+        $data = [
+            'workflow_instance_id' => $instance->id,
+            'node_id' => $nodeId,
+            'node_type' => $nodeType,
+            'attempt_number' => $attempt,
+            'status' => $outputData !== null
+                ? WorkflowExecutionLog::STATUS_COMPLETED
+                : WorkflowExecutionLog::STATUS_RUNNING,
+            'input_data' => $inputData,
+            'started_at' => DateTime::now(),
+        ];
+        if ($outputData !== null) {
+            $data['output_data'] = $outputData;
+            $data['completed_at'] = DateTime::now();
+        }
+        $log = $logsTable->newEntity($data);
+        $logsTable->save($log);
+
+        return $log;
+    }
+
+    /**
+     * Save an execution log update. No-op if log is null (ephemeral mode).
+     */
+    protected function saveLog(?WorkflowExecutionLog $log): void
+    {
+        if ($log === null) {
+            return;
+        }
+        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
+        $logsTable->save($log);
     }
 
     /**
@@ -2151,6 +2245,17 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         string $methodName,
         ?int $existingInstanceId = null,
     ): ServiceResult {
+        // Ephemeral workflows skip DB transactions — domain actions handle their own
+        if ($this->ephemeral) {
+            try {
+                return $work();
+            } catch (Throwable $e) {
+                Log::error("WorkflowEngine::{$methodName} (ephemeral) failed: {$e->getMessage()}");
+
+                return new ServiceResult(false, "Failed to {$methodName}: {$e->getMessage()}");
+            }
+        }
+
         $alreadyInTransaction = $this->isInTransaction;
         $this->isInTransaction = true;
 

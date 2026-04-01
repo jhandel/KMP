@@ -28,6 +28,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Activities.AuthorizationRequested'],
                 'entity_type' => 'Activities',
                 'json_file' => 'activities-authorization-request.json',
+                'execution_mode' => 'durable',
             ],
             [
                 'name' => 'Authorization Renewal',
@@ -37,6 +38,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Activities.AuthorizationRequested', 'filter' => ['isRenewal' => true]],
                 'entity_type' => 'Activities',
                 'json_file' => 'activities-authorization-renewal.json',
+                'execution_mode' => 'durable',
             ],
             [
                 'name' => 'Award Recommendation Lifecycle',
@@ -46,6 +48,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Awards.RecommendationSubmitted'],
                 'entity_type' => 'Awards',
                 'json_file' => 'awards-recommendation-lifecycle.json',
+                'execution_mode' => 'durable',
             ],
             [
                 'name' => 'Officer Hire',
@@ -55,6 +58,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Officers.HireRequested'],
                 'entity_type' => 'Officers',
                 'json_file' => 'officers-hire.json',
+                'execution_mode' => 'ephemeral',
             ],
             [
                 'name' => 'Officer Release',
@@ -64,6 +68,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Officers.Released'],
                 'entity_type' => 'Officers',
                 'json_file' => 'officers-release.json',
+                'execution_mode' => 'ephemeral',
             ],
             [
                 'name' => 'Warrant Roster Approval',
@@ -73,6 +78,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Warrants.RosterCreated'],
                 'entity_type' => 'Warrants',
                 'json_file' => 'warrants-roster-approval.json',
+                'execution_mode' => 'durable',
             ],
             [
                 'name' => 'Member Registration',
@@ -82,6 +88,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Members.Registered'],
                 'entity_type' => 'Members',
                 'json_file' => 'member-registration.json',
+                'execution_mode' => 'ephemeral',
             ],
             [
                 'name' => 'Password Reset',
@@ -91,6 +98,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Members.PasswordResetRequested'],
                 'entity_type' => 'Members',
                 'json_file' => 'member-password-reset.json',
+                'execution_mode' => 'ephemeral',
             ],
             [
                 'name' => 'Minor-to-Adult Age-Up',
@@ -100,6 +108,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['cron' => '0 2 * * *', 'triggerEvent' => 'Members.AgeUpTriggered'],
                 'entity_type' => 'Members',
                 'json_file' => 'member-age-up.json',
+                'execution_mode' => 'ephemeral',
             ],
             [
                 'name' => 'Waiver Collection Closure',
@@ -109,6 +118,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Waivers.ReadyToClose'],
                 'entity_type' => 'Waivers',
                 'json_file' => 'waiver-closure.json',
+                'execution_mode' => 'ephemeral',
             ],
             [
                 'name' => 'Active Window Status Sync',
@@ -118,6 +128,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['cron' => '0 1 * * *', 'triggerEvent' => 'ActiveWindow.SyncTriggered'],
                 'entity_type' => 'Core',
                 'json_file' => 'active-window-sync.json',
+                'execution_mode' => 'ephemeral',
             ],
         ];
     }
@@ -160,6 +171,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => json_encode($meta['trigger_config']),
                 'entity_type' => $meta['entity_type'],
                 'is_active' => false,
+                'execution_mode' => $meta['execution_mode'] ?? 'durable',
                 'current_version_id' => null,
                 'created_by' => 1,
                 'modified_by' => 1,

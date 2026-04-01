@@ -52,6 +52,7 @@ class WorkflowDefinition extends BaseEntity
         'entity_type' => true,
         'kingdom_id' => true,
         'is_active' => true,
+        'execution_mode' => true,
         'current_version_id' => true,
         'created_by' => true,
         'modified_by' => true,
