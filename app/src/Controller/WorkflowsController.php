@@ -209,6 +209,7 @@ class WorkflowsController extends AppController
                 'trigger_type' => $data['triggerType'] ?? 'event',
                 'trigger_config' => $data['triggerConfig'] ?? null,
                 'entity_type' => $data['entityType'] ?? null,
+                'execution_mode' => $data['executionMode'] ?? 'durable',
             ]);
             if ($definitionsTable->save($workflow)) {
                 $result = $versionManager->createDraft(

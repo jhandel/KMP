@@ -50,6 +50,7 @@ $toggleUrl = $this->Url->build(['action' => 'toggleActive', '__id__']);
                     <th><?= __('Name') ?></th>
                     <th><?= __('Slug') ?></th>
                     <th><?= __('Active') ?></th>
+                    <th><?= __('Mode') ?></th>
                     <th><?= __('Version') ?></th>
                     <th><?= __('Trigger') ?></th>
                     <th><?= __('Entity Type') ?></th>
@@ -58,7 +59,7 @@ $toggleUrl = $this->Url->build(['action' => 'toggleActive', '__id__']);
             </thead>
             <tbody data-workflow-index-target="body">
                 <?php foreach ($workflows as $workflow) : ?>
-                <tr data-search-text="<?= h(strtolower($workflow->name . ' ' . $workflow->slug . ' ' . $workflow->trigger_type . ' ' . ($workflow->entity_type ?? ''))) ?>">
+                <tr data-search-text="<?= h(strtolower($workflow->name . ' ' . $workflow->slug . ' ' . $workflow->trigger_type . ' ' . ($workflow->entity_type ?? '') . ' ' . ($workflow->execution_mode ?? ''))) ?>">
                     <td><strong><?= h($workflow->name) ?></strong></td>
                     <td><code><?= h($workflow->slug) ?></code></td>
                     <td>
@@ -70,6 +71,13 @@ $toggleUrl = $this->Url->build(['action' => 'toggleActive', '__id__']);
                                 <?= $workflow->is_active ? 'checked' : '' ?>>
                             <label class="form-check-label visually-hidden" for="toggle-active-<?= h($workflow->id) ?>"><?= __('Toggle active for {0}', h($workflow->name)) ?></label>
                         </div>
+                    </td>
+                    <td>
+                        <?php if (($workflow->execution_mode ?? 'durable') === 'ephemeral') : ?>
+                            <span class="badge bg-info text-dark"><?= __('Ephemeral') ?></span>
+                        <?php else : ?>
+                            <span class="badge bg-primary"><?= __('Durable') ?></span>
+                        <?php endif; ?>
                     </td>
                     <td>
                         <?php if ($workflow->current_version) : ?>
@@ -104,7 +112,7 @@ $toggleUrl = $this->Url->build(['action' => 'toggleActive', '__id__']);
                 <?php endforeach; ?>
                 <?php if (empty($workflows) || $workflows->count() === 0) : ?>
                 <tr id="wf-empty-row">
-                    <td colspan="7" class="text-center text-muted py-4">
+                    <td colspan="8" class="text-center text-muted py-4">
                         <?= __('No workflow definitions found.') ?>
                         <?= $this->Html->link(__('Create one'), ['action' => 'add']) ?>
                     </td>

@@ -112,6 +112,11 @@ class WorkflowDefinitionsTable extends BaseTable
             ->integer('kingdom_id')
             ->allowEmptyString('kingdom_id');
 
+        $validator
+            ->scalar('execution_mode')
+            ->inList('execution_mode', ['durable', 'ephemeral'], __('Execution mode must be durable or ephemeral'))
+            ->notEmptyString('execution_mode');
+
         return $validator;
     }
 

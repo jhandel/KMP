@@ -46,6 +46,15 @@ $this->KMP->endBlock();
                 <?php if ($draftVersion) : ?>
                     <span class="badge bg-warning text-dark ms-2"><?= __('Draft v{0}', $draftVersion->version_number) ?></span>
                 <?php endif; ?>
+                <?php if ($workflow->execution_mode === 'ephemeral') : ?>
+                    <span class="badge bg-info text-dark ms-2" title="<?= __('Ephemeral workflows run in-memory with no persistence. Async nodes (approvals, delays) are not supported.') ?>">
+                        <i class="bi bi-lightning-charge me-1"></i><?= __('Ephemeral') ?>
+                    </span>
+                <?php else : ?>
+                    <span class="badge bg-primary ms-2" title="<?= __('Durable workflows persist execution state and support async nodes like approvals and delays.') ?>">
+                        <i class="bi bi-database me-1"></i><?= __('Durable') ?>
+                    </span>
+                <?php endif; ?>
             <?php else : ?>
                 <i class="bi bi-diagram-3 me-1"></i><?= __('New Workflow') ?>
             <?php endif; ?>

@@ -44,6 +44,15 @@ $this->KMP->endBlock();
             'placeholder' => 'e.g. Members',
             'required' => false,
         ]);
+        echo $this->Form->control('execution_mode', [
+            'type' => 'select',
+            'label' => __('Execution Mode'),
+            'options' => [
+                'durable' => __('Durable — Full persistence, supports async nodes (approvals, delays)'),
+                'ephemeral' => __('Ephemeral — In-memory only, no history, synchronous nodes only'),
+            ],
+            'default' => 'durable',
+        ]);
         ?>
     </fieldset>
     <?= $this->Form->button(__('Create & Open Designer'), ['class' => 'btn btn-primary']) ?>
