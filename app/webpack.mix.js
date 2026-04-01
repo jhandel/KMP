@@ -90,5 +90,6 @@ mix.setPublicPath('./webroot')
     .css('assets/css/workflow-designer.css', 'webroot/css/workflow-designer.css')
     .css('node_modules/drawflow/dist/drawflow.min.css', 'webroot/css/drawflow.css')
     .copyDirectory('node_modules/@fortawesome/fontawesome-free/webfonts', 'webroot/fonts')
+    .copy('node_modules/pdfjs-dist/build/pdf.worker.min.mjs', 'webroot/js/pdf.worker.min.mjs')
     .version()
     .sourceMaps();

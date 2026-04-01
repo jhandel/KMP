@@ -1,11 +1,8 @@
 import { Controller } from "@hotwired/stimulus"
 import * as pdfjsLib from 'pdfjs-dist'
 
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.min.mjs',
-    import.meta.url
-).toString()
+// Set up PDF.js worker — use static asset path (copied by webpack.mix.js)
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/pdf.worker.min.mjs'
 
 /**
  * Waiver Upload Wizard Controller
