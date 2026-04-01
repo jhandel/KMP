@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Migrations\AbstractMigration;
 
 /**
- * Seed all 11 workflow definitions from JSON files.
+ * Seed all 8 workflow definitions from JSON files.
  *
  * This ensures workflow definitions survive database resets by running
  * as part of the migration chain. Idempotent — skips existing slugs.
@@ -17,7 +17,9 @@ class SeedAllWorkflowDefinitions extends AbstractMigration
         // Clean up legacy seed entries from 20260209170000_SeedWorkflowDefinitions
         // Those used different slugs and were active by default; this migration supersedes them.
         $legacySlugs = ['warrant-roster', 'activities-authorization', 'officer-hire'];
-        foreach ($legacySlugs as $slug) {
+        // Also clean up over-engineered workflows that were too simple to justify being workflows
+        $removedSlugs = ['member-password-reset', 'member-age-up', 'active-window-sync'];
+        foreach (array_merge($legacySlugs, $removedSlugs) as $slug) {
             $row = $this->fetchRow("SELECT id FROM workflow_definitions WHERE slug = '{$slug}'");
             if ($row) {
                 $id = $row['id'];

@@ -6,7 +6,7 @@ use Cake\I18n\DateTime;
 use Migrations\BaseSeed;
 
 /**
- * Seeds all 11 workflow definitions with published versions.
+ * Seeds all 8 workflow definitions with published versions.
  *
  * Loads JSON graph definitions from config/Seeds/WorkflowDefinitions/ and inserts
  * each as a workflow_definition + workflow_version pair. Skips any workflow whose
@@ -91,26 +91,6 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'execution_mode' => 'ephemeral',
             ],
             [
-                'name' => 'Password Reset',
-                'slug' => 'member-password-reset',
-                'description' => 'Simple single-action workflow that sends a password reset email to the requesting member.',
-                'trigger_type' => 'event',
-                'trigger_config' => ['event' => 'Members.PasswordResetRequested'],
-                'entity_type' => 'Members',
-                'json_file' => 'member-password-reset.json',
-                'execution_mode' => 'ephemeral',
-            ],
-            [
-                'name' => 'Minor-to-Adult Age-Up',
-                'slug' => 'member-age-up',
-                'description' => 'Scheduled daily workflow that transitions minors who have reached adulthood: upgrades role and syncs warrantable status.',
-                'trigger_type' => 'scheduled',
-                'trigger_config' => ['cron' => '0 2 * * *', 'triggerEvent' => 'Members.AgeUpTriggered'],
-                'entity_type' => 'Members',
-                'json_file' => 'member-age-up.json',
-                'execution_mode' => 'ephemeral',
-            ],
-            [
                 'name' => 'Waiver Collection Closure',
                 'slug' => 'waiver-closure',
                 'description' => 'Closes a waiver collection when ready and notifies the gathering organizer.',
@@ -118,16 +98,6 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'trigger_config' => ['event' => 'Waivers.ReadyToClose'],
                 'entity_type' => 'Waivers',
                 'json_file' => 'waiver-closure.json',
-                'execution_mode' => 'ephemeral',
-            ],
-            [
-                'name' => 'Active Window Status Sync',
-                'slug' => 'active-window-sync',
-                'description' => 'Scheduled daily sync that updates active window statuses across all entities.',
-                'trigger_type' => 'scheduled',
-                'trigger_config' => ['cron' => '0 1 * * *', 'triggerEvent' => 'ActiveWindow.SyncTriggered'],
-                'entity_type' => 'Core',
-                'json_file' => 'active-window-sync.json',
                 'execution_mode' => 'ephemeral',
             ],
         ];

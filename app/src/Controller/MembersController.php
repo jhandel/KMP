@@ -1836,52 +1836,30 @@ class MembersController extends AppController
     /**
      * Forgot password.
      */
-    public function forgotPassword(MemberAuthenticationService $authService, TriggerDispatcher $dispatcher)
+    public function forgotPassword(MemberAuthenticationService $authService)
     {
         $this->Authorization->skipAuthorization();
         if ($this->request->is('post')) {
-            $resetResult = $this->dispatchOrLegacy(
-                $dispatcher,
-                'member-password-reset',
-                'Members.PasswordResetRequested',
-                ['email_address' => (string)$this->request->getData('email_address')],
-                function () use ($authService) {
-                    $result = $authService->generatePasswordResetToken(
-                        (string)$this->request->getData('email_address'),
-                    );
-                    if ($result['found']) {
-                        $vars = ['url' => $result['resetUrl']];
-                        $this->queueMail('KMP', 'resetPassword', $result['email'], $vars);
-                        $this->Flash->success(
-                            __(
-                                'Password reset request sent to ' .
-                                    $result['email'],
-                            ),
-                        );
-
-                        return $this->redirect(['action' => 'login']);
-                    } else {
-                        $this->Flash->error(
-                            __(
-                                'Your email was not found, please contact the Marshalate Secretary at ' .
-                                    $result['secretaryEmail'],
-                            ),
-                        );
-                    }
-
-                    return null;
-                },
+            $result = $authService->generatePasswordResetToken(
+                (string)$this->request->getData('email_address'),
             );
-            if ($resetResult instanceof Response) {
-                return $resetResult;
-            }
-            // Handle workflow engine result (array of ServiceResult)
-            if (is_array($resetResult)) {
+            if ($result['found']) {
+                $vars = ['url' => $result['resetUrl']];
+                $this->queueMail('KMP', 'resetPassword', $result['email'], $vars);
                 $this->Flash->success(
-                    __('If your email is on file, a password reset link has been sent.'),
+                    __(
+                        'If your email is on file, a password reset link has been sent.',
+                    ),
                 );
 
                 return $this->redirect(['action' => 'login']);
+            } else {
+                $this->Flash->error(
+                    __(
+                        'Your email was not found, please contact the Marshalate Secretary at ' .
+                            $result['secretaryEmail'],
+                    ),
+                );
             }
         }
         $headerImage = StaticHelpers::getAppSetting(
