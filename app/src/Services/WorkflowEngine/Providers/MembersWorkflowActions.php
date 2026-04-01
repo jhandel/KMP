@@ -153,7 +153,8 @@ class MembersWorkflowActions
     /**
      * Generate a password reset token and prepare email variables.
      *
-     * Delegates to MemberAuthenticationService::generatePasswordResetToken().
+     * Delegates to MemberAuthenticationService::generatePasswordResetToken()
+     * and queues the reset email.
      *
      * @param array $context Current workflow context
      * @param array $config Config with emailAddress
@@ -167,8 +168,14 @@ class MembersWorkflowActions
             $result = $this->authService->generatePasswordResetToken($emailAddress);
 
             if (!$result['found']) {
-                return ['success' => false, 'error' => 'Member not found for email address'];
+                return [
+                    'success' => false,
+                    'error' => 'Member not found for email address',
+                    'secretaryEmail' => $result['secretaryEmail'] ?? null,
+                ];
             }
+
+            $this->queueResetEmail($result['email'], $result['resetUrl']);
 
             return [
                 'success' => true,
@@ -543,6 +550,22 @@ class MembersWorkflowActions
             Log::error('Workflow NotifySecretaryOfNewMinorMember failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Queue the password reset email, logging on failure without breaking the action.
+     *
+     * @param string $email Recipient email
+     * @param string $resetUrl Password reset URL
+     * @return void
+     */
+    private function queueResetEmail(string $email, string $resetUrl): void
+    {
+        try {
+            $this->queueMail('KMP', 'resetPassword', $email, ['url' => $resetUrl]);
+        } catch (\Throwable $e) {
+            Log::warning('Workflow SendPasswordReset: email queuing failed: ' . $e->getMessage());
         }
     }
 }

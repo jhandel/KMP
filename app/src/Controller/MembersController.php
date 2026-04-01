@@ -1875,6 +1875,27 @@ class MembersController extends AppController
             if ($resetResult instanceof Response) {
                 return $resetResult;
             }
+            // Handle workflow engine result (array of ServiceResult)
+            if (is_array($resetResult)) {
+                $success = false;
+                foreach ($resetResult as $sr) {
+                    if ($sr instanceof \App\Services\ServiceResult && $sr->success) {
+                        $success = true;
+                        break;
+                    }
+                }
+                if ($success) {
+                    $this->Flash->success(
+                        __('If your email is on file, a password reset link has been sent.'),
+                    );
+                } else {
+                    $this->Flash->error(
+                        __('Your email was not found. Please check and try again.'),
+                    );
+                }
+
+                return $this->redirect(['action' => 'login']);
+            }
         }
         $headerImage = StaticHelpers::getAppSetting(
             'KMP.Login.Graphic',
