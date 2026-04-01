@@ -265,5 +265,8 @@ class ActivitiesPlugin extends BasePlugin implements KMPPluginInterface, KMPApiP
         // Register workflow actions for Activities plugin
         $container->add(ActivitiesWorkflowActions::class)
             ->addArgument(AuthorizationManagerInterface::class);
+
+        // Register workflow conditions for Activities plugin
+        $container->add(\Activities\Services\ActivitiesWorkflowConditions::class);
     }
 }

@@ -78,6 +78,8 @@ use App\Services\WorkflowEngine\Conditions\CoreConditions;
 use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
 use App\Services\WorkflowEngine\DefaultWorkflowEngine;
 use App\Services\WorkflowEngine\ExpressionEvaluator;
+use App\Services\WorkflowEngine\Providers\MembersWorkflowActions;
+use App\Services\WorkflowEngine\Providers\MembersWorkflowConditions;
 use App\Services\WorkflowEngine\StateMachine\StateMachineHandler;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
@@ -725,6 +727,12 @@ class Application extends BaseApplication implements
         // WarrantWorkflowActions — workflow actions delegating to WarrantManager
         $container->add(WarrantWorkflowActions::class)
             ->addArgument(WarrantManagerInterface::class);
+
+        // MembersWorkflowActions — member lifecycle workflow actions
+        $container->add(MembersWorkflowActions::class);
+
+        // MembersWorkflowConditions — member condition evaluators
+        $container->add(MembersWorkflowConditions::class);
 
         // Register WorkflowsController for constructor injection
         $container->add(WorkflowsController::class)

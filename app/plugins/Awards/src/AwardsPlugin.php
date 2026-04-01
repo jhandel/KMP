@@ -236,5 +236,9 @@ class AwardsPlugin extends BasePlugin implements KMPPluginInterface
         $container->add(RecommendationStateService::class);
         $container->add(RecommendationFormService::class);
         $container->add(RecommendationQueryService::class);
+
+        // Register workflow actions and conditions for Awards plugin
+        $container->add(\Awards\Services\AwardsWorkflowActions::class);
+        $container->add(\Awards\Services\AwardsWorkflowConditions::class);
     }
 }
