@@ -49,6 +49,9 @@ class WorkflowCronDispatchTest extends BaseTestCase
         string $slug,
         string $triggerType = 'event',
     ): WorkflowDefinition {
+        // Remove any existing definition with this slug (e.g. from seed migrations)
+        $this->defTable->deleteAll(['slug' => $slug]);
+
         $def = $this->defTable->newEntity([
             'name' => 'Test: ' . $slug,
             'slug' => $slug,

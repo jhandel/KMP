@@ -301,6 +301,7 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
      */
     public function testReleaseUsesLegacyWhenNoWorkflow(): void
     {
+        $this->deactivateWorkflows(['officers-release']);
         $officer = $this->createTestOfficer();
         $called = false;
 
@@ -380,6 +381,7 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
      */
     public function testReleaseLegacyFlashesErrorOnFailure(): void
     {
+        $this->deactivateWorkflows(['officers-release']);
         $officer = $this->createTestOfficer();
 
         $this->mockServiceClean(OfficerManagerInterface::class, function () {
@@ -416,6 +418,7 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
      */
     public function testRequestWarrantUsesLegacyWhenNoWorkflow(): void
     {
+        $this->deactivateWorkflows(['warrants-roster-approval']);
         $officer = $this->createTestOfficer();
 
         $called = false;

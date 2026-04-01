@@ -144,6 +144,10 @@ class DefaultOfficerManagerTest extends BaseTestCase
         $this->officerManager->method('queueMail')->willReturnCallback(function () {
             // Do nothing - mock the mail queue
         });
+
+        // Deactivate seeded workflow definitions so service uses hardcoded path
+        $wfTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
+        $wfTable->updateAll(['is_active' => false], ['slug IN' => ['officer-hire', 'officers-release']]);
     }
 
     /**

@@ -88,7 +88,10 @@ class AppSettingsTable extends BaseTable
      */
     public function buildRules(RulesChecker $rules): RulesChecker
     {
-        $rules->add($rules->isUnique(['name', 'kingdom_id']), ['errorField' => 'name']);
+        $rules->add(
+            $rules->isUnique(['name', 'kingdom_id'], ['allowMultipleNulls' => false]),
+            ['errorField' => 'name']
+        );
 
         return $rules;
     }

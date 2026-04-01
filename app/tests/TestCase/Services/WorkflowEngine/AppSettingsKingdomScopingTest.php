@@ -121,16 +121,15 @@ class AppSettingsKingdomScopingTest extends BaseTestCase
         $kingdomId = self::KINGDOM_BRANCH_ID;
 
         $this->createSetting($key, 'global');
-        $this->createSetting($key, 'kingdom');
+        $this->createSetting($key, 'kingdom', $kingdomId);
 
-        // Verify global exists
+        // Verify global exists for a different branch
         $global = $this->settingsTable->getSettingForKingdom($key, self::TEST_BRANCH_LOCAL_ID);
         $this->assertEquals('global', $global);
 
         // But kingdom gets its own value
-        $this->createSetting($key, 'kingdom-specific', $kingdomId);
         $result = $this->settingsTable->getSettingForKingdom($key, $kingdomId);
-        $this->assertEquals('kingdom-specific', $result);
+        $this->assertEquals('kingdom', $result);
     }
 
     // =========================================================

@@ -120,7 +120,10 @@ class WorkflowDefinitionsTable extends BaseTable
      */
     public function buildRules(RulesChecker $rules): RulesChecker
     {
-        $rules->add($rules->isUnique(['slug', 'kingdom_id']), ['errorField' => 'slug']);
+        $rules->add(
+            $rules->isUnique(['slug', 'kingdom_id'], ['allowMultipleNulls' => false]),
+            ['errorField' => 'slug']
+        );
         $rules->add($rules->existsIn(['current_version_id'], 'CurrentVersion'), [
             'errorField' => 'current_version_id',
         ]);
