@@ -49,8 +49,6 @@ class IntermediateApprovalActionsTest extends BaseTestCase
     private $logsTable;
     private $approvalsTable;
 
-    private static bool $actionRegistered = false;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -76,20 +74,18 @@ class IntermediateApprovalActionsTest extends BaseTestCase
 
         IntermediateActionTracker::reset();
 
-        if (!self::$actionRegistered) {
-            WorkflowActionRegistry::register('TestIntermediate', [
-                [
-                    'action' => 'TestIntermediate.Track',
-                    'label' => 'Track Intermediate Action',
-                    'description' => 'Test action that records calls for assertion',
-                    'inputSchema' => [],
-                    'outputSchema' => [],
-                    'serviceClass' => IntermediateActionTracker::class,
-                    'serviceMethod' => 'execute',
-                ],
-            ]);
-            self::$actionRegistered = true;
-        }
+        // Always re-register: other test classes may call WorkflowActionRegistry::clear()
+        WorkflowActionRegistry::register('TestIntermediate', [
+            [
+                'action' => 'TestIntermediate.Track',
+                'label' => 'Track Intermediate Action',
+                'description' => 'Test action that records calls for assertion',
+                'inputSchema' => [],
+                'outputSchema' => [],
+                'serviceClass' => IntermediateActionTracker::class,
+                'serviceMethod' => 'execute',
+            ],
+        ]);
     }
 
     /**
