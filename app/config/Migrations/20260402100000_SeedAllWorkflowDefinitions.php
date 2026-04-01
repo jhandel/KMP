@@ -14,6 +14,20 @@ class SeedAllWorkflowDefinitions extends AbstractMigration
 {
     public function up(): void
     {
+        // Clean up legacy seed entries from 20260209170000_SeedWorkflowDefinitions
+        // Those used different slugs and were active by default; this migration supersedes them.
+        $legacySlugs = ['warrant-roster', 'activities-authorization', 'officer-hire'];
+        foreach ($legacySlugs as $slug) {
+            $row = $this->fetchRow("SELECT id FROM workflow_definitions WHERE slug = '{$slug}'");
+            if ($row) {
+                $id = $row['id'];
+                $this->execute("UPDATE workflow_definitions SET current_version_id = NULL WHERE id = {$id}");
+                $this->execute("DELETE FROM workflow_instances WHERE workflow_definition_id = {$id}");
+                $this->execute("DELETE FROM workflow_versions WHERE workflow_definition_id = {$id}");
+                $this->execute("DELETE FROM workflow_definitions WHERE id = {$id}");
+            }
+        }
+
         $jsonDir = dirname(__DIR__) . '/Seeds/WorkflowDefinitions/';
         if (!is_dir($jsonDir)) {
             return;
