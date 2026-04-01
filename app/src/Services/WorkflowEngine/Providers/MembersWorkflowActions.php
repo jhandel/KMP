@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Services\WorkflowEngine\Providers;
 
 use App\KMP\StaticHelpers;
+use App\Mailer\QueuedMailerAwareTrait;
 use App\Model\Entity\Member;
 use App\Services\MemberAuthenticationService;
+use App\Services\MemberRegistrationService;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
@@ -24,12 +26,17 @@ class MembersWorkflowActions
 {
     use WorkflowContextAwareTrait;
     use LocatorAwareTrait;
+    use QueuedMailerAwareTrait;
 
     private MemberAuthenticationService $authService;
+    private MemberRegistrationService $regService;
 
-    public function __construct(?MemberAuthenticationService $authService = null)
-    {
+    public function __construct(
+        ?MemberAuthenticationService $authService = null,
+        ?MemberRegistrationService $regService = null,
+    ) {
         $this->authService = $authService ?? new MemberAuthenticationService();
+        $this->regService = $regService ?? new MemberRegistrationService();
     }
 
     /**
@@ -423,6 +430,117 @@ class MembersWorkflowActions
             return ['success' => true, 'data' => ['memberId' => $memberId, 'updatedFields' => array_keys($fields)]];
         } catch (\Throwable $e) {
             Log::error('Workflow UpdateMemberField failed: ' . $e->getMessage());
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Assign age-based status and generate auth tokens for an existing member.
+     *
+     * Adults get STATUS_ACTIVE + password reset token; minors get STATUS_UNVERIFIED_MINOR.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with memberId
+     * @return array Output with status
+     */
+    public function assignStatusAndTokens(array $context, array $config): array
+    {
+        try {
+            $memberId = (int)$this->resolveValue($config['memberId'], $context);
+            $membersTable = $this->fetchTable('Members');
+            $member = $membersTable->get($memberId);
+
+            $this->regService->assignStatusAndTokens($member);
+
+            if (!$membersTable->save($member)) {
+                Log::warning('Workflow AssignStatusAndTokens: failed to save member');
+
+                return ['success' => false, 'error' => 'Failed to save member'];
+            }
+
+            return ['success' => true, 'data' => ['memberId' => $memberId, 'status' => $member->status]];
+        } catch (\Throwable $e) {
+            Log::error('Workflow AssignStatusAndTokens failed: ' . $e->getMessage());
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send registration welcome email with password reset link to an adult member.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with memberId, email
+     * @return array Output with success
+     */
+    public function sendRegistrationEmail(array $context, array $config): array
+    {
+        try {
+            $memberId = (int)$this->resolveValue($config['memberId'], $context);
+            $email = (string)$this->resolveValue($config['email'], $context);
+
+            $membersTable = $this->fetchTable('Members');
+            $member = $membersTable->get($memberId);
+
+            $emailVars = $this->regService->buildAdultRegistrationEmailVars($member);
+            $this->queueMail('KMP', 'newRegistration', $email, $emailVars['registrationVars']);
+
+            return ['success' => true, 'data' => ['memberId' => $memberId, 'email' => $email]];
+        } catch (\Throwable $e) {
+            Log::error('Workflow SendRegistrationEmail failed: ' . $e->getMessage());
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Notify the kingdom secretary of a new adult member registration.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with memberId
+     * @return array Output with success
+     */
+    public function notifySecretaryOfNewMember(array $context, array $config): array
+    {
+        try {
+            $memberId = (int)$this->resolveValue($config['memberId'], $context);
+            $membersTable = $this->fetchTable('Members');
+            $member = $membersTable->get($memberId);
+
+            $emailVars = $this->regService->buildAdultRegistrationEmailVars($member);
+            // Mailer overrides 'to' with Members.NewMemberSecretaryEmail from app settings
+            $this->queueMail('KMP', 'notifySecretaryOfNewMember', $member->email_address, $emailVars['secretaryVars']);
+
+            return ['success' => true, 'data' => ['memberId' => $memberId]];
+        } catch (\Throwable $e) {
+            Log::error('Workflow NotifySecretaryOfNewMember failed: ' . $e->getMessage());
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Notify the kingdom secretary of a new minor member registration.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with memberId
+     * @return array Output with success
+     */
+    public function notifySecretaryOfNewMinorMember(array $context, array $config): array
+    {
+        try {
+            $memberId = (int)$this->resolveValue($config['memberId'], $context);
+            $membersTable = $this->fetchTable('Members');
+            $member = $membersTable->get($memberId);
+
+            $secretaryVars = $this->regService->buildMinorRegistrationEmailVars($member);
+            // Mailer overrides 'to' with Members.NewMemberSecretaryEmail from app settings
+            $this->queueMail('KMP', 'notifySecretaryOfNewMinorMember', $member->email_address, $secretaryVars);
+
+            return ['success' => true, 'data' => ['memberId' => $memberId]];
+        } catch (\Throwable $e) {
+            Log::error('Workflow NotifySecretaryOfNewMinorMember failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
         }

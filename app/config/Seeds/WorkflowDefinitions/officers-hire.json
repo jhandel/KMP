@@ -28,8 +28,7 @@
             "label": "Is Only One Per Branch?",
             "config": {
                 "condition": "Officers.IsOnlyOnePerBranch",
-                "officeId": "$.trigger.officeId",
-                "branchId": "$.trigger.branchId"
+                "officeId": "$.trigger.officeId"
             },
             "position": { "x": 350, "y": 250 },
             "outputs": [
@@ -43,8 +42,7 @@
             "config": {
                 "condition": "Officers.HasConflictingOfficer",
                 "officeId": "$.trigger.officeId",
-                "branchId": "$.trigger.branchId",
-                "memberId": "$.trigger.memberId"
+                "branchId": "$.trigger.branchId"
             },
             "position": { "x": 650, "y": 150 },
             "outputs": [
@@ -98,7 +96,7 @@
             "type": "action",
             "label": "Create Officer with Active Window",
             "config": {
-                "action": "Officers.AssignOfficer",
+                "action": "Officers.CreateOfficerRecord",
                 "params": {
                     "memberId": "$.trigger.memberId",
                     "officeId": "$.trigger.officeId",

@@ -249,6 +249,65 @@ class MembersWorkflowProvider
                 'serviceMethod' => 'updateMemberField',
                 'isAsync' => false,
             ],
+            [
+                'action' => 'Members.AssignStatusAndTokens',
+                'label' => 'Assign Status and Tokens',
+                'description' => 'Assign age-based status and generate auth tokens for an existing member',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
+                    'status' => ['type' => 'string', 'label' => 'Assigned Status'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'assignStatusAndTokens',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Members.SendRegistrationEmail',
+                'label' => 'Send Registration Email',
+                'description' => 'Send welcome email with password reset link to a newly registered adult member',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                    'email' => ['type' => 'string', 'label' => 'Email Address', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
+                    'email' => ['type' => 'string', 'label' => 'Email Address'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'sendRegistrationEmail',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Members.NotifySecretaryOfNewMember',
+                'label' => 'Notify Secretary of New Member',
+                'description' => 'Send notification email to kingdom secretary about a new adult registration',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'notifySecretaryOfNewMember',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Members.NotifySecretaryOfNewMinorMember',
+                'label' => 'Notify Secretary of New Minor Member',
+                'description' => 'Send notification email to kingdom secretary about a new minor registration',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'notifySecretaryOfNewMinorMember',
+                'isAsync' => false,
+            ],
         ]);
     }
 
