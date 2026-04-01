@@ -19,6 +19,7 @@ use App\Services\MemberProfileService;
 use App\Services\MemberRegistrationService;
 use App\Services\MemberSearchService;
 use App\Services\QuickLoginDeviceService;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use Authentication\PasswordHasher\DefaultPasswordHasher;
 use Cake\Datasource\Exception\RecordNotFoundException;
 use Cake\Event\EventInterface;
@@ -1045,7 +1046,7 @@ class MembersController extends AppController
      *
      * @return \\Cake\\Http\\Response|null|void
      */
-    public function add()
+    public function add(TriggerDispatcher $dispatcher)
     {
         $member = $this->Members->newEmptyEntity();
         $this->Authorization->authorize($member);
@@ -1087,6 +1088,7 @@ class MembersController extends AppController
                 $member->status = Member::STATUS_ACTIVE;
             }
             $addResult = $this->dispatchOrLegacy(
+                $dispatcher,
                 'member-registration',
                 'Members.Registered',
                 [
@@ -1209,7 +1211,7 @@ class MembersController extends AppController
      * @return \Cake\Http\Response|null Redirects to index.
      * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
      */
-    public function delete(?string $id = null)
+    public function delete(TriggerDispatcher $dispatcher, ?string $id = null)
     {
         $this->request->allowMethod(['post', 'delete']);
         $member = $this->Members->get($id);
@@ -1222,7 +1224,7 @@ class MembersController extends AppController
         $member->email_address = 'Deleted: ' . $member->email_address;
         if ($this->Members->delete($member)) {
             $this->Flash->success(__('The Member has been deleted.'));
-            $this->dispatchWorkflowEvent('Members.Deactivated', [
+            $this->dispatchWorkflowEvent($dispatcher, 'Members.Deactivated', [
                 'member_id' => $memberId,
             ]);
         } else {
@@ -1834,11 +1836,12 @@ class MembersController extends AppController
     /**
      * Forgot password.
      */
-    public function forgotPassword(MemberAuthenticationService $authService)
+    public function forgotPassword(MemberAuthenticationService $authService, TriggerDispatcher $dispatcher)
     {
         $this->Authorization->skipAuthorization();
         if ($this->request->is('post')) {
             $resetResult = $this->dispatchOrLegacy(
+                $dispatcher,
                 'member-password-reset',
                 'Members.PasswordResetRequested',
                 ['email_address' => (string)$this->request->getData('email_address')],
@@ -2587,7 +2590,7 @@ class MembersController extends AppController
      *
      * @param mixed $id
      */
-    public function verifyMembership($id = null)
+    public function verifyMembership(TriggerDispatcher $dispatcher, $id = null)
     {
         $member = $this->Members->get($id);
         $this->Authorization->authorize($member);
@@ -2685,7 +2688,7 @@ class MembersController extends AppController
                 );
                 $this->redirect(['action' => 'view', $member->id]);
             }
-            $this->dispatchWorkflowEvent('Members.MembershipVerified', [
+            $this->dispatchWorkflowEvent($dispatcher, 'Members.MembershipVerified', [
                 'member_id' => $member->id,
                 'verified_by' => $this->Authentication->getIdentity()->getIdentifier(),
             ]);

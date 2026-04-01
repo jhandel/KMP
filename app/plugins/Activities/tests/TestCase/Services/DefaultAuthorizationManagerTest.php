@@ -81,10 +81,11 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
         $this->Members = TableRegistry::getTableLocator()->get('Members');
 
         $activeWindowManager = new DefaultActiveWindowManager();
+        $triggerDispatcher = $this->createMock(\App\Services\WorkflowEngine\TriggerDispatcher::class);
 
         // Create partial mock to stub out mailer (avoids email transport issues in tests)
         $this->authManager = $this->getMockBuilder(\Activities\Services\DefaultAuthorizationManager::class)
-            ->setConstructorArgs([$activeWindowManager])
+            ->setConstructorArgs([$activeWindowManager, $triggerDispatcher])
             ->onlyMethods(['getMailer'])
             ->getMock();
 

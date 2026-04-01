@@ -809,15 +809,14 @@ class Member extends BaseEntity implements
      */
     protected function _getAge(): ?int
     {
-        $now = new DateTime();
-        $date = new DateTime();
         if ($this->birth_month == null) {
             return null;
         }
         if ($this->birth_year == null) {
             return null;
         }
-        $date = $date->setDate($this->birth_year, $this->birth_month, 1);
+        $now = new DateTime('today');
+        $date = new DateTime(sprintf('%04d-%02d-01', $this->birth_year, $this->birth_month));
         $interval = $now->diff($date);
 
         return $interval->y;

@@ -129,11 +129,14 @@ class DefaultOfficerManagerTest extends BaseTestCase
 
         // Manually create service for testing
         $activeWindowManager = new \App\Services\ActiveWindowManager\DefaultActiveWindowManager();
-        $warrantManager = new \App\Services\WarrantManager\DefaultWarrantManager($activeWindowManager);
+        $triggerDispatcher = $this->createMock(\App\Services\WorkflowEngine\TriggerDispatcher::class);
+        $approvalManager = $this->createMock(\App\Services\WorkflowEngine\WorkflowApprovalManagerInterface::class);
+        $workflowEngine = $this->createMock(\App\Services\WorkflowEngine\WorkflowEngineInterface::class);
+        $warrantManager = new \App\Services\WarrantManager\DefaultWarrantManager($activeWindowManager, $triggerDispatcher, $approvalManager, $workflowEngine);
 
         // Create a partial mock that doesn't actually queue mail (to avoid Queue plugin config issues)
         $this->officerManager = $this->getMockBuilder(\Officers\Services\DefaultOfficerManager::class)
-            ->setConstructorArgs([$activeWindowManager, $warrantManager])
+            ->setConstructorArgs([$activeWindowManager, $warrantManager, $triggerDispatcher])
             ->onlyMethods(['queueMail'])
             ->getMock();
 

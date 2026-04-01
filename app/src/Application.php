@@ -688,7 +688,7 @@ class Application extends BaseApplication implements
         $container->add(
             WorkflowApprovalManagerInterface::class,
             DefaultWorkflowApprovalManager::class,
-        )->addArgument(ContainerInterface::class);
+        );
 
         // Register WorkflowVersionManager for workflow version lifecycle management
         $container->add(
