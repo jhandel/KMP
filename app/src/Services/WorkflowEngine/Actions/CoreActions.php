@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\WorkflowEngine\Actions;
 
+use App\Mailer\QueuedMailerAwareTrait;
 use App\Model\Entity\ActiveWindowBaseEntity;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\WorkflowEngine\ExpressionEvaluator;
@@ -19,6 +20,7 @@ use Cake\ORM\TableRegistry;
  */
 class CoreActions
 {
+    use QueuedMailerAwareTrait;
     use WorkflowContextAwareTrait;
 
     private ActiveWindowManagerInterface $activeWindowManager;
@@ -37,7 +39,10 @@ class CoreActions
     }
 
     /**
-     * Send an email notification using queued mailer infrastructure.
+     * Send an email notification using the same pipeline as controllers.
+     *
+     * Goes through QueuedMailerAwareTrait → Mailer → TemplateAwareMailerTrait,
+     * so database email templates are automatically used when active.
      *
      * @param array $context Current workflow context
      * @param array $config Action configuration with 'to', 'mailer', 'action', 'vars', optional 'replyTo'
@@ -47,33 +52,24 @@ class CoreActions
     {
         try {
             $to = $this->resolveValue($config['to'] ?? '', $context);
-            $mailerName = $config['mailer'] ?? '';
+            $mailerName = $config['mailer'] ?? 'KMP';
             $action = $config['action'] ?? '';
             $vars = [];
             foreach (($config['vars'] ?? []) as $key => $val) {
                 $vars[$key] = $this->resolveValue($val, $context);
             }
 
-            $mergedVars = array_merge($vars, ['to' => $to]);
-
-            // Support optional replyTo parameter
             if (!empty($config['replyTo'])) {
-                $mergedVars['replyTo'] = $this->resolveValue($config['replyTo'], $context);
+                $vars['replyTo'] = $this->resolveValue($config['replyTo'], $context);
             }
 
-            $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
-            $data = [
-                'class' => $mailerName,
-                'action' => $action,
-                'vars' => $mergedVars,
-            ];
-            $queuedJobsTable->createJob('Queue.Mailer', $data);
+            $this->queueMail($mailerName, $action, $to, $vars);
 
             return ['sent' => true];
         } catch (\Throwable $e) {
             Log::error('Workflow SendEmail failed: ' . $e->getMessage());
 
-            return ['sent' => false];
+            return ['sent' => false, 'error' => $e->getMessage()];
         }
     }
 

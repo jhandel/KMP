@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\WorkflowEngine\Providers;
 
-use App\KMP\StaticHelpers;
 use App\KMP\TimezoneHelper;
+use App\Mailer\QueuedMailerAwareTrait;
 use App\Model\Entity\Warrant;
 use App\Model\Entity\WarrantRoster;
 use App\Services\WarrantManager\WarrantManagerInterface;
 use App\Services\WarrantManager\WarrantRequest;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
-use Cake\Core\App;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
@@ -24,6 +23,7 @@ use Cake\ORM\TableRegistry;
  */
 class WarrantWorkflowActions
 {
+    use QueuedMailerAwareTrait;
     use WorkflowContextAwareTrait;
 
     private WarrantManagerInterface $warrantManager;
@@ -500,9 +500,6 @@ class WarrantWorkflowActions
                 ])
                 ->all();
 
-            $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
-            $mailerClass = App::className('KMP', 'Mailer', 'Mailer');
-            $useQueue = (StaticHelpers::getAppSetting('Email.UseQueue', 'no', null, true) === 'yes');
             $sent = 0;
 
             foreach ($warrants as $warrant) {
@@ -511,36 +508,18 @@ class WarrantWorkflowActions
                 }
 
                 $vars = [
-                    'to' => $warrant->member->email_address,
                     'memberScaName' => $warrant->member->sca_name,
                     'warrantName' => $warrant->name,
                     'warrantStart' => TimezoneHelper::formatDate($warrant->start_on),
                     'warrantExpires' => TimezoneHelper::formatDate($warrant->expires_on),
                 ];
 
-                $data = [
-                    'class' => $mailerClass,
-                    'action' => 'notifyOfWarrant',
-                    'vars' => $vars,
-                ];
-
-                if ($useQueue) {
-                    $queuedJobsTable->createJob('Queue.Mailer', $data);
-                } else {
-                    try {
-                        $mailer = new $mailerClass();
-                        $mailer->send('notifyOfWarrant', [
-                            $vars['to'],
-                            $vars['memberScaName'],
-                            $vars['warrantName'],
-                            $vars['warrantStart'],
-                            $vars['warrantExpires'],
-                        ]);
-                    } catch (\Throwable $mailErr) {
-                        Log::error('Workflow NotifyWarrantIssued mail send failed: ' . $mailErr->getMessage());
-                    }
+                try {
+                    $this->queueMail('KMP', 'notifyOfWarrant', $warrant->member->email_address, $vars);
+                    $sent++;
+                } catch (\Throwable $mailErr) {
+                    Log::error('Workflow NotifyWarrantIssued mail send failed: ' . $mailErr->getMessage());
                 }
-                $sent++;
             }
 
             return ['emailsSent' => $sent];
