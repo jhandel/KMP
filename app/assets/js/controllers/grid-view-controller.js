@@ -2249,6 +2249,7 @@ class GridViewController extends Controller {
         const link = event.currentTarget
         const rowId = link.dataset.rowId
         const subRowType = link.dataset.subrowType
+        const customUrl = link.dataset.subrowUrl
 
         if (!rowId || !subRowType) {
             console.error('Missing rowId or subRowType for toggleSubRow')
@@ -2281,8 +2282,10 @@ class GridViewController extends Controller {
             // Sub-row doesn't exist - expand it
             const colspan = mainRow.querySelectorAll('td').length
 
-            // Fetch sub-row content from server
-            const url = `/members/sub-row/${rowId}/${subRowType}`
+            // Use custom URL if provided, otherwise fall back to default pattern
+            const url = customUrl
+                ? customUrl.replace(':id', rowId)
+                : `/members/sub-row/${rowId}/${subRowType}`
 
             fetch(url, {
                 headers: {

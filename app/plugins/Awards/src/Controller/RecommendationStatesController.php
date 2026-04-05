@@ -189,6 +189,11 @@ class RecommendationStatesController extends AppController
         }
         $this->Authorization->authorize($state);
 
+        if ($state->is_system) {
+            $this->Flash->error(__('System states cannot be edited.'));
+            return $this->redirect(['action' => 'view', $state->id]);
+        }
+
         if ($this->request->is(['patch', 'post', 'put'])) {
             $oldName = $state->name;
             $oldStatusId = $state->status_id;
@@ -231,6 +236,11 @@ class RecommendationStatesController extends AppController
             throw new \Cake\Http\Exception\NotFoundException();
         }
         $this->Authorization->authorize($state);
+
+        if ($state->is_system) {
+            $this->Flash->error(__('System states cannot be deleted.'));
+            return $this->redirect(['action' => 'view', $state->id]);
+        }
 
         $recommendationsTable = $this->fetchTable('Awards.Recommendations');
         $recCount = $recommendationsTable->find()

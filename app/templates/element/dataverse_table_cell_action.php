@@ -23,6 +23,7 @@
 
 $clickActionPermission = $clickActionPermission ?? null;
 $clickActionPermissionArgs = $clickActionPermissionArgs ?? [];
+$clickActionUrl = $clickActionUrl ?? null;
 $identity = $user ?? $this->getRequest()->getAttribute('identity');
 
 $resolveNestedValue = static function ($path, $data) {
@@ -153,13 +154,14 @@ switch ($actionType) {
         break;
 
     case 'toggleSubRow':
-        // Toggle sub-row (for future implementation)
+        // Toggle sub-row expansion with configurable URL
 ?>
         <a href="#"
             class="text-decoration-none d-flex align-items-center"
             data-action="click->grid-view#toggleSubRow"
             data-row-id="<?= h($row[$primaryKey]) ?>"
             data-subrow-type="<?= h($actionParam) ?>"
+            data-subrow-url="<?= h($clickActionUrl ?? '') ?>"
             onclick="event.preventDefault();">
             <i class="bi bi-chevron-right toggle-icon me-1" style="font-size: 0.75rem;"></i>
             <span><?= $content ?></span>

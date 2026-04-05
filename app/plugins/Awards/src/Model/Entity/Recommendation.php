@@ -17,6 +17,7 @@ use Cake\ORM\TableRegistry;
  * - State: specific workflow position within the status category
  *
  * @property int $id
+ * @property int|null $recommendation_group_id
  * @property int $requester_id
  * @property int|null $member_id
  * @property int|null $branch_id
@@ -49,6 +50,8 @@ use Cake\ORM\TableRegistry;
  * @property \Awards\Model\Entity\Award $award
  * @property \Awards\Model\Entity\Event $event
  * @property \App\Model\Entity\Branch $branch
+ * @property \Awards\Model\Entity\Recommendation|null $group_head
+ * @property \Awards\Model\Entity\Recommendation[] $group_children
  */
 class Recommendation extends BaseEntity
 {
@@ -68,6 +71,7 @@ class Recommendation extends BaseEntity
      * @var array<string, bool>
      */
     protected array $_accessible = [
+        'recommendation_group_id' => true,
         'requester_id' => true,
         'stack_rank' => true,
         'member_id' => true,
@@ -365,5 +369,27 @@ class Recommendation extends BaseEntity
             return $award->branch_id;
         }
         return null;
+    }
+
+    /**
+     * Whether this recommendation is a group head (has children grouped under it).
+     *
+     * @return bool
+     */
+    public function isGroupHead(): bool
+    {
+        return $this->recommendation_group_id === null
+            && isset($this->group_children_count)
+            && $this->group_children_count > 0;
+    }
+
+    /**
+     * Whether this recommendation is a child in a group.
+     *
+     * @return bool
+     */
+    public function isGroupChild(): bool
+    {
+        return $this->recommendation_group_id !== null;
     }
 }

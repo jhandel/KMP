@@ -53,5 +53,41 @@ if ($user->checkCan("edit", "Awards.Recommendations") && isset($rules) && isset(
     echo $this->element('recommendationsBulkEditModal', ['modalId' => 'bulkEditRecommendationModal']);
 endif;
 
+// Group Recommendations Modal - confirmation dialog for grouping
+if ($user->checkCan("edit", "Awards.Recommendations")):
+?>
+<div class="modal fade" id="groupRecommendationsModal" tabindex="-1" aria-labelledby="groupRecommendationsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <?= $this->Form->create(null, [
+                'url' => ['plugin' => 'Awards', 'controller' => 'Recommendations', 'action' => 'groupRecommendations'],
+                'id' => 'groupRecommendationsForm',
+                'data-controller' => 'awards-rec-group',
+            ]) ?>
+            <div class="modal-header">
+                <h5 class="modal-title" id="groupRecommendationsModalLabel">
+                    <i class="bi bi-collection"></i> <?= __('Group Recommendations') ?>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="groupValidationMessage" class="alert alert-info">
+                    <?= __('Selected recommendations will be grouped together. The first selected recommendation will become the group head.') ?>
+                </div>
+                <div id="groupSelectedIds" data-awards-rec-group-target="selectedIds"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= __('Cancel') ?></button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-collection"></i> <?= __('Group Selected') ?>
+                </button>
+            </div>
+            <?= $this->Form->end() ?>
+        </div>
+    </div>
+</div>
+<?php
+endif;
+
 $this->KMP->endBlock();
 ?>

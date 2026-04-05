@@ -38,6 +38,21 @@ echo $this->KMP->startBlock("pageTitle") ?>
 <?php endif; ?>
 <?php $this->KMP->endBlock() ?>
 <?php $this->KMP->startBlock("recordDetails") ?>
+<?php if ($recommendation->isGroupChild()) : ?>
+<tr>
+    <td colspan="2">
+        <div class="alert alert-info mb-0">
+            <i class="bi bi-link-45deg"></i>
+            <?= __('This recommendation is linked to a group.') ?>
+            <?= $this->Html->link(
+                __('View Group Head'),
+                ['action' => 'view', $recommendation->recommendation_group_id],
+                ['class' => 'alert-link']
+            ) ?>
+        </div>
+    </td>
+</tr>
+<?php endif; ?>
 <tr>
     <th scope="row"><?= __('Award') ?></th>
     <td><?= $recommendation->hasValue('award') ? $this->Html->link($recommendation->award->name, ['controller' => 'Awards', 'action' => 'view', $recommendation->award->id]) : '' ?>
@@ -177,11 +192,87 @@ echo $this->KMP->startBlock("pageTitle") ?>
 <?php
 $this->KMP->endBlock() ?>
 <?php $this->KMP->startBlock("tabButtons") ?>
+<?php if (!empty($recommendation->group_children)) : ?>
+<button class="nav-link" id="nav-grouped-tab" data-bs-toggle="tab" data-bs-target="#nav-grouped" type="button" role="tab"
+    aria-controls="nav-grouped" aria-selected="false" data-detail-tabs-target='tabBtn'
+    data-tab-order="5" style="order: 5;">
+    <?= __("Grouped") ?> <span class="badge bg-info"><?= count($recommendation->group_children) ?></span>
+</button>
+<?php endif; ?>
 <button class="nav-link" id="nav-notes-tab" data-bs-toggle="tab" data-bs-target="#nav-notes" type="button" role="tab"
-    aria-controls="nav-notes" aria-selected="false" data-detail-tabs-target='tabBtn'><?= __("Notes") ?>
+    aria-controls="nav-notes" aria-selected="false" data-detail-tabs-target='tabBtn'
+    data-tab-order="10" style="order: 10;"><?= __("Notes") ?>
 </button>
 <?php $this->KMP->endBlock() ?>
 <?php $this->KMP->startBlock("tabContent") ?>
+<?php if (!empty($recommendation->group_children)) : ?>
+<div class="related tab-pane fade m-3" id="nav-grouped" role="tabpanel" aria-labelledby="nav-grouped-tab"
+    data-detail-tabs-target="tabContent"
+    data-tab-order="5" style="order: 5;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0"><i class="bi bi-collection"></i> <?= __('Grouped Recommendations') ?></h5>
+        <?php if ($user->checkCan('edit', $recommendation)) : ?>
+            <?= $this->Form->postLink(
+                '<i class="bi bi-x-circle"></i> ' . __('Ungroup All'),
+                ['action' => 'ungroupRecommendations'],
+                [
+                    'data' => ['recommendation_id' => $recommendation->id],
+                    'confirm' => __('Ungroup all children? They will be restored to their previous states.'),
+                    'class' => 'btn btn-outline-warning btn-sm',
+                    'escape' => false,
+                ]
+            ) ?>
+        <?php endif; ?>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th><?= __('Award') ?></th>
+                    <th><?= __('For') ?></th>
+                    <th><?= __('Reason') ?></th>
+                    <th><?= __('Requester') ?></th>
+                    <th><?= __('Submitted') ?></th>
+                    <?php if ($user->checkCan('edit', $recommendation)) : ?>
+                        <th class="text-end"><?= __('Actions') ?></th>
+                    <?php endif; ?>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($recommendation->group_children as $child) : ?>
+                <tr>
+                    <td><?= h($child->award->abbreviation ?? $child->award->name ?? '—') ?></td>
+                    <td><?= h($child->member_sca_name) ?></td>
+                    <td><?= $this->Text->autoParagraph(h($child->reason ?? '')) ?></td>
+                    <td><?= h($child->requester->sca_name ?? $child->requester_sca_name) ?></td>
+                    <td><?= $child->created ? $child->created->format('Y-m-d') : '—' ?></td>
+                    <?php if ($user->checkCan('edit', $recommendation)) : ?>
+                    <td class="text-end text-nowrap">
+                        <?= $this->Html->link(
+                            '<i class="bi bi-eye"></i>',
+                            ['action' => 'view', $child->id],
+                            ['class' => 'btn btn-sm btn-outline-secondary', 'escape' => false, 'title' => __('View')]
+                        ) ?>
+                        <?= $this->Form->postLink(
+                            '<i class="bi bi-x-lg"></i>',
+                            ['action' => 'removeFromGroup'],
+                            [
+                                'data' => ['recommendation_id' => $child->id],
+                                'confirm' => __('Remove this recommendation from the group?'),
+                                'class' => 'btn btn-sm btn-outline-danger',
+                                'escape' => false,
+                                'title' => __('Remove from group'),
+                            ]
+                        ) ?>
+                    </td>
+                    <?php endif; ?>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
 <div class="related tab-pane fade m-3" id="nav-notes" role="tabpanel" aria-labelledby="nav-notes-tab"
     data-detail-tabs-target="tabContent">
     <?= $this->cell('Notes', [

@@ -142,6 +142,27 @@ class RecommendationsController extends AppController
         // Post-process data to add computed fields for display
         $recommendations = $result['data'];
 
+        // Add group children count for each recommendation
+        $recIds = array_map(fn($r) => $r->id, $recommendations);
+        $groupCounts = [];
+        if (!empty($recIds)) {
+            $countQuery = $this->Recommendations->find()
+                ->select([
+                    'recommendation_group_id',
+                    'child_count' => $this->Recommendations->find()->func()->count('*'),
+                ])
+                ->where(['recommendation_group_id IN' => $recIds])
+                ->groupBy(['recommendation_group_id'])
+                ->disableHydration()
+                ->all();
+            foreach ($countQuery as $row) {
+                $groupCounts[(int)$row['recommendation_group_id']] = (int)$row['child_count'];
+            }
+        }
+        foreach ($recommendations as $recommendation) {
+            $recommendation->group_children_count = $groupCounts[$recommendation->id] ?? 0;
+        }
+
         // Fetch member attendance gatherings for all members in the result set
         // These are gatherings where the member has marked attendance with share_with_crown or share_with_kingdom
         $memberAttendanceGatherings = $this->getMemberAttendanceGatherings($recommendations);
@@ -1000,7 +1021,11 @@ class RecommendationsController extends AppController
     public function view(?string $id = null): ?\Cake\Http\Response
     {
         try {
-            $recommendation = $this->Recommendations->get($id, contain: ['Requesters', 'Members', 'Branches', 'Awards', 'Gatherings', 'AssignedGathering']);
+            $recommendation = $this->Recommendations->get($id, contain: [
+                'Requesters', 'Members', 'Branches', 'Awards', 'Gatherings', 'AssignedGathering',
+                'GroupHead' => ['Awards'],
+                'GroupChildren' => ['Awards', 'Requesters'],
+            ]);
             if (!$recommendation) {
                 throw new \Cake\Http\Exception\NotFoundException(__('Recommendation not found'));
             }
@@ -2375,6 +2400,253 @@ class RecommendationsController extends AppController
             $this->viewBuilder()->setClassName('Json');
             $this->viewBuilder()->setOption('serialize', ['error']);
             $this->response = $this->response->withStatus(500);
+        }
+    }
+
+    /**
+     * Group selected recommendations together.
+     *
+     * Validates that all selected recommendations share the same member_id
+     * or have null member_id. If one selected rec is already a group head,
+     * others join it. Otherwise, the lowest-ID rec becomes the head.
+     * Children transition to "Linked" state.
+     *
+     * @return \Cake\Http\Response|null
+     */
+    public function groupRecommendations(): ?\Cake\Http\Response
+    {
+        $this->request->allowMethod(['post']);
+        $emptyRecommendation = $this->Recommendations->newEmptyEntity();
+        $this->Authorization->authorize($emptyRecommendation, 'group');
+
+        $ids = $this->request->getData('recommendation_ids');
+        if (!is_array($ids) || count($ids) < 2) {
+            $this->Flash->error(__('At least 2 recommendations are required to group.'));
+            return $this->redirect(['action' => 'index']);
+        }
+
+        $ids = array_map('intval', $ids);
+
+        $recommendations = $this->Recommendations->find()
+            ->where(['Recommendations.id IN' => $ids])
+            ->contain(['GroupChildren'])
+            ->toArray();
+
+        if (count($recommendations) !== count($ids)) {
+            $this->Flash->error(__('One or more recommendations could not be found.'));
+            return $this->redirect(['action' => 'index']);
+        }
+
+        // Validate member_id constraint
+        $memberIds = array_unique(array_filter(
+            array_map(fn($r) => $r->member_id, $recommendations),
+            fn($id) => $id !== null
+        ));
+        if (count($memberIds) > 1) {
+            $this->Flash->error(__('Recommendations with different members cannot be grouped together.'));
+            return $this->redirect(['action' => 'index']);
+        }
+
+        // Determine the group head: prefer existing group head, otherwise lowest ID
+        $head = null;
+        foreach ($recommendations as $rec) {
+            if ($rec->recommendation_group_id === null && !empty($rec->group_children)) {
+                $head = $rec;
+                break;
+            }
+        }
+        if ($head === null) {
+            usort($recommendations, fn($a, $b) => $a->id - $b->id);
+            $head = $recommendations[0];
+        }
+
+        // Group children under the head
+        $connection = $this->Recommendations->getConnection();
+        $connection->begin();
+        try {
+            foreach ($recommendations as $rec) {
+                if ($rec->id === $head->id) {
+                    // If head was itself a child of another group, detach it
+                    if ($rec->recommendation_group_id !== null) {
+                        $rec->recommendation_group_id = null;
+                        $this->Recommendations->saveOrFail($rec);
+                    }
+                    continue;
+                }
+
+                // If this rec is also a group head, move its children to the new head
+                if (!empty($rec->group_children)) {
+                    foreach ($rec->group_children as $child) {
+                        $child->recommendation_group_id = $head->id;
+                        $this->Recommendations->saveOrFail($child);
+                    }
+                }
+
+                $rec->recommendation_group_id = $head->id;
+                $rec->state = 'Linked';
+                $this->Recommendations->saveOrFail($rec);
+            }
+            $connection->commit();
+            $this->Flash->success(__('Recommendations have been grouped.'));
+        } catch (\Exception $e) {
+            $connection->rollback();
+            Log::error('Error grouping recommendations: ' . $e->getMessage());
+            $this->Flash->error(__('An error occurred while grouping recommendations.'));
+        }
+
+        return $this->redirect(['action' => 'index']);
+    }
+
+    /**
+     * Ungroup all children from a group head.
+     *
+     * Restores each child to its pre-linked state using the state change log.
+     *
+     * @return \Cake\Http\Response|null
+     */
+    public function ungroupRecommendations(): ?\Cake\Http\Response
+    {
+        $this->request->allowMethod(['post']);
+        $emptyRecommendation = $this->Recommendations->newEmptyEntity();
+        $this->Authorization->authorize($emptyRecommendation, 'group');
+
+        $headId = (int)$this->request->getData('recommendation_id');
+        $head = $this->Recommendations->get($headId, contain: ['GroupChildren']);
+
+        if (empty($head->group_children)) {
+            $this->Flash->error(__('This recommendation has no grouped children.'));
+            return $this->redirect(['action' => 'view', $headId]);
+        }
+
+        $connection = $this->Recommendations->getConnection();
+        $connection->begin();
+        try {
+            foreach ($head->group_children as $child) {
+                $child->recommendation_group_id = null;
+                $this->restorePreLinkedState($child);
+                $this->Recommendations->saveOrFail($child);
+            }
+            $connection->commit();
+            $this->Flash->success(__('Recommendations have been ungrouped.'));
+        } catch (\Exception $e) {
+            $connection->rollback();
+            Log::error('Error ungrouping recommendations: ' . $e->getMessage());
+            $this->Flash->error(__('An error occurred while ungrouping recommendations.'));
+        }
+
+        return $this->redirect(['action' => 'view', $headId]);
+    }
+
+    /**
+     * Remove a single child from its group.
+     *
+     * If only one child remains after removal, auto-ungroups entirely.
+     *
+     * @return \Cake\Http\Response|null
+     */
+    public function removeFromGroup(): ?\Cake\Http\Response
+    {
+        $this->request->allowMethod(['post']);
+        $emptyRecommendation = $this->Recommendations->newEmptyEntity();
+        $this->Authorization->authorize($emptyRecommendation, 'group');
+
+        $childId = (int)$this->request->getData('recommendation_id');
+        $child = $this->Recommendations->get($childId);
+
+        if ($child->recommendation_group_id === null) {
+            $this->Flash->error(__('This recommendation is not part of a group.'));
+            return $this->redirect(['action' => 'view', $childId]);
+        }
+
+        $headId = $child->recommendation_group_id;
+
+        $connection = $this->Recommendations->getConnection();
+        $connection->begin();
+        try {
+            $child->recommendation_group_id = null;
+            $this->restorePreLinkedState($child);
+            $this->Recommendations->saveOrFail($child);
+
+            // Check remaining children — auto-ungroup if only 1 left
+            $remainingCount = $this->Recommendations->find()
+                ->where(['recommendation_group_id' => $headId])
+                ->count();
+
+            if ($remainingCount === 1) {
+                $lastChild = $this->Recommendations->find()
+                    ->where(['recommendation_group_id' => $headId])
+                    ->first();
+                $lastChild->recommendation_group_id = null;
+                $this->restorePreLinkedState($lastChild);
+                $this->Recommendations->saveOrFail($lastChild);
+            }
+
+            $connection->commit();
+            $this->Flash->success(__('Recommendation removed from group.'));
+        } catch (\Exception $e) {
+            $connection->rollback();
+            Log::error('Error removing recommendation from group: ' . $e->getMessage());
+            $this->Flash->error(__('An error occurred while removing the recommendation from the group.'));
+        }
+
+        return $this->redirect(['action' => 'view', $headId]);
+    }
+
+    /**
+     * AJAX endpoint: return grouped children HTML for a recommendation sub-row.
+     *
+     * @param int $headId The group head recommendation ID
+     * @return void
+     */
+    public function groupChildren(int $headId): void
+    {
+        $emptyRecommendation = $this->Recommendations->newEmptyEntity();
+        $this->Authorization->authorize($emptyRecommendation, 'index');
+
+        $children = $this->Recommendations->find()
+            ->where(['Recommendations.recommendation_group_id' => $headId])
+            ->contain([
+                'Awards' => function ($q) {
+                    return $q->select(['id', 'abbreviation']);
+                },
+                'Requesters' => function ($q) {
+                    return $q->select(['id', 'sca_name']);
+                },
+            ])
+            ->orderBy(['Recommendations.created' => 'asc'])
+            ->all()
+            ->toArray();
+
+        $user = $this->request->getAttribute('identity');
+        $canEdit = $user->checkCan('edit', $emptyRecommendation);
+
+        $this->set(compact('children', 'headId', 'canEdit'));
+        $this->viewBuilder()->disableAutoLayout();
+        $this->viewBuilder()->setTemplate('group_children_subrow');
+    }
+
+    /**
+     * Restore a child recommendation to its pre-linked state from the state change log.
+     *
+     * @param \Awards\Model\Entity\Recommendation $child The child entity to restore
+     * @return void
+     */
+    private function restorePreLinkedState(Recommendation $child): void
+    {
+        $logsTable = TableRegistry::getTableLocator()->get('Awards.RecommendationsStatesLogs');
+        $log = $logsTable->find()
+            ->where([
+                'recommendation_id' => $child->id,
+                'to_state' => 'Linked',
+            ])
+            ->orderBy(['created' => 'DESC'])
+            ->first();
+
+        if ($log && $log->from_state && $log->from_state !== 'New') {
+            $child->state = $log->from_state;
+        } else {
+            // Fallback to "Submitted" if no log found
+            $child->state = 'Submitted';
         }
     }
 }

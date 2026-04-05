@@ -121,6 +121,15 @@ class RecommendationsTable extends BaseTable
             'joinType' => 'LEFT',
             "className" => "Gatherings",
         ]);
+        $this->belongsTo("GroupHead", [
+            'foreignKey' => 'recommendation_group_id',
+            'joinType' => 'LEFT',
+            'className' => 'Awards.Recommendations',
+        ]);
+        $this->hasMany("GroupChildren", [
+            'foreignKey' => 'recommendation_group_id',
+            'className' => 'Awards.Recommendations',
+        ]);
         $this->hasMany("Notes", [
             "foreignKey" => "entity_id",
             "className" => "Notes",
@@ -242,7 +251,7 @@ class RecommendationsTable extends BaseTable
     }
 
     /**
-     * After save lifecycle hook for automated state change logging.
+     * After save lifecycle hook for automated state change logging and group cleanup.
      *
      * @param bool $created Whether the entity was created (true) or updated (false)
      * @param \Cake\Datasource\EntityInterface $entity The recommendation entity that was saved
@@ -251,9 +260,13 @@ class RecommendationsTable extends BaseTable
      */
     public function afterSave($created, $entity, $options): void
     {
-        //check if the state is marked dirty in the entity->dirty array
         if ($entity->isDirty('state')) {
             $this->logStateChange($entity);
+        }
+
+        // If a group head is soft-deleted, ungroup its children
+        if ($entity->isDirty('deleted') && $entity->deleted !== null) {
+            $this->ungroupChildrenOnDelete($entity);
         }
     }
     /**
@@ -273,6 +286,44 @@ class RecommendationsTable extends BaseTable
         $log->from_state = $entity->beforeState ? $entity->beforeState : "New";
         $log->created_by = $entity->modified_by;
         $logTbl->save($log);
+    }
+
+    /**
+     * When a group head is soft-deleted, restore children to their pre-linked state.
+     *
+     * @param \Cake\Datasource\EntityInterface $entity The soft-deleted group head entity
+     * @return void
+     */
+    protected function ungroupChildrenOnDelete(EntityInterface $entity): void
+    {
+        $children = $this->find()
+            ->where(['recommendation_group_id' => $entity->id])
+            ->all();
+
+        if ($children->isEmpty()) {
+            return;
+        }
+
+        $logsTable = TableRegistry::getTableLocator()->get('Awards.RecommendationsStatesLogs');
+        foreach ($children as $child) {
+            $child->recommendation_group_id = null;
+
+            // Restore pre-linked state
+            $log = $logsTable->find()
+                ->where([
+                    'recommendation_id' => $child->id,
+                    'to_state' => 'Linked',
+                ])
+                ->orderBy(['created' => 'DESC'])
+                ->first();
+
+            if ($log && $log->from_state && $log->from_state !== 'New') {
+                $child->state = $log->from_state;
+            } else {
+                $child->state = 'Submitted';
+            }
+            $this->save($child);
+        }
     }
 
     /**

@@ -32,6 +32,7 @@ class RecommendationQueryService
     {
         $baseQuery = $recommendationsTable->find()
             ->innerJoinWith('Awards.AwardBranch')
+            ->where(['Recommendations.recommendation_group_id IS' => null])
             ->contain([
                 'Requesters' => function ($q) {
                     return $q->select(['id', 'sca_name']);
@@ -87,6 +88,12 @@ class RecommendationQueryService
                     'label' => 'Bulk Edit',
                     'icon' => 'bi-pencil-square',
                     'modalTarget' => '#bulkEditRecommendationModal',
+                ],
+                [
+                    'key' => 'group-recs',
+                    'label' => 'Group',
+                    'icon' => 'bi-collection',
+                    'modalTarget' => '#groupRecommendationsModal',
                 ],
             ],
         ];

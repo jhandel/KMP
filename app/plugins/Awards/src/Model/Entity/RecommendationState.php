@@ -15,6 +15,7 @@ use App\Model\Entity\BaseEntity;
  * @property int $sort_order
  * @property bool $supports_gathering
  * @property bool $is_hidden
+ * @property bool $is_system
  * @property \Cake\I18n\DateTime $created
  * @property \Cake\I18n\DateTime|null $modified
  * @property int|null $created_by
@@ -37,6 +38,7 @@ class RecommendationState extends BaseEntity
         'sort_order' => true,
         'supports_gathering' => true,
         'is_hidden' => true,
+        'is_system' => true,
         'created' => true,
         'modified' => true,
         'created_by' => true,

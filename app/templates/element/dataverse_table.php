@@ -132,13 +132,14 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
                                 if (!empty($column['cellRenderer']) && is_callable($column['cellRenderer'])) {
                                     $renderedContent = $column['cellRenderer']($value, $row, $this);
 
-                                    // Wrap with click action if specified
-                                    if ($hasClickAction) {
+                                    // Wrap with click action if specified (skip for empty content)
+                                    if ($hasClickAction && $renderedContent !== '') {
                                         echo $this->element('dataverse_table_cell_action', [
                                             'content' => $renderedContent,
                                             'clickAction' => $clickAction,
                                             'clickActionPermission' => $column['clickActionPermission'] ?? null,
                                             'clickActionPermissionArgs' => $column['clickActionPermissionArgs'] ?? [],
+                                            'clickActionUrl' => $column['clickActionUrl'] ?? null,
                                             'row' => $row,
                                             'user' => $user,
                                             'primaryKey' => $primaryKey,
@@ -258,6 +259,7 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
                                             'clickAction' => $clickAction,
                                             'clickActionPermission' => $column['clickActionPermission'] ?? null,
                                             'clickActionPermissionArgs' => $column['clickActionPermissionArgs'] ?? [],
+                                            'clickActionUrl' => $column['clickActionUrl'] ?? null,
                                             'row' => $row,
                                             'user' => $user,
                                             'primaryKey' => $primaryKey,

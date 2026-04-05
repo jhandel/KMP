@@ -89,6 +89,27 @@ class RecommendationsGridColumns extends BaseGridColumns
                 'alignment' => 'right',
             ],
 
+            'group_children_count' => [
+                'key' => 'group_children_count',
+                'label' => 'Grouped',
+                'type' => 'number',
+                'sortable' => false,
+                'filterable' => false,
+                'defaultVisible' => true,
+                'width' => '80px',
+                'alignment' => 'center',
+                'description' => 'Number of recommendations grouped under this one',
+                'clickAction' => 'toggleSubRow:group-children',
+                'clickActionUrl' => '/awards/recommendations/group-children/:id',
+                'cellRenderer' => function ($value, $row, $view) {
+                    $count = (int)($value ?? 0);
+                    if ($count === 0) {
+                        return '';
+                    }
+                    return '<span class="badge bg-info">' . $count . '</span>';
+                },
+            ],
+
             'created' => [
                 'key' => 'created',
                 'label' => 'Submitted',

@@ -23,6 +23,9 @@ echo $this->KMP->startBlock("pageTitle") ?>
 <span class="badge bg-info"><?= h($state->recommendation_status->name) ?></span>
 <?php $this->KMP->endBlock() ?>
 <?= $this->KMP->startBlock("recordActions") ?>
+<?php if ($state->is_system) : ?>
+<span class="badge bg-warning text-dark"><i class="bi bi-lock-fill"></i> <?= __('System State') ?></span>
+<?php else : ?>
 <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editModal">Edit</button>
 <?php if ($recommendationCount === 0) {
     echo $this->Form->postLink(
@@ -40,6 +43,7 @@ echo $this->KMP->startBlock("pageTitle") ?>
 } else { ?>
     <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#transferDeleteModal">Delete</button>
 <?php } ?>
+<?php endif; ?>
 <?php $this->KMP->endBlock() ?>
 <?php $this->KMP->startBlock("recordDetails") ?>
 <dt><?= __('Status') ?></dt>
@@ -53,6 +57,8 @@ echo $this->KMP->startBlock("pageTitle") ?>
 <dd><?= $this->KMP->bool($state->supports_gathering, $this->Html) ?></dd>
 <dt><?= __('Hidden') ?></dt>
 <dd><?= $this->KMP->bool($state->is_hidden, $this->Html) ?></dd>
+<dt><?= __('System State') ?></dt>
+<dd><?= $this->KMP->bool($state->is_system, $this->Html) ?></dd>
 <dt><?= __('Recommendations') ?></dt>
 <dd><?= $recommendationCount ?></dd>
 <?php $this->KMP->endBlock() ?>

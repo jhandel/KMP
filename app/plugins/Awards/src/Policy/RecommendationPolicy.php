@@ -196,6 +196,22 @@ class RecommendationPolicy extends BasePolicy
     }
 
     /**
+     * Check if user can group/ungroup recommendations.
+     *
+     * Delegates to edit permission — same users who can edit can group.
+     *
+     * @param \App\KMP\KmpIdentityInterface $user The authenticated user
+     * @param \App\Model\Entity\BaseEntity $entity The recommendation entity
+     * @param mixed ...$optionalArgs Additional authorization context
+     * @return bool True if authorized
+     */
+    public function canGroup(KmpIdentityInterface $user, BaseEntity $entity, ...$optionalArgs): bool
+    {
+        $method = __FUNCTION__;
+        return $this->_hasPolicy($user, $method, $entity);
+    }
+
+    /**
      * Handle dynamic approval authority methods (canApproveLevel*).
      *
      * Resolves level-specific approval methods dynamically based on award levels.

@@ -107,6 +107,10 @@ class RecommendationStatesTable extends BaseTable
             ->notEmptyString('is_hidden');
 
         $validator
+            ->boolean('is_system')
+            ->notEmptyString('is_system');
+
+        $validator
             ->integer('created_by')
             ->allowEmptyString('created_by');
 
@@ -131,6 +135,25 @@ class RecommendationStatesTable extends BaseTable
         $rules->add($rules->existsIn(['status_id'], 'RecommendationStatuses'), [
             'errorField' => 'status_id',
             'message' => 'Invalid status.',
+        ]);
+
+        // Prevent editing system states
+        $rules->addUpdate(function ($entity) {
+            if ($entity->getOriginal('is_system') && $entity->isDirty()) {
+                return false;
+            }
+            return true;
+        }, 'systemStateProtection', [
+            'errorField' => 'is_system',
+            'message' => 'System states cannot be modified.',
+        ]);
+
+        // Prevent deleting system states
+        $rules->addDelete(function ($entity) {
+            return !$entity->is_system;
+        }, 'systemStateDeleteProtection', [
+            'errorField' => 'is_system',
+            'message' => 'System states cannot be deleted.',
         ]);
 
         return $rules;
