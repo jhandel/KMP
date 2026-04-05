@@ -24,6 +24,37 @@ use App\Model\Entity\BaseEntity;
 class RecommendationStateFieldRule extends BaseEntity
 {
     /**
+     * Valid field targets that can be used in state rules.
+     * Keys are the Stimulus target identifiers, values are human-readable labels.
+     */
+    public const FIELD_TARGET_OPTIONS = [
+        'domainTarget' => 'Domain',
+        'awardTarget' => 'Award',
+        'specialtyTarget' => 'Specialty',
+        'scaMemberTarget' => 'SCA Member',
+        'branchTarget' => 'Branch',
+        'planToGiveBlockTarget' => 'Plan to Give Section',
+        'planToGiveEventTarget' => 'Plan to Give Event',
+        'givenBlockTarget' => 'Given Section',
+        'givenDateTarget' => 'Given Date',
+        'closeReasonTarget' => 'Close Reason',
+        'closeReasonBlockTarget' => 'Close Reason Section',
+        'courtAvailabilityTarget' => 'Court Availability',
+        'callIntoCourtTarget' => 'Call Into Court',
+        'close_reason' => 'Close Reason (Set Value)',
+    ];
+
+    /**
+     * Valid rule types.
+     */
+    public const RULE_TYPE_OPTIONS = [
+        'Visible' => 'Visible',
+        'Required' => 'Required',
+        'Disabled' => 'Disabled',
+        'Set' => 'Set',
+    ];
+
+    /**
      * @var array<string, bool>
      */
     protected array $_accessible = [

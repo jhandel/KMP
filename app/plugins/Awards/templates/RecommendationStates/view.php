@@ -6,6 +6,8 @@
  * @var int $recommendationCount
  * @var \Awards\Model\Entity\RecommendationState[] $allStates
  * @var array $transitionTargetIds
+ * @var array $fieldTargetOptions
+ * @var array $ruleTypeOptions
  */
 ?>
 <?php
@@ -77,8 +79,15 @@ echo $this->KMP->startBlock("pageTitle") ?>
     data-tab-order="10"
     style="order: 10;">
 
-    <h5><?= __('Field Rules') ?></h5>
-    <p class="text-muted"><?= __('Configure how form fields behave when a recommendation is in this state.') ?></p>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h5 class="mb-0"><?= __('Field Rules') ?></h5>
+            <small class="text-muted"><?= __('Configure how form fields behave when a recommendation is in this state.') ?></small>
+        </div>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addFieldRuleModal">
+            <i class="bi bi-plus-circle"></i> <?= __('Add Rule') ?>
+        </button>
+    </div>
 
     <?php if (!empty($state->recommendation_state_field_rules)) { ?>
         <div class="table-responsive">
@@ -88,13 +97,13 @@ echo $this->KMP->startBlock("pageTitle") ?>
                         <th><?= __('Field Target') ?></th>
                         <th><?= __('Rule Type') ?></th>
                         <th><?= __('Value') ?></th>
-                        <th class="actions"></th>
+                        <th class="actions text-end"></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($state->recommendation_state_field_rules as $rule) : ?>
                         <tr>
-                            <td><code><?= h($rule->field_target) ?></code></td>
+                            <td><?= h($fieldTargetOptions[$rule->field_target] ?? $rule->field_target) ?></td>
                             <td>
                                 <?php
                                 $badgeClass = match ($rule->rule_type) {
@@ -108,7 +117,11 @@ echo $this->KMP->startBlock("pageTitle") ?>
                                 <span class="badge <?= $badgeClass ?>"><?= h($rule->rule_type) ?></span>
                             </td>
                             <td><?= $rule->rule_value ? h($rule->rule_value) : '<span class="text-muted">—</span>' ?></td>
-                            <td class="actions text-end">
+                            <td class="actions text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-secondary bi bi-pencil-fill"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#editFieldRuleModal-<?= $rule->id ?>"
+                                    title="<?= __('Edit') ?>"></button>
                                 <?= $this->Form->postLink(
                                     __(""),
                                     ["action" => "deleteFieldRule", $rule->id],
@@ -127,43 +140,6 @@ echo $this->KMP->startBlock("pageTitle") ?>
     <?php } else { ?>
         <p class="text-muted"><?= __('No field rules configured for this state.') ?></p>
     <?php } ?>
-
-    <hr>
-    <h6><?= __('Add Field Rule') ?></h6>
-    <?= $this->Form->create(null, [
-        'url' => ['action' => 'addFieldRule', $state->id],
-    ]) ?>
-    <div class="row g-2 align-items-end">
-        <div class="col-md-4">
-            <?= $this->Form->control('field_target', [
-                'label' => __('Field Target'),
-                'placeholder' => 'e.g., planToGiveBlockTarget',
-            ]) ?>
-        </div>
-        <div class="col-md-3">
-            <?= $this->Form->control('rule_type', [
-                'label' => __('Rule Type'),
-                'type' => 'select',
-                'options' => [
-                    'Visible' => __('Visible'),
-                    'Required' => __('Required'),
-                    'Disabled' => __('Disabled'),
-                    'Set' => __('Set'),
-                ],
-            ]) ?>
-        </div>
-        <div class="col-md-3">
-            <?= $this->Form->control('rule_value', [
-                'label' => __('Value (for Set rules)'),
-                'placeholder' => 'Optional',
-                'required' => false,
-            ]) ?>
-        </div>
-        <div class="col-md-2">
-            <?= $this->Form->button(__('Add'), ['class' => 'btn btn-primary w-100']) ?>
-        </div>
-    </div>
-    <?= $this->Form->end() ?>
 </div>
 
 <!-- Transitions Tab -->
@@ -259,6 +235,99 @@ echo $this->Modal->create("Edit Recommendation State", [
     ]),
 ]);
 echo $this->Form->end();
+
+// Add Field Rule Modal
+echo $this->Form->create(null, [
+    "id" => "add_field_rule_form",
+    "url" => [
+        "controller" => "RecommendationStates",
+        "action" => "addFieldRule",
+        $state->id,
+    ],
+]);
+echo $this->Modal->create(__("Add Field Rule"), [
+    "id" => "addFieldRuleModal",
+    "close" => true,
+]);
+?>
+<fieldset>
+    <?php
+    echo $this->Form->control("field_target", [
+        'label' => __('Field Target'),
+        'type' => 'select',
+        'options' => $fieldTargetOptions,
+        'empty' => '-- ' . __('Select Field') . ' --',
+        'required' => true,
+    ]);
+    echo $this->Form->control("rule_type", [
+        'label' => __('Rule Type'),
+        'type' => 'select',
+        'options' => $ruleTypeOptions,
+        'required' => true,
+    ]);
+    echo $this->Form->control("rule_value", [
+        'label' => __('Value (for Set rules)'),
+        'required' => false,
+    ]);
+    ?>
+</fieldset>
+<?php echo $this->Modal->end([
+    $this->Form->button(__("Add Rule"), [
+        "class" => "btn btn-primary",
+    ]),
+    $this->Form->button(__("Close"), [
+        "data-bs-dismiss" => "modal",
+        "type" => "button",
+    ]),
+]);
+echo $this->Form->end();
+
+// Edit Field Rule Modals (one per rule)
+foreach ($state->recommendation_state_field_rules as $rule) {
+    echo $this->Form->create($rule, [
+        "id" => "edit_field_rule_form_" . $rule->id,
+        "url" => [
+            "controller" => "RecommendationStates",
+            "action" => "editFieldRule",
+            $rule->id,
+        ],
+    ]);
+    echo $this->Modal->create(__("Edit Field Rule"), [
+        "id" => "editFieldRuleModal-" . $rule->id,
+        "close" => true,
+    ]);
+    ?>
+    <fieldset>
+        <?php
+        echo $this->Form->control("field_target", [
+            'label' => __('Field Target'),
+            'type' => 'select',
+            'options' => $fieldTargetOptions,
+            'required' => true,
+        ]);
+        echo $this->Form->control("rule_type", [
+            'label' => __('Rule Type'),
+            'type' => 'select',
+            'options' => $ruleTypeOptions,
+            'required' => true,
+        ]);
+        echo $this->Form->control("rule_value", [
+            'label' => __('Value (for Set rules)'),
+            'required' => false,
+        ]);
+        ?>
+    </fieldset>
+    <?php echo $this->Modal->end([
+        $this->Form->button(__("Save"), [
+            "class" => "btn btn-primary",
+        ]),
+        $this->Form->button(__("Close"), [
+            "data-bs-dismiss" => "modal",
+            "type" => "button",
+        ]),
+    ]);
+    echo $this->Form->end();
+}
 
 // Transfer & Delete Modal (only if has recommendations)
 if ($recommendationCount > 0) {

@@ -6,6 +6,7 @@ namespace Awards\Controller;
 
 use App\Controller\DataverseGridTrait;
 use Awards\Model\Entity\Recommendation;
+use Awards\Model\Entity\RecommendationStateFieldRule;
 use Cake\ORM\TableRegistry;
 
 /**
@@ -143,6 +144,8 @@ class RecommendationStatesController extends AppController
         }
 
         $this->set(compact('state', 'recommendationCount', 'allStates', 'transitionTargetIds'));
+        $this->set('fieldTargetOptions', RecommendationStateFieldRule::FIELD_TARGET_OPTIONS);
+        $this->set('ruleTypeOptions', RecommendationStateFieldRule::RULE_TYPE_OPTIONS);
     }
 
     /**
@@ -256,7 +259,7 @@ class RecommendationStatesController extends AppController
     }
 
     /**
-     * Add a field rule to a state (AJAX endpoint).
+     * Add a field rule to a state.
      *
      * @param string $stateId State ID
      * @return \Cake\Http\Response|null|void
@@ -281,7 +284,32 @@ class RecommendationStatesController extends AppController
     }
 
     /**
-     * Delete a field rule from a state (AJAX endpoint).
+     * Edit an existing field rule.
+     *
+     * @param string $ruleId Rule ID
+     * @return \Cake\Http\Response|null|void
+     */
+    public function editFieldRule(string $ruleId)
+    {
+        $this->request->allowMethod(['post', 'put', 'patch']);
+        $rulesTable = $this->fetchTable('Awards.RecommendationStateFieldRules');
+        $rule = $rulesTable->get($ruleId, contain: ['RecommendationStates']);
+        $this->Authorization->authorize($rule->recommendation_state, 'edit');
+
+        $stateId = $rule->state_id;
+        $rule = $rulesTable->patchEntity($rule, $this->request->getData());
+
+        if ($rulesTable->save($rule)) {
+            Recommendation::clearCache();
+            $this->Flash->success(__('Field rule updated.'));
+        } else {
+            $this->Flash->error(__('Could not update field rule. Please, try again.'));
+        }
+        return $this->redirect(['action' => 'view', $stateId]);
+    }
+
+    /**
+     * Delete a field rule from a state.
      *
      * @param string $ruleId Rule ID
      * @return \Cake\Http\Response|null|void
