@@ -1135,6 +1135,11 @@ class RecommendationsController extends AppController
                     $this->Flash->success(__('The recommendation has been saved.'));
 
                     // Fire workflow event for post-save processing (state log, notifications, etc.)
+                    $awardName = '';
+                    if ($recommendation->award_id) {
+                        $award = $this->Recommendations->Awards->get($recommendation->award_id, select: ['name']);
+                        $awardName = $award->name;
+                    }
                     $this->dispatchWorkflowEvent(
                         $triggerDispatcher,
                         'Awards.RecommendationSubmitted',
@@ -1146,7 +1151,7 @@ class RecommendationsController extends AppController
                             'branchId' => $recommendation->branch_id,
                             'state' => $recommendation->state,
                             'memberScaName' => $recommendation->member_sca_name ?? '',
-                            'awardName' => $recommendation->award->name ?? '',
+                            'awardName' => $awardName,
                             'reason' => $recommendation->reason ?? '',
                             'contactEmail' => $recommendation->contact_email ?? '',
                         ],
@@ -1295,6 +1300,11 @@ class RecommendationsController extends AppController
                     $this->Recommendations->getConnection()->commit();
                     $this->Flash->success(__('The recommendation has been submitted.'));
 
+                    $awardName = '';
+                    if ($recommendation->award_id) {
+                        $award = $this->Recommendations->Awards->get($recommendation->award_id, select: ['name']);
+                        $awardName = $award->name;
+                    }
                     $this->dispatchWorkflowEvent(
                         $triggerDispatcher,
                         'Awards.RecommendationSubmitted',
@@ -1306,7 +1316,7 @@ class RecommendationsController extends AppController
                             'branchId' => $recommendation->branch_id,
                             'state' => $recommendation->state,
                             'memberScaName' => $recommendation->member_sca_name ?? '',
-                            'awardName' => $recommendation->award->name ?? '',
+                            'awardName' => $awardName,
                             'reason' => $recommendation->reason ?? '',
                             'contactEmail' => $recommendation->contact_email ?? '',
                         ],
