@@ -135,6 +135,37 @@ class KMPMailer extends Mailer
     }
 
     /**
+     * Notify crown of a new award recommendation.
+     *
+     * @param string $to Recipient email address
+     * @param string $memberScaName The SCA name of the person recommended
+     * @param string $awardName The award being recommended
+     * @param string $reason The reason for the recommendation
+     * @param string $contactEmail Contact email of the recommender
+     * @return void
+     */
+    public function notifyOfRecommendation(
+        string $to,
+        string $memberScaName,
+        string $awardName,
+        string $reason,
+        string $contactEmail,
+    ): void {
+        $sendFrom = StaticHelpers::getAppSetting('Email.SystemEmailFromAddress');
+
+        $this->setTo($to)
+            ->setFrom($sendFrom)
+            ->setSubject("New Award Recommendation: {$awardName} for {$memberScaName}")
+            ->setViewVars([
+                'memberScaName' => $memberScaName,
+                'awardName' => $awardName,
+                'reason' => $reason,
+                'contactEmail' => $contactEmail,
+                'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature'),
+            ]);
+    }
+
+    /**
      * Notify of warrant.
      *
      * @param string $to

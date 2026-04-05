@@ -217,6 +217,21 @@ class AwardsWorkflowProvider
                 'serviceMethod' => 'pullCourtPreferences',
                 'isAsync' => false,
             ],
+            [
+                'action' => 'Awards.NotifyCrownOfRecommendation',
+                'label' => 'Notify Crown of Recommendation',
+                'description' => 'Send an email to crown with the recommendation details (name, award, reason)',
+                'inputSchema' => [
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID', 'required' => true],
+                    'to' => ['type' => 'string', 'label' => 'Recipient Email', 'required' => true],
+                ],
+                'outputSchema' => [
+                    'sent' => ['type' => 'boolean', 'label' => 'Email Sent'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'notifyCrownOfRecommendation',
+                'isAsync' => false,
+            ],
         ]);
     }
 
