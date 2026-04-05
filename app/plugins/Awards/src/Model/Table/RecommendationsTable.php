@@ -35,7 +35,6 @@ use App\Model\Table\BaseTable;
  * @property \Cake\ORM\Behavior\TimestampBehavior&\Cake\ORM\Behavior $Timestamp
  * @property \Muffin\Footprint\Model\Behavior\FootprintBehavior&\Cake\ORM\Behavior $Footprint
  * @property \Muffin\Trash\Model\Behavior\TrashBehavior&\Cake\ORM\Behavior $Trash
- * @property \Cake\ORM\Behavior\Sortable\SortableBehavior&\Cake\ORM\Behavior $Sortable
  *
  * @method \Awards\Model\Entity\Recommendation newEmptyEntity()
  * @method \Awards\Model\Entity\Recommendation newEntity(array $data, array $options = [])
@@ -58,7 +57,7 @@ class RecommendationsTable extends BaseTable
     /**
      * Configure the Recommendations table: table name, display/primary fields, behaviors, and associations.
      *
-     * Sets the database table and primary/display fields, attaches timestamp, footprint, trash, and sortable
+     * Sets the database table and primary/display fields, attaches timestamp, footprint, and trash
      * behaviors, and defines associations used for member links, awards, events/gatherings, notes, and state logs.
      *
      * @param array<string,mixed> $config Table configuration options.
@@ -75,9 +74,6 @@ class RecommendationsTable extends BaseTable
         $this->addBehavior("Timestamp");
         $this->addBehavior('Muffin/Footprint.Footprint');
         $this->addBehavior("Muffin/Trash.Trash");
-        $this->addBehavior("Sortable", [
-            'field' => 'stack_rank',
-        ]);
 
         $this->belongsTo('Requesters', [
             'foreignKey' => 'requester_id',

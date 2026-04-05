@@ -6,6 +6,7 @@ namespace Awards\Services;
 use Awards\Model\Entity\Recommendation;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
+use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\ORM\Table;
 use DateTimeZone;
 use Exception;
@@ -15,12 +16,13 @@ use Exception;
  *
  * Encapsulates the transactional logic for changing recommendation states,
  * including gathering assignment, given-date setting, close-reason recording,
- * and bulk-note creation. Also handles kanban drag-and-drop reordering.
+ * and bulk-note creation.
  *
  * @see \Awards\Model\Entity\Recommendation::getStatuses() For state → status mapping
  */
 class RecommendationStateService
 {
+    use LocatorAwareTrait;
     /**
      * Perform a transactional bulk state transition for multiple recommendations.
      *
@@ -43,6 +45,16 @@ class RecommendationStateService
 
         $recommendationsTable->getConnection()->begin();
         try {
+            // Capture previous states for state log entries
+            $previousStates = $recommendationsTable->find()
+                ->select(['id', 'state', 'status'])
+                ->where(['id IN' => $ids])
+                ->all()
+                ->combine('id', function ($rec) {
+                    return ['state' => $rec->state, 'status' => $rec->status];
+                })
+                ->toArray();
+
             $statusList = Recommendation::getStatuses();
             $newStatus = '';
 
@@ -83,6 +95,22 @@ class RecommendationStateService
                 throw new Exception('Failed to update recommendations');
             }
 
+            // Write state log entries for each recommendation
+            $stateLogsTable = $this->fetchTable('Awards.RecommendationsStatesLogs');
+            foreach ($ids as $id) {
+                $prev = $previousStates[$id] ?? ['state' => '', 'status' => ''];
+                $logEntry = $stateLogsTable->newEmptyEntity();
+                $logEntry->recommendation_id = (int)$id;
+                $logEntry->from_state = $prev['state'];
+                $logEntry->to_state = $newState;
+                $logEntry->from_status = $prev['status'];
+                $logEntry->to_status = $newStatus;
+                $logEntry->created_by = $authorId;
+                if (!$stateLogsTable->save($logEntry)) {
+                    Log::warning("Failed to save state log for recommendation {$id}");
+                }
+            }
+
             if ($note) {
                 foreach ($ids as $id) {
                     $newNote = $recommendationsTable->Notes->newEmptyEntity();
@@ -106,58 +134,6 @@ class RecommendationStateService
             Log::error('Error updating recommendations: ' . $e->getMessage());
 
             return false;
-        }
-    }
-
-    /**
-     * Update a single recommendation's state and position for kanban drag-and-drop.
-     *
-     * @param \Cake\ORM\Table $recommendationsTable The Recommendations ORM table instance.
-     * @param \Awards\Model\Entity\Recommendation $recommendation The recommendation entity.
-     * @param string $newCol The new kanban column (state) value.
-     * @param string|int|null $placeBefore ID of the recommendation to place before, or -1/null.
-     * @param string|int|null $placeAfter ID of the recommendation to place after, or -1/null.
-     * @return string 'success' or 'failed'.
-     */
-    public function kanbanMove(
-        Table $recommendationsTable,
-        Recommendation $recommendation,
-        string $newCol,
-        string|int|null $placeBefore,
-        string|int|null $placeAfter,
-    ): string {
-        $recommendation->state = $newCol;
-        $placeAfter = $placeAfter ?? -1;
-        $placeBefore = $placeBefore ?? -1;
-        $recommendation->state_date = DateTime::now();
-
-        $recommendationsTable->getConnection()->begin();
-
-        try {
-            if (!$recommendationsTable->save($recommendation)) {
-                throw new Exception('Failed to save recommendation state');
-            }
-
-            if ($placeBefore != -1) {
-                if (!$recommendationsTable->moveBefore($recommendation->id, $placeBefore)) {
-                    throw new Exception('Failed to move recommendation before target');
-                }
-            }
-
-            if ($placeAfter != -1) {
-                if (!$recommendationsTable->moveAfter($recommendation->id, $placeAfter)) {
-                    throw new Exception('Failed to move recommendation after target');
-                }
-            }
-
-            $recommendationsTable->getConnection()->commit();
-
-            return 'success';
-        } catch (Exception $e) {
-            $recommendationsTable->getConnection()->rollback();
-            Log::error('Error updating kanban: ' . $e->getMessage());
-
-            return 'failed';
         }
     }
 }

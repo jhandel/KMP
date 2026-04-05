@@ -125,20 +125,6 @@ class RecommendationPolicy extends BasePolicy
     }
 
     /**
-     * Check if user can access the recommendation board interface.
-     *
-     * @param \App\KMP\KmpIdentityInterface $user The authenticated user
-     * @param \App\Model\Entity\BaseEntity $entity The recommendation entity
-     * @param mixed ...$args Additional authorization context
-     * @return bool True if authorized
-     */
-    public function canUseBoard(KmpIdentityInterface $user, BaseEntity $entity, ...$args): bool
-    {
-        $method = __FUNCTION__;
-        return $this->_hasPolicy($user, $method, $entity);
-    }
-
-    /**
      * Check if user can view hidden recommendations.
      *
      * @param \App\KMP\KmpIdentityInterface $user The authenticated user

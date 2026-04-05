@@ -29,7 +29,7 @@ use Cake\Error\Debugger;
  * Recommendations Controller
  * 
  * Manages the complete award recommendation lifecycle from submission through final
- * disposition. Implements state machine-based workflow with table and kanban views.
+ * disposition. Implements state machine-based workflow with table views.
  * Supports authenticated and public submission workflows.
  * 
  * Uses DataverseGridTrait for table-based data display.
@@ -1491,65 +1491,6 @@ class RecommendationsController extends AppController
     }
 
     /**
-     * Handle AJAX kanban board state transitions via drag-and-drop.
-     *
-     * Updates recommendation state and position within kanban columns.
-     * Supports placeBefore/placeAfter positioning for stack ranking.
-     *
-     * @param string|null $id Recommendation ID to update
-     * @return \Cake\Http\Response JSON response indicating success or failure
-     * @throws \Cake\Http\Exception\NotFoundException When recommendation not found
-     */
-    public function kanbanUpdate(RecommendationStateService $stateService, TriggerDispatcher $triggerDispatcher, ?string $id = null): \Cake\Http\Response
-    {
-        try {
-            $recommendation = $this->Recommendations->get($id);
-            if (!$recommendation) {
-                throw new \Cake\Http\Exception\NotFoundException(__('Recommendation not found'));
-            }
-
-            $this->Authorization->authorize($recommendation, 'edit');
-            $oldState = $recommendation->state;
-            $message = 'failed';
-
-            if ($this->request->is(['patch', 'post', 'put'])) {
-                $message = $stateService->kanbanMove(
-                    $this->Recommendations,
-                    $recommendation,
-                    $this->request->getData('newCol'),
-                    $this->request->getData('placeBefore'),
-                    $this->request->getData('placeAfter'),
-                );
-
-                if ($message === 'success') {
-                    $this->dispatchWorkflowEvent(
-                        $triggerDispatcher,
-                        'Awards.RecommendationStateChanged',
-                        [
-                            'recommendationId' => $recommendation->id,
-                            'previousState' => $oldState,
-                            'newState' => $this->request->getData('newCol'),
-                            'previousStatus' => '',
-                            'newStatus' => '',
-                            'actorId' => $this->request->getAttribute('identity')?->getIdentifier(),
-                        ],
-                    );
-                }
-            }
-
-            return $this->response
-                ->withType('application/json')
-                ->withStringBody(json_encode($message));
-        } catch (\Cake\Datasource\Exception\RecordNotFoundException $e) {
-            Log::error('Kanban update failed - recommendation not found: ' . $id);
-            return $this->response
-                ->withType('application/json')
-                ->withStatus(404)
-                ->withStringBody(json_encode('not_found'));
-        }
-    }
-
-    /**
      * Delete a recommendation with transaction safety.
      *
      * Performs soft deletion of the recommendation after authorization validation.
@@ -1645,7 +1586,6 @@ class RecommendationsController extends AppController
      * @throws \Cake\Http\Exception\NotFoundException If the recommendation cannot be found.
      * @see turboEditForm() For the full edit interface
      * @see edit() For form submission handling
-     * @see kanbanUpdate() For drag-and-drop state transitions
      */
     public function turboQuickEditForm(RecommendationFormService $formService, ?string $id = null): ?\Cake\Http\Response
     {

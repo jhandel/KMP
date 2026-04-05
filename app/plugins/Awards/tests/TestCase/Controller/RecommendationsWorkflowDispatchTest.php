@@ -412,32 +412,7 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
         $this->assertEquals('In Progress', $updated->status);
     }
 
-    // ── 8. Kanban move service integration preserves old state ───────
-
-    public function testKanbanMoveUpdatesState(): void
-    {
-        $recId = $this->createTestRecommendation('Submitted');
-        $table = TableRegistry::getTableLocator()->get('Awards.Recommendations');
-        $recommendation = $table->get($recId);
-        $stateService = new RecommendationStateService();
-
-        $oldState = $recommendation->state;
-        $result = $stateService->kanbanMove(
-            $table,
-            $recommendation,
-            'Awaiting Feedback',
-            null,
-            null,
-        );
-
-        $this->assertEquals('success', $result);
-        $this->assertEquals('Submitted', $oldState, 'Old state should have been Submitted');
-
-        $updated = $table->get($recId);
-        $this->assertEquals('Awaiting Feedback', $updated->state);
-    }
-
-    // ── 9. Controller uses WorkflowDispatchTrait ────────────────────
+    // ── 8. Controller uses WorkflowDispatchTrait ────────────────────
 
     public function testRecommendationsControllerUsesWorkflowDispatchTrait(): void
     {
