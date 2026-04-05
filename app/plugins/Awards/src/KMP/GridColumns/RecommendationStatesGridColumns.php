@@ -29,17 +29,17 @@ class RecommendationStatesGridColumns extends BaseGridColumns
                 'alignment' => 'left',
                 'clickAction' => 'navigate:/awards/recommendation-states/view/:id',
             ],
-            'recommendation_status.name' => [
-                'key' => 'recommendation_status.name',
+            'status_id' => [
+                'key' => 'status_id',
                 'label' => __('Status'),
-                'type' => 'string',
+                'type' => 'relation',
                 'sortable' => true,
                 'filterable' => true,
                 'searchable' => true,
                 'defaultVisible' => true,
                 'width' => '180px',
                 'alignment' => 'left',
-                'dataPath' => 'recommendation_status.name',
+                'renderField' => 'recommendation_status.name',
             ],
             'sort_order' => [
                 'key' => 'sort_order',
