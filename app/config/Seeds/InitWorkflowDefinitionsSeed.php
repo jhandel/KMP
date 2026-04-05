@@ -6,7 +6,7 @@ use Cake\I18n\DateTime;
 use Migrations\BaseSeed;
 
 /**
- * Seeds all 8 workflow definitions with published versions.
+ * Seeds all workflow definitions with published versions.
  *
  * Loads JSON graph definitions from config/Seeds/WorkflowDefinitions/ and inserts
  * each as a workflow_definition + workflow_version pair. Skips any workflow whose
@@ -41,14 +41,34 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'execution_mode' => 'durable',
             ],
             [
-                'name' => 'Award Recommendation Lifecycle',
-                'slug' => 'awards-recommendation-lifecycle',
-                'description' => 'State machine for award recommendations: submitted → under_review → scheduled → given (or declined). Manages transitions, field rules, and notifications.',
+                'name' => 'Award Recommendation Submitted',
+                'slug' => 'awards-recommendation-submitted',
+                'description' => 'Handles new recommendation submissions: validates required fields, creates initial state log entry.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Awards.RecommendationSubmitted'],
                 'entity_type' => 'Awards',
-                'json_file' => 'awards-recommendation-lifecycle.json',
-                'execution_mode' => 'durable',
+                'json_file' => 'awards-recommendation-submitted.json',
+                'execution_mode' => 'ephemeral',
+            ],
+            [
+                'name' => 'Award Recommendation State Changed',
+                'slug' => 'awards-recommendation-state-changed',
+                'description' => 'Handles individual recommendation state transitions: creates state log entry and applies field visibility rules.',
+                'trigger_type' => 'event',
+                'trigger_config' => ['event' => 'Awards.RecommendationStateChanged'],
+                'entity_type' => 'Awards',
+                'json_file' => 'awards-recommendation-state-changed.json',
+                'execution_mode' => 'ephemeral',
+            ],
+            [
+                'name' => 'Award Recommendation Bulk Transition',
+                'slug' => 'awards-recommendation-bulk-transition',
+                'description' => 'Extension point for bulk state transitions. State logging is handled by the service layer; kingdoms can add notifications or custom logic.',
+                'trigger_type' => 'event',
+                'trigger_config' => ['event' => 'Awards.BulkStateTransition'],
+                'entity_type' => 'Awards',
+                'json_file' => 'awards-recommendation-bulk-transition.json',
+                'execution_mode' => 'ephemeral',
             ],
             [
                 'name' => 'Officer Hire',
