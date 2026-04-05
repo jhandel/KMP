@@ -131,7 +131,10 @@ export default class WorkflowConfigPanel {
                 for (const [key, meta] of Object.entries(action.inputSchema)) {
                     const currentVal = params[key] !== undefined ? params[key] : ''
                     const desc = meta.description ? `<small class="form-text text-muted">${meta.description}</small>` : ''
-                    if (meta.type === 'object') {
+                    if (meta.type === 'emailTemplate') {
+                        html += this._renderEmailTemplateSelect(`params.${key}`, meta, currentVal)
+                        html += desc
+                    } else if (meta.type === 'object') {
                         html += this._renderKeyValueEditor(`params.${key}`, meta, currentVal)
                         html += desc
                     } else {
@@ -591,6 +594,28 @@ export default class WorkflowConfigPanel {
         return `<input type="text" class="form-control form-control-sm"
             name="${escapedFieldName}" value="${this._escapeAttr(String(values.fixedValue))}"
             data-action="change->workflow-designer#updateNodeConfig">`
+    }
+
+    /**
+     * Render a dropdown for selecting a DB email template.
+     * Options are loaded async from /email-templates/options.json.
+     * When a template is selected, its available_vars are shown as a hint.
+     */
+    _renderEmailTemplateSelect(fieldName, fieldMeta, currentValue) {
+        const label = fieldMeta.label || fieldName
+        const escaped = this._escapeAttr(fieldName)
+        const currentId = currentValue ? String(currentValue) : ''
+
+        return `<div class="mb-3">
+            <label class="form-label form-label-sm">${label}${fieldMeta.required ? ' <span class="text-danger">*</span>' : ''}</label>
+            <select class="form-select form-select-sm" name="${escaped}"
+                data-action="change->workflow-designer#onEmailTemplateChange"
+                data-email-template-select="true">
+                <option value="">Loading templates...</option>
+                ${currentId ? `<option value="${this._escapeAttr(currentId)}" selected>Template #${this._escapeAttr(currentId)}</option>` : ''}
+            </select>
+            <div class="email-template-hint mt-1" data-template-hint="${escaped}"></div>
+        </div>`
     }
 
     /**

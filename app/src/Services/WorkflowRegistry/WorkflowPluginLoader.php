@@ -131,8 +131,8 @@ class WorkflowPluginLoader
                 'description' => 'Send an email notification using a configured template',
                 'inputSchema' => [
                     'to' => ['type' => 'string', 'label' => 'Recipient Email', 'required' => true],
-                    'mailer' => ['type' => 'string', 'label' => 'Mailer Class', 'required' => true],
-                    'action' => ['type' => 'string', 'label' => 'Mailer Action', 'required' => true],
+                    'template' => ['type' => 'emailTemplate', 'label' => 'Email Template', 'required' => true,
+                        'description' => 'Select a database email template to use'],
                     'vars' => ['type' => 'object', 'label' => 'Template Variables'],
                     'replyTo' => ['type' => 'string', 'label' => 'Reply-To Email'],
                 ],

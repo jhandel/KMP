@@ -22,6 +22,12 @@ trait TemplateAwareMailerTrait
     use LocatorAwareTrait;
 
     /**
+     * Pre-loaded template for generic workflow emails.
+     * When set, getDbTemplate() returns this instead of doing a class+method lookup.
+     */
+    protected ?EmailTemplate $_preloadedTemplate = null;
+
+    /**
      * Override the render method to use database templates
      *
      * @param string $content Content
@@ -161,6 +167,15 @@ trait TemplateAwareMailerTrait
      */
     protected function getDbTemplate(): ?EmailTemplate
     {
+        // Short-circuit: use preloaded template from sendFromTemplate()
+        if ($this->_preloadedTemplate !== null) {
+            Log::debug('Using preloaded template', [
+                'template_id' => $this->_preloadedTemplate->id,
+            ]);
+
+            return $this->_preloadedTemplate;
+        }
+
         $action = $this->getCurrentAction();
 
         Log::debug('getDbTemplate() called', [

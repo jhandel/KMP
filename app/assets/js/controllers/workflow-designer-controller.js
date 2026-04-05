@@ -392,6 +392,7 @@ class WorkflowDesignerController extends Controller {
     addKvRow(event) { this._nodeConfigHandler.addKvRow(event) }
     removeKvRow(event) { this._nodeConfigHandler.removeKvRow(event) }
     onKvValueTypeChange(event) { this._nodeConfigHandler.onKvValueTypeChange(event) }
+    onEmailTemplateChange(event) { this._nodeConfigHandler.onEmailTemplateChange(event) }
 
     // --- Node Events ---
 

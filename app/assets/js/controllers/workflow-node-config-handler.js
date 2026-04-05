@@ -38,6 +38,8 @@ export default class WorkflowNodeConfigHandler {
                     this._loadAppSettingsForPicker(selectEl, currentVal)
                 }
             })
+            // Load email template dropdown options
+            this._loadEmailTemplateOptions(nodeConfig)
         }
     }
 
@@ -274,6 +276,8 @@ export default class WorkflowNodeConfigHandler {
             if (vpFields.has(key)) continue
             if (key.startsWith('params.') && vpFields.has(key)) continue
             if (key.startsWith('approverConfig.') && vpFields.has(key)) continue
+            // Skip KV editor sub-fields — they are handled by _extractKvFields
+            if (key.includes('__key__') || key.includes('__val__')) continue
 
             if (key.startsWith('params.')) {
                 const paramKey = key.substring(7)
@@ -398,6 +402,88 @@ export default class WorkflowNodeConfigHandler {
         document.removeEventListener('mouseup', this._boundResizeEnd)
         const currentWidth = Math.round(this.nodeConfigTarget.getBoundingClientRect().width)
         localStorage.setItem('wf-config-panel-width', currentWidth)
+    }
+
+    // --- Email Template Select methods ---
+
+    /**
+     * Fetch active email templates from the API and populate any
+     * email-template-select dropdowns in the config panel.
+     */
+    _loadEmailTemplateOptions(nodeConfig) {
+        const selects = this.nodeConfigTarget.querySelectorAll('[data-email-template-select]')
+        if (selects.length === 0) return
+
+        // Cache the fetch to avoid re-fetching every node click
+        if (!this._emailTemplateOptionsPromise) {
+            this._emailTemplateOptionsPromise = fetch('/email-templates/options.json')
+                .then(r => r.ok ? r.json() : { options: [] })
+                .then(data => data.options || [])
+                .catch(() => [])
+        }
+
+        const currentTemplateId = String(nodeConfig?.params?.template ?? '')
+
+        this._emailTemplateOptionsPromise.then(options => {
+            selects.forEach(select => {
+                select.innerHTML = '<option value="">Select a template...</option>'
+                options.forEach(opt => {
+                    const sel = String(opt.value) === currentTemplateId ? 'selected' : ''
+                    const subj = opt.subjectPreview
+                        ? ` — ${opt.subjectPreview.substring(0, 50)}`
+                        : ''
+                    select.innerHTML += `<option value="${opt.value}" ${sel}
+                        data-available-vars='${JSON.stringify(opt.availableVars || [])}'
+                        data-subject="${(opt.subjectPreview || '').replace(/"/g, '&quot;')}"
+                        >${opt.label}${subj}</option>`
+                })
+                // Show hint for the currently selected template
+                if (currentTemplateId) {
+                    this._showTemplateHint(select)
+                }
+            })
+        })
+    }
+
+    /**
+     * Handle email template dropdown change: save to config and show vars hint.
+     */
+    onEmailTemplateChange(event) {
+        const select = event.target
+        this._showTemplateHint(select)
+        // Trigger normal config save
+        this.updateNodeConfig(event)
+    }
+
+    /**
+     * Show available variables hint below the template dropdown.
+     */
+    _showTemplateHint(select) {
+        const option = select.selectedOptions[0]
+        const hintEl = select.closest('.mb-3')?.querySelector('.email-template-hint')
+        if (!hintEl) return
+
+        if (!option || !option.value) {
+            hintEl.innerHTML = ''
+            return
+        }
+
+        let availableVars = []
+        try {
+            availableVars = JSON.parse(option.dataset.availableVars || '[]')
+        } catch { /* ignore */ }
+
+        if (availableVars.length > 0) {
+            const varNames = availableVars.map(v => typeof v === 'object' ? v.name : v)
+            hintEl.innerHTML = `<small class="text-muted">
+                <i class="bi bi-info-circle"></i>
+                Available variables: <code>${varNames.join('</code>, <code>')}</code>
+            </small>`
+        } else {
+            hintEl.innerHTML = `<small class="text-muted">
+                <i class="bi bi-info-circle"></i> Subject: ${option.dataset.subject || 'N/A'}
+            </small>`
+        }
     }
 
     // --- Key-Value Editor methods ---

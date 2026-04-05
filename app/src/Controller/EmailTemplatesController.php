@@ -46,7 +46,7 @@ class EmailTemplatesController extends AppController
         // Add authorization checks for custom actions
         $action = $this->request->getParam('action');
 
-        if (in_array($action, ['discover', 'sync', 'preview'])) {
+        if (in_array($action, ['discover', 'sync', 'preview', 'options'])) {
             // These methods need manual authorization
             // Will be checked in the action methods themselves
         }
@@ -257,6 +257,39 @@ class EmailTemplatesController extends AppController
         }
 
         return $this->redirect(['action' => 'index']);
+    }
+
+    /**
+     * Return active email templates as JSON for the workflow designer dropdown.
+     *
+     * @return void
+     */
+    public function options(): void
+    {
+        $this->request->allowMethod(['get']);
+        $this->Authorization->skipAuthorization();
+
+        $templates = $this->EmailTemplates->find()
+            ->where(['is_active' => true])
+            ->select(['id', 'mailer_class', 'action_method', 'subject_template', 'available_vars'])
+            ->orderBy(['action_method' => 'ASC'])
+            ->all();
+
+        $options = [];
+        foreach ($templates as $t) {
+            $shortClass = str_replace('App\\Mailer\\', '', $t->mailer_class);
+            $options[] = [
+                'value' => $t->id,
+                'label' => Inflector::humanize(Inflector::underscore($t->action_method))
+                    . ' (' . $shortClass . ')',
+                'availableVars' => $t->available_vars,
+                'subjectPreview' => $t->subject_template,
+            ];
+        }
+
+        $this->set('options', $options);
+        $this->viewBuilder()->setClassName('Json');
+        $this->viewBuilder()->setOption('serialize', ['options']);
     }
 
     /**

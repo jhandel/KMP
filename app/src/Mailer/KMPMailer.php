@@ -135,6 +135,38 @@ class KMPMailer extends Mailer
     }
 
     /**
+     * Generic workflow email sender — loads a DB template by ID and renders it.
+     *
+     * Called via Core.SendEmail workflow action when a template ID is specified.
+     * Extra named args are collected as template variables for {{var}} substitution.
+     *
+     * @param string $to Recipient email
+     * @param string|int $_templateId Email template ID from the email_templates table
+     * @param string|null $_replyTo Optional reply-to address
+     * @param mixed ...$templateVars Named template variables for substitution
+     * @return void
+     */
+    public function sendFromTemplate(string $to, string|int $_templateId, ?string $_replyTo = null, mixed ...$templateVars): void
+    {
+        $templateId = (int)$_templateId;
+        $template = $this->getTableLocator()->get('EmailTemplates')->get($templateId);
+
+        $sendFrom = StaticHelpers::getAppSetting('Email.SystemEmailFromAddress');
+        $this->setTo($to)
+            ->setFrom($sendFrom);
+
+        if ($_replyTo) {
+            $this->setReplyTo($_replyTo);
+        }
+
+        // Pre-load template so TemplateAwareMailerTrait uses it directly
+        $this->_preloadedTemplate = $template;
+
+        // Set vars for the renderer (subject + body substitution)
+        $this->setViewVars($templateVars);
+    }
+
+    /**
      * Notify crown of a new award recommendation.
      *
      * @param string $to Recipient email address
