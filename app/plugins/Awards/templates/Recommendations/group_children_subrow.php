@@ -1,6 +1,6 @@
 <?php
 /**
- * Sub-row template for grouped recommendation children.
+ * Sub-row template for grouped recommendation children (card layout).
  *
  * @var \App\View\AppView $this
  * @var \Awards\Model\Entity\Recommendation[] $children
@@ -9,7 +9,7 @@
  */
 ?>
 <div class="p-3">
-    <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <h6 class="mb-0">
             <i class="bi bi-collection"></i>
             <?= __('Grouped Recommendations ({0})', count($children)) ?>
@@ -27,58 +27,46 @@
             ) ?>
         <?php endif; ?>
     </div>
-    <div class="table-responsive">
-        <table class="table table-sm table-striped mb-0">
-            <thead>
-                <tr>
-                    <th><?= __('Award') ?></th>
-                    <th><?= __('For') ?></th>
-                    <th><?= __('Reason') ?></th>
-                    <th><?= __('Requester') ?></th>
-                    <th><?= __('Submitted') ?></th>
-                    <?php if ($canEdit) : ?>
-                        <th class="text-end"><?= __('Actions') ?></th>
-                    <?php endif; ?>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($children as $child) : ?>
-                    <tr>
-                        <td><?= h($child->award->abbreviation ?? '—') ?></td>
-                        <td><?= h($child->member_sca_name) ?></td>
-                        <td>
-                            <?php
-                            $reason = h($child->reason ?? '');
-                            echo mb_strlen($reason) > 150
-                                ? mb_substr($reason, 0, 150) . '…'
-                                : $reason;
-                            ?>
-                        </td>
-                        <td><?= h($child->requester->sca_name ?? $child->requester_sca_name) ?></td>
-                        <td><?= $child->created ? $child->created->format('Y-m-d') : '—' ?></td>
-                        <?php if ($canEdit) : ?>
-                            <td class="text-end text-nowrap">
+    <div class="row g-2">
+        <?php foreach ($children as $child) : ?>
+            <div class="col-12">
+                <div class="card border-start border-info border-3">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1 me-2">
+                                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                    <span class="badge bg-secondary"><?= h($child->award->abbreviation ?? '—') ?></span>
+                                    <small class="text-muted">
+                                        <?= __('by') ?> <strong><?= h($child->requester->sca_name ?? $child->requester_sca_name) ?></strong>
+                                        &middot; <?= $child->created ? $child->created->format('M j, Y') : '—' ?>
+                                    </small>
+                                </div>
+                                <div class="small"><?= h($child->reason ?? '') ?></div>
+                            </div>
+                            <div class="d-flex gap-1 flex-shrink-0">
                                 <?= $this->Html->link(
                                     '<i class="bi bi-eye"></i>',
                                     ['action' => 'view', $child->id],
                                     ['class' => 'btn btn-sm btn-outline-secondary', 'escape' => false, 'title' => __('View')]
                                 ) ?>
-                                <?= $this->Form->postLink(
-                                    '<i class="bi bi-x-lg"></i>',
-                                    ['action' => 'removeFromGroup'],
-                                    [
-                                        'data' => ['recommendation_id' => $child->id],
-                                        'confirm' => __('Remove this recommendation from the group?'),
-                                        'class' => 'btn btn-sm btn-outline-danger',
-                                        'escape' => false,
-                                        'title' => __('Remove from group'),
-                                    ]
-                                ) ?>
-                            </td>
-                        <?php endif; ?>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                                <?php if ($canEdit) : ?>
+                                    <?= $this->Form->postLink(
+                                        '<i class="bi bi-x-lg"></i>',
+                                        ['action' => 'removeFromGroup'],
+                                        [
+                                            'data' => ['recommendation_id' => $child->id],
+                                            'confirm' => __('Remove this recommendation from the group?'),
+                                            'class' => 'btn btn-sm btn-outline-danger',
+                                            'escape' => false,
+                                            'title' => __('Remove from group'),
+                                        ]
+                                    ) ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php endforeach; ?>
     </div>
 </div>
