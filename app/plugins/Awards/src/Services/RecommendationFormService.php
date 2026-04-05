@@ -83,7 +83,7 @@ class RecommendationFormService
         $awardsDomains = $recommendationsTable->Awards->Domains->find('list', limit: 200)->all();
         $awardsLevels = $recommendationsTable->Awards->Levels->find('list', limit: 200)->all();
 
-        $branches = $this->buildBranchesList($recommendationsTable->Awards);
+        $branches = $this->buildBranchesList($recommendationsTable->Awards->getTarget());
 
         $awards = $recommendationsTable->Awards->find('all', limit: 200)
             ->select(['id', 'name', 'specialties'])
@@ -142,7 +142,7 @@ class RecommendationFormService
      */
     public function prepareBulkEditFormData(Table $recommendationsTable): array
     {
-        $branches = $this->buildBranchesList($recommendationsTable->Awards);
+        $branches = $this->buildBranchesList($recommendationsTable->Awards->getTarget());
 
         // Get gatherings data
         $gatheringsTable = TableRegistry::getTableLocator()->get('Gatherings');

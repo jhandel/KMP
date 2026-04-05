@@ -332,9 +332,6 @@ class MembersController extends AppController
             ->where(['MemberRoles.member_id' => $memberId])
             ->contain(['Roles', 'ApprovedBy', 'Branches']);
 
-        Log::debug('Member Roles Base Query SQL: ' . $baseQuery->sql());
-        Log::debug('Member Roles Base Query Params: ' . json_encode($baseQuery->getValueBinder()->bindings()));
-
         // Use unified trait for grid processing (system views mode)
         $result = $this->processDataverseGrid([
             'gridKey' => "Members.roles.{$memberId}",
