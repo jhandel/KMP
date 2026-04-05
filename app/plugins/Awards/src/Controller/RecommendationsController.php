@@ -143,7 +143,10 @@ class RecommendationsController extends AppController
         $recommendations = $result['data'];
 
         // Add group children count for each recommendation
-        $recIds = array_map(fn($r) => $r->id, $recommendations);
+        $recIds = [];
+        foreach ($recommendations as $r) {
+            $recIds[] = $r->id;
+        }
         $groupCounts = [];
         if (!empty($recIds)) {
             $countQuery = $this->Recommendations->find()
