@@ -630,6 +630,7 @@ class RecommendationsGridColumns extends BaseGridColumns
                 'config' => [
                     'filters' => [],
                     'columns' => [
+                        'group_children_count',
                         'created',
                         'member_sca_name',
                         'op_links',
@@ -656,6 +657,7 @@ class RecommendationsGridColumns extends BaseGridColumns
                         ['field' => 'status', 'operator' => 'eq', 'value' => 'In Progress'],
                     ],
                     'columns' => [
+                        'group_children_count',
                         'created',
                         'member_sca_name',
                         'op_links',
@@ -678,6 +680,7 @@ class RecommendationsGridColumns extends BaseGridColumns
                         ['field' => 'status', 'operator' => 'eq', 'value' => 'Scheduling'],
                     ],
                     'columns' => [
+                        'group_children_count',
                         'created',
                         'member_sca_name',
                         'branch_id',
@@ -702,6 +705,7 @@ class RecommendationsGridColumns extends BaseGridColumns
                         ['field' => 'status', 'operator' => 'eq', 'value' => 'To Give'],
                     ],
                     'columns' => [
+                        'group_children_count',
                         'created',
                         'member_sca_name',
                         'branch_id',
@@ -726,6 +730,7 @@ class RecommendationsGridColumns extends BaseGridColumns
                         ['field' => 'status', 'operator' => 'eq', 'value' => 'Closed'],
                     ],
                     'columns' => [
+                        'group_children_count',
                         'created',
                         'member_sca_name',
                         'branch_id',
