@@ -107,7 +107,7 @@ class AwardsWorkflowActions
     {
         try {
             $recommendationId = (int)$this->resolveValue($config['recommendationId'], $context);
-            $targetState = (string)$this->resolveValue($config['targetState'], $context);
+            $targetState = (string)$this->resolveValue($config['toState'] ?? $config['targetState'] ?? null, $context);
             $actorId = $this->resolveValue($config['actorId'] ?? null, $context);
 
             $recommendation = $this->recommendationsTable->get($recommendationId);
@@ -228,7 +228,7 @@ class AwardsWorkflowActions
     {
         try {
             $recommendationId = (int)$this->resolveValue($config['recommendationId'], $context);
-            $targetState = (string)$this->resolveValue($config['targetState'], $context);
+            $targetState = (string)$this->resolveValue($config['state'] ?? $config['targetState'] ?? null, $context);
 
             $recommendation = $this->recommendationsTable->get($recommendationId);
             $entityData = $recommendation->toArray();

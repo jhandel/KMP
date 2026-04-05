@@ -1130,46 +1130,37 @@ class RecommendationsController extends AppController
                 $recommendation->court_availability = $recommendation->court_availability ?? 'Not Set';
                 $recommendation->person_to_notify = $recommendation->person_to_notify ?? '';
 
-                $legacySave = function () use ($recommendation, $user) {
-                    if ($this->Recommendations->save($recommendation)) {
-                        $this->Recommendations->getConnection()->commit();
-                        $this->Flash->success(__('The recommendation has been saved.'));
+                if ($this->Recommendations->save($recommendation)) {
+                    $this->Recommendations->getConnection()->commit();
+                    $this->Flash->success(__('The recommendation has been saved.'));
 
-                        if ($user->checkCan('view', $recommendation)) {
-                            return $this->redirect(['action' => 'view', $recommendation->id]);
-                        }
+                    // Fire workflow event for post-save processing (state log, notifications, etc.)
+                    $this->dispatchWorkflowEvent(
+                        $triggerDispatcher,
+                        'Awards.RecommendationSubmitted',
+                        [
+                            'recommendationId' => $recommendation->id,
+                            'awardId' => $recommendation->award_id,
+                            'memberId' => $recommendation->member_id,
+                            'requesterId' => $recommendation->requester_id,
+                            'branchId' => $recommendation->branch_id,
+                            'state' => $recommendation->state,
+                        ],
+                    );
 
-                        return $this->redirect([
-                            'controller' => 'members',
-                            'plugin' => null,
-                            'action' => 'view',
-                            $user->id
-                        ]);
+                    if ($user->checkCan('view', $recommendation)) {
+                        return $this->redirect(['action' => 'view', $recommendation->id]);
                     }
-                    $this->Recommendations->getConnection()->rollback();
-                    $this->Flash->error(__('The recommendation could not be saved. Please, try again.'));
 
-                    return null;
-                };
-
-                $result = $this->dispatchOrLegacy(
-                    $triggerDispatcher,
-                    'awards-recommendation-lifecycle',
-                    'Awards.RecommendationSubmitted',
-                    [
-                        'recommendationId' => $recommendation->id,
-                        'awardId' => $recommendation->award_id,
-                        'memberId' => $recommendation->member_id,
-                        'requesterId' => $recommendation->requester_id,
-                        'branchId' => $recommendation->branch_id,
-                        'state' => $recommendation->state,
-                    ],
-                    $legacySave,
-                );
-
-                if ($result instanceof \Cake\Http\Response) {
-                    return $result;
+                    return $this->redirect([
+                        'controller' => 'members',
+                        'plugin' => null,
+                        'action' => 'view',
+                        $user->id
+                    ]);
                 }
+                $this->Recommendations->getConnection()->rollback();
+                $this->Flash->error(__('The recommendation could not be saved. Please, try again.'));
             }
 
             // Get data for dropdowns
