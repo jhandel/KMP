@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Awards\Services;
 
-use App\Mailer\QueuedMailerAwareTrait;
 use App\Services\WorkflowEngine\StateMachine\StateMachineHandler;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
 use Awards\Model\Entity\Recommendation;
@@ -26,7 +25,6 @@ use DateTimeZone;
 class AwardsWorkflowActions
 {
     use LocatorAwareTrait;
-    use QueuedMailerAwareTrait;
     use WorkflowContextAwareTrait;
 
     private Table $recommendationsTable;
@@ -413,36 +411,5 @@ class AwardsWorkflowActions
             'stateField' => 'state',
             'statusField' => 'status',
         ];
-    }
-
-    /**
-     * Send an email notification about a new recommendation.
-     *
-     * @param array $context Current workflow context
-     * @param array $config Config with recommendationId, to
-     * @return array Result with 'sent' boolean
-     */
-    public function notifyCrownOfRecommendation(array $context, array $config): array
-    {
-        try {
-            $recommendationId = $this->resolveConfigValue('recommendationId', $config, $context);
-            $to = $this->resolveConfigValue('to', $config, $context);
-
-            $recommendation = $this->recommendationsTable->get($recommendationId, contain: ['Awards']);
-            $awardName = $recommendation->award->name ?? 'Unknown Award';
-
-            $this->queueMail('KMP', 'notifyOfRecommendation', $to, [
-                'memberScaName' => $recommendation->member_sca_name,
-                'awardName' => $awardName,
-                'reason' => $recommendation->reason ?? '',
-                'contactEmail' => $recommendation->contact_email ?? '',
-            ]);
-
-            return ['sent' => true];
-        } catch (\Throwable $e) {
-            Log::error('Awards.NotifyCrownOfRecommendation failed: ' . $e->getMessage());
-
-            return ['sent' => false, 'error' => $e->getMessage()];
-        }
     }
 }

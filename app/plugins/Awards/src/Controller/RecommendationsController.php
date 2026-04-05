@@ -1145,6 +1145,10 @@ class RecommendationsController extends AppController
                             'requesterId' => $recommendation->requester_id,
                             'branchId' => $recommendation->branch_id,
                             'state' => $recommendation->state,
+                            'memberScaName' => $recommendation->member_sca_name ?? '',
+                            'awardName' => $recommendation->award->name ?? '',
+                            'reason' => $recommendation->reason ?? '',
+                            'contactEmail' => $recommendation->contact_email ?? '',
                         ],
                     );
 
@@ -1301,6 +1305,10 @@ class RecommendationsController extends AppController
                             'requesterId' => $recommendation->requester_id,
                             'branchId' => $recommendation->branch_id,
                             'state' => $recommendation->state,
+                            'memberScaName' => $recommendation->member_sca_name ?? '',
+                            'awardName' => $recommendation->award->name ?? '',
+                            'reason' => $recommendation->reason ?? '',
+                            'contactEmail' => $recommendation->contact_email ?? '',
                         ],
                     );
                 } else {

@@ -47,6 +47,10 @@ class AwardsWorkflowProvider
                     'requesterId' => ['type' => 'integer', 'label' => 'Requester ID'],
                     'branchId' => ['type' => 'integer', 'label' => 'Branch ID'],
                     'state' => ['type' => 'string', 'label' => 'Initial State'],
+                    'memberScaName' => ['type' => 'string', 'label' => 'Member SCA Name'],
+                    'awardName' => ['type' => 'string', 'label' => 'Award Name'],
+                    'reason' => ['type' => 'string', 'label' => 'Recommendation Reason'],
+                    'contactEmail' => ['type' => 'string', 'label' => 'Contact Email'],
                 ],
             ],
             [
@@ -215,21 +219,6 @@ class AwardsWorkflowProvider
                 ],
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'pullCourtPreferences',
-                'isAsync' => false,
-            ],
-            [
-                'action' => 'Awards.NotifyCrownOfRecommendation',
-                'label' => 'Notify Crown of Recommendation',
-                'description' => 'Send an email to crown with the recommendation details (name, award, reason)',
-                'inputSchema' => [
-                    'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID', 'required' => true],
-                    'to' => ['type' => 'string', 'label' => 'Recipient Email', 'required' => true],
-                ],
-                'outputSchema' => [
-                    'sent' => ['type' => 'boolean', 'label' => 'Email Sent'],
-                ],
-                'serviceClass' => $actionsClass,
-                'serviceMethod' => 'notifyCrownOfRecommendation',
                 'isAsync' => false,
             ],
         ]);

@@ -141,7 +141,7 @@ class WorkflowPluginLoader
                 ],
                 'serviceClass' => $coreActions,
                 'serviceMethod' => 'sendEmail',
-                'isAsync' => true,
+                'isAsync' => false,
             ],
             [
                 'action' => 'Core.CreateNote',
