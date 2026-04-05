@@ -47,7 +47,7 @@
                                 <?= $this->Html->link(
                                     '<i class="bi bi-eye"></i>',
                                     ['action' => 'view', $child->id],
-                                    ['class' => 'btn btn-sm btn-outline-secondary', 'escape' => false, 'title' => __('View')]
+                                    ['class' => 'btn btn-sm btn-outline-secondary', 'escape' => false, 'title' => __('View'), 'data-turbo-frame' => '_top']
                                 ) ?>
                                 <?php if ($canEdit) : ?>
                                     <?= $this->Form->postLink(
