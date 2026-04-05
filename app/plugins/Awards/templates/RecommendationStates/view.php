@@ -48,9 +48,9 @@ echo $this->KMP->startBlock("pageTitle") ?>
 <dt><?= __('Sort Order') ?></dt>
 <dd><?= h($state->sort_order) ?></dd>
 <dt><?= __('Supports Gathering') ?></dt>
-<dd><?= $this->KMP->bool($state->supports_gathering) ?></dd>
+<dd><?= $this->KMP->bool($state->supports_gathering, $this->Html) ?></dd>
 <dt><?= __('Hidden') ?></dt>
-<dd><?= $this->KMP->bool($state->is_hidden) ?></dd>
+<dd><?= $this->KMP->bool($state->is_hidden, $this->Html) ?></dd>
 <dt><?= __('Recommendations') ?></dt>
 <dd><?= $recommendationCount ?></dd>
 <?php $this->KMP->endBlock() ?>

@@ -63,8 +63,8 @@ echo $this->KMP->startBlock("pageTitle") ?>
                         <tr>
                             <td><?= h($state->name) ?></td>
                             <td class="text-center"><?= h($state->sort_order) ?></td>
-                            <td class="text-center"><?= $this->KMP->bool($state->supports_gathering) ?></td>
-                            <td class="text-center"><?= $this->KMP->bool($state->is_hidden) ?></td>
+                            <td class="text-center"><?= $this->KMP->bool($state->supports_gathering, $this->Html) ?></td>
+                            <td class="text-center"><?= $this->KMP->bool($state->is_hidden, $this->Html) ?></td>
                             <td class="actions text-end text-nowrap">
                                 <?= $this->Html->link(
                                     __(""),
