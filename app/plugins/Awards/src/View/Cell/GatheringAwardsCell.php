@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Awards\View\Cell;
 
-use App\KMP\StaticHelpers;
 use Awards\Model\Entity\Recommendation;
 use Cake\View\Cell;
 use Cake\ORM\TableRegistry;
@@ -171,7 +170,7 @@ class GatheringAwardsCell extends Cell
             }
         }
 
-        $rules = StaticHelpers::getAppSetting('Awards.RecommendationStateRules');
+        $rules = Recommendation::getStateRules();
         $gatheringList = [];
 
         $this->set('gatheringId', $gathering->id);

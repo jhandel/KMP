@@ -91,102 +91,10 @@ class AwardsPlugin extends BasePlugin implements KMPPluginInterface
             StaticHelpers::getAppSetting("Member.AdditionalInfo.CourtAvailability", "select:None,Morning,Evening,Any|user|public", null, true);
             StaticHelpers::getAppSetting("Member.AdditionalInfo.PersonToGiveNoticeTo", "text|user|public", null, true);
             StaticHelpers::getAppSetting("Plugin.Awards.Active", "yes", null, true);
-            StaticHelpers::getAppSetting("Awards.RecommendationStatesRequireCanViewHidden", yaml_emit([
-                "No Action",
-            ]), 'yaml', true);
-            StaticHelpers::getAppSetting("Awards.RecommendationStatuses", yaml_emit([
-                "In Progress" => [
-                    "Submitted",
-                    "In Consideration",
-                    "Awaiting Feedback",
-                    "Deferred till Later",
-                    "King Approved",
-                    "Queen Approved",
-                ],
-                "Scheduling" => [
-                    "Need to Schedule",
-                ],
-                "To Give" => [
-                    "Scheduled",
-                    "Announced Not Given",
-                ],
-                "Closed" => [
-                    "Given",
-                    "No Action",
-                ],
-            ]), 'yaml', true);
-            StaticHelpers::getAppSetting("Awards.RecommendationStateRules", yaml_emit([
-                "Need to Schedule" => [
-                    "Visible" => [
-                        "planToGiveBlockTarget",
-                    ],
-                    "Disabled" => [
-                        "domainTarget",
-                        "awardTarget",
-                        "specialtyTarget",
-                        "scaMemberTarget",
-                        "branchTarget",
-                        "scaMemberTarget",
-                    ],
-                ],
-                "Scheduled" => [
-                    "Required" => [
-                        "planToGiveEventTarget"
-                    ],
-                    "Visible" => [
-                        "planToGiveBlockTarget",
-                    ],
-                    "Disabled" => [
-                        "domainTarget",
-                        "awardTarget",
-                        "specialtyTarget",
-                        "scaMemberTarget",
-                        "branchTarget",
-                        "scaMemberTarget",
-                    ],
-                ],
-                "Given" => [
-                    "Required" => [
-                        "planToGiveEventTarget",
-                        "givenDateTarget"
-                    ],
-                    "Visible" => [
-                        "planToGiveBlockTarget",
-                        "givenBlockTarget"
-                    ],
-                    "Disabled" => [
-                        "domainTarget",
-                        "awardTarget",
-                        "specialtyTarget",
-                        "scaMemberTarget",
-                        "branchTarget",
-                        "scaMemberTarget",
-                    ],
-                    "Set" =>
-                    [
-                        "close_reason" => "Given"
-                    ]
-                ],
-                "No Action" => [
-                    "Required" => [
-                        "closeReasonTarget",
-                    ],
-                    "Visible" => [
-                        "closeReasonBlockTarget",
-                        "closeReasonTarget",
-                    ],
-                    "Disabled" => [
-                        "domainTarget",
-                        "awardTarget",
-                        "specialtyTarget",
-                        "scaMemberTarget",
-                        "branchTarget",
-                        "courtAvailabilityTarget",
-                        "callIntoCourtTarget",
-                        "scaMemberTarget",
-                    ],
-                ],
-            ]), 'yaml', true);
+            // Note: RecommendationStatuses, RecommendationStateRules, and
+            // RecommendationStatesRequireCanViewHidden are now managed via
+            // database tables (awards_recommendation_statuses, awards_recommendation_states,
+            // awards_recommendation_state_field_rules) instead of app_settings YAML.
     }
 
     /**

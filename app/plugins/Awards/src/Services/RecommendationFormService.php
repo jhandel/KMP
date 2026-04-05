@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Awards\Services;
 
-use App\KMP\StaticHelpers;
 use Awards\Model\Entity\Recommendation;
 use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
@@ -115,7 +114,7 @@ class RecommendationFormService
         }
 
         $statusList = $this->buildStatusList();
-        $rules = StaticHelpers::getAppSetting('Awards.RecommendationStateRules');
+        $rules = Recommendation::getStateRules();
 
         return compact(
             'rules',
@@ -170,7 +169,7 @@ class RecommendationFormService
             $gatheringList[$gathering->id] = $label;
         }
 
-        $rules = StaticHelpers::getAppSetting('Awards.RecommendationStateRules');
+        $rules = Recommendation::getStateRules();
 
         return compact('rules', 'branches', 'gatheringList', 'statusList', 'cancelledGatheringIds');
     }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Awards\KMP\GridColumns;
 
 use App\KMP\GridColumns\BaseGridColumns;
-use App\KMP\StaticHelpers;
 use Awards\Model\Entity\Recommendation;
 
 /**
@@ -727,8 +726,8 @@ class RecommendationsGridColumns extends BaseGridColumns
      * Get state filter options based on user permissions
      *
      * Returns state options that respect the canViewHidden permission.
-     * States configured in Awards.RecommendationStatesRequireCanViewHidden
-     * are excluded if user lacks the ViewHidden permission.
+     * States marked as is_hidden in the database are excluded if user
+     * lacks the ViewHidden permission.
      *
      * @param bool $canViewHidden Whether the user can view hidden states
      * @return array<array<string, string>> Filter options for state dropdown
@@ -736,9 +735,7 @@ class RecommendationsGridColumns extends BaseGridColumns
     public static function getStateFilterOptions(bool $canViewHidden = false): array
     {
         $statuses = Recommendation::getStatuses();
-        $hiddenStates = $canViewHidden ? [] : (StaticHelpers::getAppSetting(
-            'Awards.RecommendationStatesRequireCanViewHidden'
-        ) ?? []);
+        $hiddenStates = $canViewHidden ? [] : Recommendation::getHiddenStates();
 
         $options = [];
         foreach ($statuses as $status => $states) {
@@ -759,9 +756,7 @@ class RecommendationsGridColumns extends BaseGridColumns
      */
     public static function getHiddenStates(): array
     {
-        return StaticHelpers::getAppSetting(
-            'Awards.RecommendationStatesRequireCanViewHidden'
-        ) ?? ['No Action'];
+        return Recommendation::getHiddenStates();
     }
 
     /**

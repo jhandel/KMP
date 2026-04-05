@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Awards\Model\Entity;
 
 use Cake\ORM\Entity;
-use App\KMP\StaticHelpers;
 use Cake\I18n\DateTime;
 use App\Model\Entity\BaseEntity;
 use Cake\ORM\TableRegistry;
@@ -53,12 +52,17 @@ use Cake\ORM\TableRegistry;
  */
 class Recommendation extends BaseEntity
 {
-    /** States that support assigning a scheduled gathering. */
-    private const GATHERING_ASSIGNABLE_STATES = [
-        'Need to Schedule',
-        'Scheduled',
-        'Given',
-    ];
+    /** Per-request cache for status→state hierarchy. */
+    private static ?array $cachedStatuses = null;
+
+    /** Per-request cache for all state names. */
+    private static ?array $cachedStates = null;
+
+    /** Per-request cache for state rules (state name → rule arrays). */
+    private static ?array $cachedStateRules = null;
+
+    /** Per-request cache for gathering-assignable state names. */
+    private static ?array $cachedGatheringStates = null;
 
     /**
      * @var array<string, bool>
@@ -113,7 +117,7 @@ class Recommendation extends BaseEntity
     /**
      * State machine setter - validates state and auto-updates status.
      *
-     * Applies configuration-driven state rules from Awards.RecommendationStateRules.
+     * Reads valid states and field rules from database tables.
      *
      * @param string $value New state value
      * @return string Validated state value
@@ -140,16 +144,15 @@ class Recommendation extends BaseEntity
             $this->status = $nextStatus;
         }
         $this->state_date = new DateTime();
-        $stateRules = StaticHelpers::getAppSetting("Awards.RecommendationStateRules");
-        if (isset($stateRules[$value])) {
-            $rule = $stateRules[$value];
-            if (isset($rule['Set'])) {
-                $fieldsToSet = $rule['Set'];
-                foreach ($fieldsToSet as $field => $fieldValue) {
-                    $this->$field = $fieldValue;
-                }
+
+        // Apply field set rules from database
+        $stateRules = self::getStateRules();
+        if (isset($stateRules[$value]['Set'])) {
+            foreach ($stateRules[$value]['Set'] as $field => $fieldValue) {
+                $this->$field = $fieldValue;
             }
         }
+
         if (!self::supportsGatheringAssignmentForState((string)$value)) {
             $this->gathering_id = null;
         }
@@ -157,36 +160,121 @@ class Recommendation extends BaseEntity
     }
 
     /**
-     * Get status categories and their state mappings from configuration.
+     * Get status categories and their state mappings from database.
      *
-     * @return array Status configuration
+     * @return array<string, array<int, string>> Status name => [state names]
      */
     public static function getStatuses(): array
     {
-        $statusList = StaticHelpers::getAppSetting("Awards.RecommendationStatuses");
-        return $statusList;
+        if (self::$cachedStatuses !== null) {
+            return self::$cachedStatuses;
+        }
+
+        $statusesTable = TableRegistry::getTableLocator()->get('Awards.RecommendationStatuses');
+        $statuses = $statusesTable->find()
+            ->contain(['RecommendationStates' => function ($q) {
+                return $q->orderBy(['RecommendationStates.sort_order' => 'ASC']);
+            }])
+            ->orderBy(['RecommendationStatuses.sort_order' => 'ASC'])
+            ->all();
+
+        $result = [];
+        foreach ($statuses as $status) {
+            $result[$status->name] = [];
+            foreach ($status->recommendation_states as $state) {
+                $result[$status->name][] = $state->name;
+            }
+        }
+
+        self::$cachedStatuses = $result;
+        return $result;
     }
 
     /**
      * Get valid states, optionally filtered by status.
      *
      * @param string|null $status Optional status filter
-     * @return array Valid states list
+     * @return array<int, string> Valid states list
      */
     public static function getStates($status = null): array
     {
         if ($status) {
             $statusList = self::getStatuses();
-            return $statusList[$status];
+            return $statusList[$status] ?? [];
         }
+
+        if (self::$cachedStates !== null) {
+            return self::$cachedStates;
+        }
+
         $statuses = self::getStatuses();
         $states = [];
-        foreach ($statuses as $status) {
-            foreach ($status as $state) {
+        foreach ($statuses as $statusStates) {
+            foreach ($statusStates as $state) {
                 $states[] = $state;
             }
         }
+
+        self::$cachedStates = $states;
         return $states;
+    }
+
+    /**
+     * Get field rules grouped by state name from database.
+     *
+     * Returns an array keyed by state name where each value contains
+     * rule type groups: Visible, Required, Disabled, Set.
+     *
+     * @return array<string, array<string, mixed>> State name => rules
+     */
+    public static function getStateRules(): array
+    {
+        if (self::$cachedStateRules !== null) {
+            return self::$cachedStateRules;
+        }
+
+        $statesTable = TableRegistry::getTableLocator()->get('Awards.RecommendationStates');
+        $states = $statesTable->find()
+            ->contain(['RecommendationStateFieldRules'])
+            ->all();
+
+        $rules = [];
+        foreach ($states as $state) {
+            if (empty($state->recommendation_state_field_rules)) {
+                continue;
+            }
+            $stateRules = [];
+            foreach ($state->recommendation_state_field_rules as $rule) {
+                if ($rule->rule_type === 'Set') {
+                    $stateRules['Set'][$rule->field_target] = $rule->rule_value;
+                } else {
+                    $stateRules[$rule->rule_type][] = $rule->field_target;
+                }
+            }
+            $rules[$state->name] = $stateRules;
+        }
+
+        self::$cachedStateRules = $rules;
+        return $rules;
+    }
+
+    /**
+     * Get hidden states that require ViewHidden permission.
+     *
+     * @return array<int, string> List of hidden state names
+     */
+    public static function getHiddenStates(): array
+    {
+        $statesTable = TableRegistry::getTableLocator()->get('Awards.RecommendationStates');
+        $hidden = $statesTable->find()
+            ->where(['is_hidden' => true])
+            ->all();
+
+        $result = [];
+        foreach ($hidden as $state) {
+            $result[] = $state->name;
+        }
+        return $result;
     }
 
     /**
@@ -197,7 +285,62 @@ class Recommendation extends BaseEntity
      */
     public static function supportsGatheringAssignmentForState(string $state): bool
     {
-        return in_array($state, self::GATHERING_ASSIGNABLE_STATES, true);
+        if (self::$cachedGatheringStates === null) {
+            $statesTable = TableRegistry::getTableLocator()->get('Awards.RecommendationStates');
+            $gatheringStates = $statesTable->find()
+                ->where(['supports_gathering' => true])
+                ->all();
+
+            self::$cachedGatheringStates = [];
+            foreach ($gatheringStates as $s) {
+                self::$cachedGatheringStates[] = $s->name;
+            }
+        }
+
+        return in_array($state, self::$cachedGatheringStates, true);
+    }
+
+    /**
+     * Get valid transitions from a given state.
+     *
+     * @param string $fromState The current state name
+     * @return array<int, string> List of state names that can be transitioned to
+     */
+    public static function getValidTransitionsFrom(string $fromState): array
+    {
+        $statesTable = TableRegistry::getTableLocator()->get('Awards.RecommendationStates');
+        $fromStateEntity = $statesTable->find()
+            ->where(['name' => $fromState])
+            ->first();
+
+        if (!$fromStateEntity) {
+            return [];
+        }
+
+        $transitionsTable = TableRegistry::getTableLocator()->get('Awards.RecommendationStateTransitions');
+        $transitions = $transitionsTable->find()
+            ->contain(['ToStates'])
+            ->where(['from_state_id' => $fromStateEntity->id])
+            ->all();
+
+        $result = [];
+        foreach ($transitions as $transition) {
+            $result[] = $transition->to_state->name;
+        }
+        return $result;
+    }
+
+    /**
+     * Clear all cached state/status data. Call after modifying states or statuses.
+     *
+     * @return void
+     */
+    public static function clearCache(): void
+    {
+        self::$cachedStatuses = null;
+        self::$cachedStates = null;
+        self::$cachedStateRules = null;
+        self::$cachedGatheringStates = null;
     }
 
     /**

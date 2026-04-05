@@ -54,14 +54,10 @@ class AwardsWorkflowConditions
                 return false;
             }
 
-            // Build transitions from configuration
-            $transitions = [];
-            foreach ($allStates as $state) {
-                $otherStates = array_filter($allStates, fn($s) => $s !== $state);
-                $transitions[$state] = array_values($otherStates);
-            }
+            // Check valid transitions from DB
+            $validTargets = Recommendation::getValidTransitionsFrom((string)$currentState);
 
-            $smConfig = ['transitions' => $transitions];
+            $smConfig = ['transitions' => [(string)$currentState => $validTargets]];
 
             return $this->stateMachineHandler->validateTransition(
                 (string)$currentState,
@@ -94,13 +90,10 @@ class AwardsWorkflowConditions
             $recommendation = $this->recommendationsTable->get((int)$recommendationId);
             $entityData = $recommendation->toArray();
 
-            $stateRulesRaw = \App\KMP\StaticHelpers::getAppSetting('Awards.RecommendationStateRules');
-            if (is_string($stateRulesRaw)) {
-                $stateRulesRaw = yaml_parse($stateRulesRaw);
-            }
-            $rules = is_array($stateRulesRaw) ? ($stateRulesRaw[(string)$targetState] ?? []) : [];
+            $stateRules = Recommendation::getStateRules();
+            $rules = $stateRules[(string)$targetState] ?? [];
 
-            $requiredFields = $rules['Required'] ?? $rules['required'] ?? [];
+            $requiredFields = $rules['Required'] ?? [];
             if (empty($requiredFields)) {
                 return true;
             }
@@ -153,12 +146,9 @@ class AwardsWorkflowConditions
                 return false;
             }
 
-            $stateRulesRaw = \App\KMP\StaticHelpers::getAppSetting('Awards.RecommendationStateRules');
-            if (is_string($stateRulesRaw)) {
-                $stateRulesRaw = yaml_parse($stateRulesRaw);
-            }
-            $rules = is_array($stateRulesRaw) ? ($stateRulesRaw[(string)$targetState] ?? []) : [];
-            $requiredFields = $rules['Required'] ?? $rules['required'] ?? [];
+            $stateRules = Recommendation::getStateRules();
+            $rules = $stateRules[(string)$targetState] ?? [];
+            $requiredFields = $rules['Required'] ?? [];
 
             return in_array('given', $requiredFields, true);
         } catch (\Throwable $e) {

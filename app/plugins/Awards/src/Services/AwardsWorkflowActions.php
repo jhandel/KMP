@@ -374,7 +374,7 @@ class AwardsWorkflowActions
     }
 
     /**
-     * Build the state machine config from the Awards recommendation configuration.
+     * Build the state machine config from the database-backed recommendation configuration.
      *
      * @return array State machine config with transitions, statuses, stateRules, stateField, statusField
      */
@@ -383,21 +383,13 @@ class AwardsWorkflowActions
         $statuses = Recommendation::getStatuses();
         $allStates = Recommendation::getStates();
 
-        // Build transitions: each state can transition to any other state
-        // The Recommendation entity's _setState() enforces valid states
+        // Build transitions from database
         $transitions = [];
         foreach ($allStates as $state) {
-            $otherStates = array_filter($allStates, fn($s) => $s !== $state);
-            $transitions[$state] = array_values($otherStates);
+            $transitions[$state] = Recommendation::getValidTransitionsFrom($state);
         }
 
-        $stateRulesRaw = \App\KMP\StaticHelpers::getAppSetting('Awards.RecommendationStateRules');
-        if (is_string($stateRulesRaw)) {
-            $stateRulesRaw = yaml_parse($stateRulesRaw);
-        }
-        if (!is_array($stateRulesRaw)) {
-            $stateRulesRaw = [];
-        }
+        $stateRulesRaw = Recommendation::getStateRules();
 
         // Normalize rule keys to match StateMachineHandler expectations
         $normalizedRules = [];
@@ -408,12 +400,6 @@ class AwardsWorkflowActions
             }
             if (isset($rules['Required'])) {
                 $normalized['required'] = $rules['Required'];
-            }
-            if (isset($rules['set'])) {
-                $normalized['set'] = $rules['set'];
-            }
-            if (isset($rules['required'])) {
-                $normalized['required'] = $rules['required'];
             }
             $normalizedRules[$state] = $normalized;
         }

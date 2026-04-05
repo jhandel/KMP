@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Awards\Model\Table;
 
-use App\KMP\StaticHelpers;
 use Awards\Model\Entity\Recommendation;
 use Cake\Datasource\EntityInterface;
 use Cake\Event\EventInterface;

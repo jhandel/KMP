@@ -86,7 +86,7 @@ class RecommendationsController extends AppController
             }
 
             // Get state transition rules for form field visibility
-            $rules = StaticHelpers::getAppSetting('Awards.RecommendationStateRules');
+            $rules = Recommendation::getStateRules();
 
             // Empty gathering list initially - will be populated via AJAX
             $gatheringList = [];
