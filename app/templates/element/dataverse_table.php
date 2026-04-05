@@ -29,6 +29,7 @@ $rowActions = $rowActions ?? [];
 $user = $user ?? $this->request->getAttribute('identity');
 $enableColumnPicker = $enableColumnPicker ?? true;
 $enableBulkSelection = $enableBulkSelection ?? false;
+$bulkSelectionDataFields = $bulkSelectionDataFields ?? [];
 
 // Show actions column if column picker is enabled OR there are row actions
 $showActionsColumn = $enableColumnPicker || !empty($rowActions);
@@ -113,7 +114,10 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
                                        class="form-check-input" 
                                        value="<?= h($row[$primaryKey]) ?>"
                                        data-<?= h($controllerName) ?>-target="rowCheckbox"
-                                       data-action="change-><?= h($controllerName) ?>#toggleRowSelection">
+                                       data-action="change-><?= h($controllerName) ?>#toggleRowSelection"
+                                       <?php foreach ($bulkSelectionDataFields as $attr => $field): ?>
+                                       data-<?= h($attr) ?>="<?= h($row[$field] ?? '') ?>"
+                                       <?php endforeach; ?>>
                             </td>
                         <?php endif; ?>
                         <?php foreach ($visibleColumns as $columnKey): ?>

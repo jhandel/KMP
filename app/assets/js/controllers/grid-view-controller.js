@@ -2439,6 +2439,22 @@ class GridViewController extends Controller {
                 this.selectAllCheckboxTarget.indeterminate = true
             }
         }
+
+        // Dispatch selection-changed event with checkbox data for downstream validation
+        this.element.dispatchEvent(new CustomEvent('grid-view:selection-changed', {
+            bubbles: true,
+            detail: { ids: [...this.selectedIds], checkboxes: this.getSelectedCheckboxData() }
+        }))
+    }
+
+    /**
+     * Collect data attributes from selected row checkboxes
+     */
+    getSelectedCheckboxData() {
+        if (!this.hasRowCheckboxTarget) return []
+        return this.rowCheckboxTargets
+            .filter(cb => cb.checked)
+            .map(cb => ({ id: cb.value, ...cb.dataset }))
     }
 
     /**
@@ -2449,8 +2465,7 @@ class GridViewController extends Controller {
             return
         }
 
-        // Dispatch custom event with selected IDs for listeners (e.g., bulk edit modal)
-        const detail = { ids: [...this.selectedIds] }
+        const detail = { ids: [...this.selectedIds], checkboxes: this.getSelectedCheckboxData() }
         
         // Fire event on the button (outlet-btn pattern expects this)
         event.currentTarget.dispatchEvent(new CustomEvent('outlet-btn:notice', {

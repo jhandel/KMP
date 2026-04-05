@@ -82,6 +82,9 @@ class RecommendationQueryService
             'canFilter' => true,
             'canExportCsv' => true,
             'enableBulkSelection' => $canEdit,
+            'bulkSelectionDataFields' => [
+                'member-id' => 'member_id',
+            ],
             'bulkActions' => [
                 [
                     'key' => 'bulk-edit',

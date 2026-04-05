@@ -71,7 +71,7 @@ if ($user->checkCan("edit", "Awards.Recommendations")):
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div id="groupValidationMessage" class="alert alert-info">
+                <div id="groupValidationMessage" class="alert alert-info" data-awards-rec-group-target="validationMessage">
                     <?= __('Selected recommendations will be grouped together. The first selected recommendation will become the group head.') ?>
                 </div>
                 <div id="groupSelectedIds" data-awards-rec-group-target="selectedIds"></div>
