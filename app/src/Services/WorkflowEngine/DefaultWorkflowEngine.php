@@ -1669,7 +1669,18 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         // Value descriptor object
         if (is_array($value)) {
-            $type = $value['type'] ?? 'fixed';
+            $type = $value['type'] ?? null;
+
+            // Plain key-value object (no 'type' descriptor) — resolve each value individually
+            if ($type === null) {
+                $resolved = [];
+                foreach ($value as $k => $v) {
+                    $resolved[$k] = $this->resolveParamValue($v, $context, $v);
+                }
+
+                return $resolved;
+            }
+
             switch ($type) {
                 case 'fixed':
                     return $value['value'] ?? $default;
