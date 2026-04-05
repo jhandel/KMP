@@ -131,13 +131,18 @@ export default class WorkflowConfigPanel {
                 for (const [key, meta] of Object.entries(action.inputSchema)) {
                     const currentVal = params[key] !== undefined ? params[key] : ''
                     const desc = meta.description ? `<small class="form-text text-muted">${meta.description}</small>` : ''
-                    html += this.renderValuePicker(`params.${key}`, {
-                        label: meta.label || key,
-                        type: meta.type || 'string',
-                        required: meta.required || false,
-                        description: meta.description || ''
-                    }, currentVal, {allowContext: true, allowAppSetting: true})
-                    html += desc
+                    if (meta.type === 'object') {
+                        html += this._renderKeyValueEditor(`params.${key}`, meta, currentVal)
+                        html += desc
+                    } else {
+                        html += this.renderValuePicker(`params.${key}`, {
+                            label: meta.label || key,
+                            type: meta.type || 'string',
+                            required: meta.required || false,
+                            description: meta.description || ''
+                        }, currentVal, {allowContext: true, allowAppSetting: true})
+                        html += desc
+                    }
                 }
             }
         }
@@ -586,6 +591,81 @@ export default class WorkflowConfigPanel {
         return `<input type="text" class="form-control form-control-sm"
             name="${escapedFieldName}" value="${this._escapeAttr(String(values.fixedValue))}"
             data-action="change->workflow-designer#updateNodeConfig">`
+    }
+
+    /**
+     * Render a key-value dictionary editor for object-type fields.
+     * Each row has a variable name input and a value picker (fixed/context/app_setting).
+     */
+    _renderKeyValueEditor(fieldName, fieldMeta, currentValue) {
+        const label = fieldMeta.label || fieldName
+        const escapedFieldName = this._escapeAttr(fieldName)
+        const entries = (typeof currentValue === 'object' && currentValue !== null && !currentValue.type)
+            ? Object.entries(currentValue)
+            : []
+
+        let rowsHTML = ''
+        entries.forEach(([key, val], idx) => {
+            rowsHTML += this._renderKvRow(escapedFieldName, idx, key, val)
+        })
+
+        return `<div class="mb-2 kv-editor" data-kv-field="${escapedFieldName}">
+            <label class="form-label form-label-sm mb-1">${label}</label>
+            <div class="kv-rows" data-kv-rows="${escapedFieldName}">
+                ${rowsHTML}
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-1"
+                data-action="click->workflow-designer#addKvRow"
+                data-kv-target="${escapedFieldName}">
+                <i class="bi bi-plus-circle"></i> Add Variable
+            </button>
+        </div>`
+    }
+
+    _renderKvRow(fieldName, idx, key, val) {
+        const escapedKey = this._escapeAttr(key)
+
+        // Determine value display
+        let valueDisplay = ''
+        let valueType = 'fixed'
+        if (typeof val === 'string' && val.startsWith('$.')) {
+            valueDisplay = val
+            valueType = 'context'
+        } else if (typeof val === 'object' && val !== null && val.type === 'context') {
+            valueDisplay = val.path || ''
+            valueType = 'context'
+        } else if (typeof val === 'object' && val !== null && val.type === 'app_setting') {
+            valueDisplay = val.key || ''
+            valueType = 'app_setting'
+        } else {
+            valueDisplay = String(val ?? '')
+            valueType = 'fixed'
+        }
+
+        const typeOptions = [
+            `<option value="fixed" ${valueType === 'fixed' ? 'selected' : ''}>Fixed</option>`,
+            `<option value="context" ${valueType === 'context' ? 'selected' : ''}>Context Path</option>`,
+            `<option value="app_setting" ${valueType === 'app_setting' ? 'selected' : ''}>App Setting</option>`,
+        ].join('')
+
+        return `<div class="input-group input-group-sm mb-1 kv-row" data-kv-idx="${idx}">
+            <input type="text" class="form-control" style="max-width: 120px;"
+                placeholder="Variable name"
+                name="${fieldName}__key__${idx}" value="${escapedKey}"
+                data-action="change->workflow-designer#updateNodeConfig">
+            <select class="form-select" style="max-width: 110px;"
+                data-kv-vtype="${fieldName}__${idx}"
+                data-action="change->workflow-designer#onKvValueTypeChange">
+                ${typeOptions}
+            </select>
+            <input type="text" class="form-control"
+                placeholder="${valueType === 'context' ? '$.path.to.value' : 'value'}"
+                name="${fieldName}__val__${idx}" value="${this._escapeAttr(valueDisplay)}"
+                data-action="change->workflow-designer#updateNodeConfig">
+            <button type="button" class="btn btn-outline-danger"
+                data-action="click->workflow-designer#removeKvRow"
+                title="Remove"><i class="bi bi-trash"></i></button>
+        </div>`
     }
 
     _escapeAttr(str) {

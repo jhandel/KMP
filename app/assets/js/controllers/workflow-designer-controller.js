@@ -389,6 +389,9 @@ class WorkflowDesignerController extends Controller {
     onValuePickerTypeChange(event) { this._nodeConfigHandler.onValuePickerTypeChange(event) }
     onPolicyClassChange(event) { this._nodeConfigHandler.onPolicyClassChange(event) }
     onResizeStart(event) { this._nodeConfigHandler.onResizeStart(event) }
+    addKvRow(event) { this._nodeConfigHandler.addKvRow(event) }
+    removeKvRow(event) { this._nodeConfigHandler.removeKvRow(event) }
+    onKvValueTypeChange(event) { this._nodeConfigHandler.onKvValueTypeChange(event) }
 
     // --- Node Events ---
 

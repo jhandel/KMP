@@ -332,6 +332,9 @@ export default class WorkflowNodeConfigHandler {
             nodeData.data.config.approverConfig = newApproverConfig
         }
 
+        // Extract key-value editor fields (e.g., vars for Core.SendEmail)
+        this._extractKvFields(form, nodeData)
+
         nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true
         nodeData.data.config.serialPickNext = form.querySelector('[name="serialPickNext"]')?.checked ?? false
 
@@ -395,6 +398,88 @@ export default class WorkflowNodeConfigHandler {
         document.removeEventListener('mouseup', this._boundResizeEnd)
         const currentWidth = Math.round(this.nodeConfigTarget.getBoundingClientRect().width)
         localStorage.setItem('wf-config-panel-width', currentWidth)
+    }
+
+    // --- Key-Value Editor methods ---
+
+    addKvRow(event) {
+        const btn = event.target.closest('[data-kv-target]')
+        const fieldName = btn.dataset.kvTarget
+        const container = btn.closest('.kv-editor').querySelector(`[data-kv-rows="${fieldName}"]`)
+        const existingRows = container.querySelectorAll('.kv-row')
+        const nextIdx = existingRows.length
+
+        const rowHTML = this.configPanel._renderKvRow(fieldName, nextIdx, '', '')
+        container.insertAdjacentHTML('beforeend', rowHTML)
+    }
+
+    removeKvRow(event) {
+        const row = event.target.closest('.kv-row')
+        const form = row.closest('form')
+        row.remove()
+        // Re-trigger config save after removal
+        this._saveKvFieldsFromForm(form)
+    }
+
+    onKvValueTypeChange(event) {
+        const select = event.target
+        const selectedType = select.value
+        const row = select.closest('.kv-row')
+        const valInput = row.querySelector('[name*="__val__"]')
+        if (valInput) {
+            valInput.placeholder = selectedType === 'context' ? '$.path.to.value' : 'value'
+            valInput.value = ''
+        }
+        // Trigger config update
+        const form = select.closest('form')
+        if (form) this._saveKvFieldsFromForm(form)
+    }
+
+    _saveKvFieldsFromForm(form) {
+        const nodeId = form.dataset.nodeId
+        const nodeData = this.editor.getNodeFromId(nodeId)
+        if (!nodeData?.data?.config) return
+
+        this._extractKvFields(form, nodeData)
+        this.editor.updateNodeDataFromId(nodeId, nodeData.data)
+    }
+
+    _extractKvFields(form, nodeData) {
+        const kvEditors = form.querySelectorAll('.kv-editor')
+        kvEditors.forEach(editor => {
+            const fieldName = editor.querySelector('[data-kv-rows]')?.dataset.kvRows
+            if (!fieldName) return
+
+            const obj = {}
+            const rows = editor.querySelectorAll('.kv-row')
+            rows.forEach(row => {
+                const keyInput = row.querySelector('[name*="__key__"]')
+                const valInput = row.querySelector('[name*="__val__"]')
+                const typeSelect = row.querySelector('[data-kv-vtype]')
+                const key = keyInput?.value?.trim()
+                if (!key) return
+
+                const rawVal = valInput?.value ?? ''
+                const valType = typeSelect?.value ?? 'fixed'
+
+                if (valType === 'context') {
+                    obj[key] = rawVal.startsWith('$.') ? rawVal : `$.${rawVal}`
+                } else if (valType === 'app_setting') {
+                    obj[key] = rawVal ? { type: 'app_setting', key: rawVal } : ''
+                } else {
+                    obj[key] = rawVal
+                }
+            })
+
+            // Write into the correct nested location (e.g., params.vars)
+            if (fieldName.startsWith('params.')) {
+                const paramKey = fieldName.substring(7)
+                if (!nodeData.data.config.params) nodeData.data.config.params = {}
+                nodeData.data.config.params[paramKey] = obj
+            } else {
+                nodeData.data.config[fieldName] = obj
+            }
+        })
     }
 
     disconnect() {
