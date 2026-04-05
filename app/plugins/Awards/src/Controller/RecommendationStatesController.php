@@ -183,7 +183,7 @@ class RecommendationStatesController extends AppController
      */
     public function edit($id = null)
     {
-        $state = $this->RecommendationStates->get($id);
+        $state = $this->RecommendationStates->get($id, contain: ['RecommendationStatuses']);
         if (!$state) {
             throw new \Cake\Http\Exception\NotFoundException();
         }
@@ -191,6 +191,7 @@ class RecommendationStatesController extends AppController
 
         if ($this->request->is(['patch', 'post', 'put'])) {
             $oldName = $state->name;
+            $oldStatusId = $state->status_id;
             $state = $this->RecommendationStates->patchEntity(
                 $state,
                 $this->request->getData(),
@@ -199,6 +200,9 @@ class RecommendationStatesController extends AppController
             if ($this->RecommendationStates->save($state)) {
                 if ($oldName !== $state->name) {
                     $this->cascadeStateRename($oldName, $state->name);
+                }
+                if ($oldStatusId !== $state->status_id) {
+                    $this->cascadeStateStatusChange($state->name, $state->status_id);
                 }
                 Recommendation::clearCache();
                 $this->Flash->success(__('The Recommendation State has been saved.'));
@@ -386,6 +390,23 @@ class RecommendationStatesController extends AppController
         $logsTable->updateAll(
             ['to_state' => $newName],
             ['to_state' => $oldName]
+        );
+    }
+
+    /**
+     * Update the status column on recommendations when a state moves to a different status.
+     *
+     * @param string $stateName The state name whose recommendations need updating
+     * @param int $newStatusId The new status ID to look up the name from
+     * @return void
+     */
+    private function cascadeStateStatusChange(string $stateName, int $newStatusId): void
+    {
+        $newStatus = $this->RecommendationStates->RecommendationStatuses->get($newStatusId);
+        $recommendationsTable = $this->fetchTable('Awards.Recommendations');
+        $recommendationsTable->updateAll(
+            ['status' => $newStatus->name],
+            ['state' => $stateName]
         );
     }
 
