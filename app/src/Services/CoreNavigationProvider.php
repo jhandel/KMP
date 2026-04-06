@@ -393,10 +393,10 @@ class CoreNavigationProvider
                 ],
             ],
             [
-                'type' => 'top-link',
+                'type' => 'link',
+                'mergePath' => ['Action Items'],
                 'label' => 'My Approvals',
-                'id' => 'navheader_myapprovals',
-                'order' => 1,
+                'order' => 10,
                 'url' => [
                     'controller' => 'Workflows',
                     'action' => 'approvals',
