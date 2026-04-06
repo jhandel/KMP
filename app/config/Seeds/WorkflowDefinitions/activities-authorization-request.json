@@ -13,7 +13,8 @@
                     "branchId": "$.event.branchId",
                     "approverId": "$.event.approverId",
                     "isRenewal": "$.event.isRenewal",
-                    "requiredApprovals": "$.event.requiredApprovals"
+                    "requiredApprovals": "$.event.requiredApprovals",
+                    "approvalPermission": "$.event.approvalPermission"
                 }
             },
             "position": { "x": 50, "y": 200 },
@@ -76,11 +77,9 @@
             "type": "approval",
             "label": "Authorization Approval Gate",
             "config": {
-                "approverType": "dynamic",
+                "approverType": "permission",
                 "approverConfig": {
-                    "service": "Activities.AuthorizationApproverResolver",
-                    "method": "getEligibleApproverIds",
-                    "activity_id": "$.trigger.activityId"
+                    "permission": "$.trigger.approvalPermission"
                 },
                 "requiredCount": "$.trigger.requiredApprovals",
                 "serialPickNext": true,

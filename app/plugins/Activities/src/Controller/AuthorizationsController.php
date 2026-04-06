@@ -668,7 +668,8 @@ class AuthorizationsController extends AppController
 
         $activity = TableRegistry::getTableLocator()->get('Activities.Activities')
             ->find()
-            ->where(['id' => $activityId])
+            ->contain(['Permissions'])
+            ->where(['Activities.id' => $activityId])
             ->first();
 
         $requiredApprovals = $isRenewal
@@ -683,6 +684,7 @@ class AuthorizationsController extends AppController
             'isRenewal' => $isRenewal,
             'requiredApprovals' => $requiredApprovals,
             'activityName' => $activity->name ?? '',
+            'approvalPermission' => $activity->permission->name ?? '',
         ];
     }
 
