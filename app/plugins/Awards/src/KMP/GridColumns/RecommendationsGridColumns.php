@@ -607,6 +607,7 @@ class RecommendationsGridColumns extends BaseGridColumns
                     'config' => [
                         'filters' => [],
                         'columns' => [
+                            'group_children_count',
                             'member_sca_name',
                             'op_links',
                             'branch_id',

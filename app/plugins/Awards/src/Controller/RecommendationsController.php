@@ -872,7 +872,30 @@ class RecommendationsController extends AppController
 
         // Post-process paginated data to add computed fields for display
         $recommendations = $result['data'];
+
+        // Add group children count for each recommendation
+        $recIds = [];
+        foreach ($recommendations as $r) {
+            $recIds[] = $r->id;
+        }
+        $groupCounts = [];
+        if (!empty($recIds)) {
+            $countQuery = $this->Recommendations->find()
+                ->select([
+                    'recommendation_group_id',
+                    'child_count' => $this->Recommendations->find()->func()->count('*'),
+                ])
+                ->where(['recommendation_group_id IN' => $recIds])
+                ->groupBy(['recommendation_group_id'])
+                ->disableHydration()
+                ->all();
+            foreach ($countQuery as $row) {
+                $groupCounts[(int)$row['recommendation_group_id']] = (int)$row['child_count'];
+            }
+        }
+
         foreach ($recommendations as $recommendation) {
+            $recommendation->group_children_count = $groupCounts[$recommendation->id] ?? 0;
             // Build OP links HTML
             $recommendation->op_links = $this->buildOpLinksHtml($recommendation);
 
