@@ -192,5 +192,36 @@ foreach ($actions as $action):
             ]);
             echo ' ';
             break;
+
+        case 'button':
+            // Generic button with data attributes (no modal, no link)
+            $dataAttrs = [];
+            if (!empty($action['dataAttributes'])) {
+                foreach ($action['dataAttributes'] as $attrKey => $attrValue) {
+                    if (is_array($attrValue)) {
+                        $jsonData = [];
+                        foreach ($attrValue as $jsonKey => $fieldPath) {
+                            $jsonData[$jsonKey] = $getNestedValue($fieldPath, $row);
+                        }
+                        $dataAttrs['data-' . $attrKey] = $jsonData;
+                    } else {
+                        $dataAttrs['data-' . $attrKey] = $processTemplate($attrValue, $row);
+                    }
+                }
+            }
+
+            $attrParts = [];
+            $attrParts[] = 'type="button"';
+            $attrParts[] = 'class="' . h($buttonClass) . '"';
+            foreach ($dataAttrs as $attrName => $attrValue) {
+                if (is_array($attrValue)) {
+                    $jsonStr = json_encode($attrValue);
+                    $attrParts[] = $attrName . "='" . h($jsonStr) . "'";
+                } else {
+                    $attrParts[] = $attrName . '="' . h($attrValue) . '"';
+                }
+            }
+            echo '<button ' . implode(' ', $attrParts) . '>' . $label . '</button> ';
+            break;
     endswitch;
 endforeach;

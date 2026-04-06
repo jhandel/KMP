@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\KMP\TimezoneHelper;
+use App\Services\ApprovalContext\ApprovalContextRendererRegistry;
 use App\Services\ServiceResult;
 use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
@@ -317,6 +319,36 @@ class WorkflowsController extends AppController
     }
 
     /**
+     * Token-based deep link for email-based approval access.
+     *
+     * @param string $token Approval token from email
+     * @return \Cake\Http\Response|null|void
+     */
+    public function approvalByToken(string $token)
+    {
+        $this->Authorization->skipAuthorization();
+
+        $approvalsTable = $this->fetchTable('WorkflowApprovals');
+        $approval = $approvalsTable->find()
+            ->contain(['WorkflowInstances' => ['WorkflowDefinitions']])
+            ->where(['WorkflowApprovals.approval_token' => $token])
+            ->first();
+
+        if (!$approval) {
+            $this->Flash->error(__('Invalid or expired approval link.'));
+
+            return $this->redirect(['action' => 'approvals']);
+        }
+
+        // Pass token and pre-filtered approval ID so the page opens with this approval focused
+        $this->set('focusedApprovalId', $approval->id);
+        $this->set('approvalToken', $token);
+
+        // Render the standard approvals page — JS will auto-open the response modal
+        $this->render('approvals');
+    }
+
+    /**
      * Grid data endpoint for the My Approvals DataverseGrid.
      *
      * Two system views:
@@ -388,7 +420,7 @@ class WorkflowsController extends AppController
             'showSearchBox' => true,
         ]);
 
-        // Enrich paginated rows with virtual fields
+        // Enrich paginated rows with virtual fields via ApprovalContextRendererRegistry
         foreach ($result['data'] as $approval) {
             // Workflow name (from contained relation)
             $approval->workflow_name = $approval->workflow_instance?->workflow_definition?->name ?? __('Unknown');
@@ -400,13 +432,17 @@ class WorkflowsController extends AppController
                 $approval->status_label = ucfirst($approval->status);
             }
 
-            // Request: entity name from workflow instance context
+            // Use ApprovalContextRendererRegistry for entity-aware context
             $instance = $approval->workflow_instance;
             if ($instance) {
-                $entityContext = $this->resolveEntityContext($instance);
-                $approval->request = $entityContext['entityName'] ?? "#{$instance->entity_id}";
+                $ctx = \App\Services\ApprovalContext\ApprovalContextRendererRegistry::render($instance);
+                $approval->request = $ctx->getTitle();
+                $approval->requester = $ctx->getRequester() ?? '—';
+                $approval->entity_link = $ctx->getEntityUrl();
             } else {
                 $approval->request = '—';
+                $approval->requester = '—';
+                $approval->entity_link = null;
             }
         }
 
@@ -549,6 +585,90 @@ class WorkflowsController extends AppController
 
             return $this->redirect(['action' => 'approvals']);
         }
+    }
+
+    /**
+     * API: Get approval detail context for the expandable panel.
+     *
+     * @param int $approvalId Workflow approval ID
+     * @return \Cake\Http\Response|null|void
+     */
+    public function approvalDetail(int $approvalId)
+    {
+        $this->request->allowMethod(['get']);
+        $this->Authorization->skipAuthorization();
+
+        $approvalsTable = $this->fetchTable('WorkflowApprovals');
+        $approval = $approvalsTable->find()
+            ->contain([
+                'WorkflowInstances' => ['WorkflowDefinitions'],
+                'WorkflowApprovalResponses' => [
+                    'Members',
+                    'sort' => ['WorkflowApprovalResponses.responded_at' => 'ASC'],
+                ],
+            ])
+            ->where(['WorkflowApprovals.id' => $approvalId])
+            ->first();
+
+        if (!$approval) {
+            $this->response = $this->response
+                ->withType('application/json')
+                ->withStatus(404)
+                ->withStringBody(json_encode(['error' => 'Approval not found']));
+
+            return $this->response;
+        }
+
+        // Build context via ApprovalContextRendererRegistry
+        $instance = $approval->workflow_instance;
+        $ctx = $instance
+            ? ApprovalContextRendererRegistry::render($instance)
+            : null;
+
+        $context = $ctx ? $ctx->toArray() : [
+            'title' => __('Unknown Approval'),
+            'description' => '',
+            'fields' => [],
+            'entityUrl' => null,
+            'icon' => 'bi-question-circle',
+            'requester' => null,
+        ];
+
+        // Build progress info
+        $progress = [
+            'required' => $approval->required_count,
+            'approved' => $approval->approved_count,
+            'rejected' => $approval->rejected_count,
+            'status' => $approval->status,
+        ];
+
+        // Build response timeline
+        $responses = [];
+        if (!empty($approval->workflow_approval_responses)) {
+            foreach ($approval->workflow_approval_responses as $resp) {
+                $memberName = $resp->member->sca_name
+                    ?? $resp->member->email_address
+                    ?? __('Unknown');
+                $responses[] = [
+                    'memberName' => $memberName,
+                    'decision' => $resp->decision,
+                    'comment' => $resp->comment,
+                    'respondedAt' => TimezoneHelper::formatDateTime($resp->responded_at),
+                ];
+            }
+        }
+
+        $payload = [
+            'context' => $context,
+            'progress' => $progress,
+            'responses' => $responses,
+        ];
+
+        $this->response = $this->response
+            ->withType('application/json')
+            ->withStringBody(json_encode($payload));
+
+        return $this->response;
     }
 
     /**

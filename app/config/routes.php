@@ -200,6 +200,29 @@ return function (RouteBuilder $routes): void {
         ]);
 
         /**
+         * Legacy Approval Queue Redirects
+         */
+        $builder->redirect('/authorization-approvals/my-queue', '/approvals', ['status' => 302]);
+        $builder->redirect('/authorization-approvals/my-queue/*', '/approvals', ['status' => 302]);
+
+        /**
+         * Unified Approvals Routes
+         */
+        $builder->scope('/approvals', function (RouteBuilder $builder) {
+            $builder->connect('/', ['controller' => 'Workflows', 'action' => 'approvals']);
+            $builder->connect('/grid-data', ['controller' => 'Workflows', 'action' => 'approvalsGridData']);
+            $builder->connect('/respond/{token}', ['controller' => 'Workflows', 'action' => 'approvalByToken'])
+                ->setPass(['token']);
+            $builder->connect('/record', ['controller' => 'Workflows', 'action' => 'recordApproval']);
+            $builder->connect('/eligible-approvers/{approvalId}', ['controller' => 'Workflows', 'action' => 'eligibleApprovers'])
+                ->setPatterns(['approvalId' => '\d+'])
+                ->setPass(['approvalId']);
+            $builder->connect('/detail/{approvalId}', ['controller' => 'Workflows', 'action' => 'approvalDetail'])
+                ->setPatterns(['approvalId' => '\d+'])
+                ->setPass(['approvalId']);
+        });
+
+        /**
          * Workflow Engine Routes
          */
         $builder->scope('/workflows', function (RouteBuilder $builder) {
@@ -226,6 +249,9 @@ return function (RouteBuilder $routes): void {
             $builder->connect('/approvals-grid-data', ['controller' => 'Workflows', 'action' => 'approvalsGridData']);
             $builder->connect('/record-approval', ['controller' => 'Workflows', 'action' => 'recordApproval']);
             $builder->connect('/eligible-approvers/{approvalId}', ['controller' => 'Workflows', 'action' => 'eligibleApprovers'])
+                ->setPatterns(['approvalId' => '\d+'])
+                ->setPass(['approvalId']);
+            $builder->connect('/approval-detail/{approvalId}', ['controller' => 'Workflows', 'action' => 'approvalDetail'])
                 ->setPatterns(['approvalId' => '\d+'])
                 ->setPass(['approvalId']);
             $builder->connect('/versions/{definitionId}', ['controller' => 'Workflows', 'action' => 'versions'])

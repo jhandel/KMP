@@ -26,7 +26,7 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'searchable' => true,
                 'defaultVisible' => true,
                 'required' => true,
-                'width' => '200px',
+                'width' => '180px',
                 'alignment' => 'left',
                 'queryField' => 'WorkflowDefinitions.name',
             ],
@@ -39,9 +39,21 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'filterable' => false,
                 'searchable' => false,
                 'defaultVisible' => true,
-                'width' => '250px',
+                'width' => '220px',
                 'alignment' => 'left',
-                // Virtual field set by controller — not queryable
+                'skipAutoFilter' => true,
+            ],
+
+            'requester' => [
+                'key' => 'requester',
+                'label' => 'Requester',
+                'type' => 'string',
+                'sortable' => false,
+                'filterable' => false,
+                'searchable' => true,
+                'defaultVisible' => true,
+                'width' => '150px',
+                'alignment' => 'left',
                 'skipAutoFilter' => true,
             ],
 
@@ -53,7 +65,7 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'filterable' => true,
                 'filterType' => 'dropdown',
                 'defaultVisible' => true,
-                'width' => '180px',
+                'width' => '150px',
                 'alignment' => 'center',
                 'queryField' => 'WorkflowApprovals.status',
                 'filterOptions' => [
@@ -72,7 +84,7 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'sortable' => true,
                 'filterable' => true,
                 'defaultVisible' => true,
-                'width' => '150px',
+                'width' => '140px',
                 'alignment' => 'left',
                 'filterType' => 'date-range',
             ],
@@ -83,10 +95,23 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'type' => 'datetime',
                 'sortable' => true,
                 'filterable' => true,
-                'defaultVisible' => true,
-                'width' => '150px',
+                'defaultVisible' => false,
+                'width' => '140px',
                 'alignment' => 'left',
                 'filterType' => 'date-range',
+            ],
+
+            'entity_link' => [
+                'key' => 'entity_link',
+                'label' => '',
+                'type' => 'link',
+                'sortable' => false,
+                'filterable' => false,
+                'searchable' => false,
+                'defaultVisible' => true,
+                'width' => '40px',
+                'alignment' => 'center',
+                'skipAutoFilter' => true,
             ],
         ];
     }
@@ -99,6 +124,16 @@ class ApprovalsGridColumns extends BaseGridColumns
     public static function getRowActions(): array
     {
         return [
+            'detail' => [
+                'key' => 'detail',
+                'type' => 'button',
+                'label' => 'Details',
+                'icon' => 'bi-chevron-down',
+                'class' => 'btn btn-sm btn-outline-secondary',
+                'dataAttributes' => [
+                    'action' => 'click->approval-detail#toggle',
+                ],
+            ],
             'respond' => [
                 'key' => 'respond',
                 'type' => 'modal',

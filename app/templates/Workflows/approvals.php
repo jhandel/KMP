@@ -1,23 +1,31 @@
 <?php
 
 /**
- * Workflow Approvals - Dataverse Grid View
+ * Unified Approvals - Dataverse Grid View
  *
  * @var \App\View\AppView $this
+ * @var int|null $focusedApprovalId Pre-selected approval from token deep link
+ * @var string|null $approvalToken Token from email deep link
  */
+
+$focusedApprovalId = $focusedApprovalId ?? null;
+$approvalToken = $approvalToken ?? null;
 ?>
 <?php $this->extend('/layout/TwitterBootstrap/dashboard');
 
 echo $this->KMP->startBlock("title");
-echo $this->KMP->getAppSetting("KMP.ShortSiteTitle") . ': Approvals';
+echo $this->KMP->getAppSetting("KMP.ShortSiteTitle") . ': My Approvals';
 $this->KMP->endBlock(); ?>
 
 <h3><i class="bi bi-check2-square me-2"></i><?= __('My Approvals') ?></h3>
 
+<div data-controller="approval-detail"
+     data-approval-detail-url-value="/approvals/detail/">
 <?= $this->element('dv_grid', [
     'frameId' => 'approvals-grid',
     'dataUrl' => $this->Url->build(['controller' => 'Workflows', 'action' => 'approvalsGridData']),
 ]) ?>
+</div>
 
 <!-- Approval Response Modal -->
 <div class="modal fade" id="approvalResponseModal" tabindex="-1" aria-labelledby="approvalResponseModalLabel" aria-hidden="true">
@@ -146,9 +154,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 serialPickNext: serialPickNext,
                 requiredCount: requiredCount,
                 approvedCount: approvedCount,
-                eligibleUrl: '/workflows/eligible-approvers/' + approvalId,
+                eligibleUrl: '/approvals/eligible-approvers/' + approvalId,
             });
         }
     });
+
+    <?php if ($focusedApprovalId): ?>
+    // Auto-open response modal for token deep-link approval
+    setTimeout(function() {
+        const focusedId = <?= json_encode($focusedApprovalId) ?>;
+        const respondBtn = document.querySelector('[data-outlet-btn-btn-data-value*="\"id\":' + focusedId + '"]');
+        if (respondBtn) {
+            respondBtn.click();
+        }
+    }, 1000);
+    <?php endif; ?>
 });
 </script>
