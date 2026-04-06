@@ -208,6 +208,17 @@ class CoreNavigationProvider
             [
                 'type' => 'link',
                 'mergePath' => ['Config'],
+                'label' => 'All Approvals',
+                'order' => 5,
+                'url' => [
+                    'controller' => 'Workflows',
+                    'action' => 'allApprovals',
+                ],
+                'icon' => 'bi-clipboard-check',
+            ],
+            [
+                'type' => 'link',
+                'mergePath' => ['Config'],
                 'label' => 'App Settings',
                 'order' => 0,
                 'url' => [
@@ -408,17 +419,6 @@ class CoreNavigationProvider
                     'method' => 'getPendingApprovalCountForMember',
                     'argument' => $user->id,
                 ],
-            ],
-            [
-                'type' => 'link',
-                'mergePath' => ['Workflows'],
-                'label' => 'All Approvals',
-                'order' => 10,
-                'url' => [
-                    'controller' => 'Workflows',
-                    'action' => 'allApprovals',
-                ],
-                'icon' => 'bi-clipboard-check',
             ],
             [
                 'type' => 'link',
