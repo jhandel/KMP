@@ -135,7 +135,7 @@ class RecommendationsController extends AppController
         // Handle CSV export using trait's unified method with data mode
         if (!empty($result['isCsvExport'])) {
             // Fetch all data from query (not paginated) and process computed fields
-            $exportData = $this->prepareRecommendationsForExport($result['query'], ['includeAttendance' => true]);
+            $exportData = $this->prepareRecommendationsForExport($result['query'], ['includeAttendance' => true, 'includeGroupedChildren' => true]);
             return $this->handleCsvExport($result, $csvExportService, 'recommendations', 'Awards.Recommendations', $exportData);
         }
 
@@ -631,6 +631,7 @@ class RecommendationsController extends AppController
         // Execute query to get all matching records (not paginated)
         $recommendations = $query->all()->toList();
         $includeAttendance = $options['includeAttendance'] ?? false;
+        $includeGroupedChildren = $options['includeGroupedChildren'] ?? false;
 
         $memberAttendanceGatherings = [];
         if ($includeAttendance) {
@@ -647,7 +648,70 @@ class RecommendationsController extends AppController
             $recommendation->gatherings = $this->buildGatheringsExportValue($recommendation, $attendanceGatherings);
         }
 
-        return $recommendations;
+        if (!$includeGroupedChildren) {
+            return $recommendations;
+        }
+
+        // Interleave grouped children after their group head
+        $headIds = [];
+        foreach ($recommendations as $rec) {
+            $headIds[] = $rec->id;
+        }
+
+        $children = [];
+        if (!empty($headIds)) {
+            $children = $this->Recommendations->find()
+                ->where(['Recommendations.recommendation_group_id IN' => $headIds])
+                ->contain([
+                    'Requesters' => function ($q) {
+                        return $q->select(['id', 'sca_name']);
+                    },
+                    'Members' => function ($q) {
+                        return $q->select(['id', 'sca_name', 'title', 'pronouns', 'pronunciation']);
+                    },
+                    'Branches' => function ($q) {
+                        return $q->select(['id', 'name', 'type']);
+                    },
+                    'Awards' => function ($q) {
+                        return $q->select(['id', 'abbreviation', 'branch_id']);
+                    },
+                    'Awards.Domains' => function ($q) {
+                        return $q->select(['id', 'name']);
+                    },
+                    'AssignedGathering' => function ($q) {
+                        return $q->select(['id', 'name', 'cancelled_at']);
+                    },
+                ])
+                ->orderBy(['Recommendations.recommendation_group_id' => 'asc', 'Recommendations.created' => 'asc'])
+                ->all()
+                ->toList();
+        }
+
+        if (empty($children)) {
+            return $recommendations;
+        }
+
+        // Group children by their head ID
+        $childrenByHead = [];
+        foreach ($children as $child) {
+            $childrenByHead[$child->recommendation_group_id][] = $child;
+        }
+
+        // Build final list with children interleaved after their head
+        $result = [];
+        foreach ($recommendations as $rec) {
+            $result[] = $rec;
+            if (isset($childrenByHead[$rec->id])) {
+                foreach ($childrenByHead[$rec->id] as $child) {
+                    // Mark as linked child with "↳" prefix on state for clarity
+                    $child->state = '↳ Linked';
+                    $child->gatherings = '';
+                    $result[] = $child;
+                }
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -866,7 +930,7 @@ class RecommendationsController extends AppController
 
         // Handle CSV export using trait's unified method with data mode
         if (!empty($result['isCsvExport'])) {
-            $exportData = $this->prepareRecommendationsForExport($result['query']);
+            $exportData = $this->prepareRecommendationsForExport($result['query'], ['includeGroupedChildren' => true]);
             return $this->handleCsvExport($result, $csvExportService, 'gathering-awards', 'Awards.Recommendations', $exportData);
         }
 
