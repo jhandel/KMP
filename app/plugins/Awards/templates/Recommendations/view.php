@@ -95,7 +95,7 @@ echo $this->KMP->startBlock("pageTitle") ?>
             // Format as date only (no timezone conversion) since it's stored as midnight UTC
             $given = $recommendation->given->format('F j, Y');
             if ($recommendation->assigned_gathering):
-                $gatheringName = h($recommendation->assigned_gathering->name);
+                $gatheringName = $recommendation->assigned_gathering->name;
                 $gatheringLink = $this->Html->link(
                     $gatheringName,
                     ['plugin' => null, 'controller' => 'Gatherings', 'action' => 'view', $recommendation->assigned_gathering->public_id],
@@ -112,7 +112,7 @@ echo $this->KMP->startBlock("pageTitle") ?>
             endif;
         endif;
         if ($recommendation->assigned_gathering && $recommendation->given == null):
-            $gatheringName = h($recommendation->assigned_gathering->name);
+            $gatheringName = $recommendation->assigned_gathering->name;
             $gatheringLink = $this->Html->link(
                 $gatheringName,
                 ['plugin' => null, 'controller' => 'Gatherings', 'action' => 'view', $recommendation->assigned_gathering->public_id],
