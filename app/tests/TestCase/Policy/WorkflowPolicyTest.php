@@ -11,7 +11,6 @@ use App\Policy\WorkflowDefinitionsControllerPolicy;
 use App\Policy\WorkflowDefinitionsTablePolicy;
 use App\Policy\WorkflowInstancesControllerPolicy;
 use App\Policy\WorkflowInstancesTablePolicy;
-use App\Policy\WorkflowsControllerPolicy;
 use Cake\ORM\Table;
 use Cake\TestSuite\TestCase;
 
@@ -21,7 +20,6 @@ use Cake\TestSuite\TestCase;
 class WorkflowPolicyTest extends TestCase
 {
     private WorkflowDefinitionsTablePolicy $tablePolicy;
-    private WorkflowsControllerPolicy $controllerPolicy;
     private WorkflowDefinitionsControllerPolicy $definitionsControllerPolicy;
     private WorkflowInstancesControllerPolicy $instancesControllerPolicy;
     private ApprovalsControllerPolicy $approvalsControllerPolicy;
@@ -33,7 +31,6 @@ class WorkflowPolicyTest extends TestCase
     {
         parent::setUp();
         $this->tablePolicy = new WorkflowDefinitionsTablePolicy();
-        $this->controllerPolicy = new WorkflowsControllerPolicy();
         $this->definitionsControllerPolicy = new WorkflowDefinitionsControllerPolicy();
         $this->instancesControllerPolicy = new WorkflowInstancesControllerPolicy();
         $this->approvalsControllerPolicy = new ApprovalsControllerPolicy();
@@ -175,48 +172,7 @@ class WorkflowPolicyTest extends TestCase
     }
 
     // =====================================================
-    // WorkflowsControllerPolicy – super user bypass (legacy)
-    // =====================================================
-
-    public function testControllerPolicySuperUserBeforeReturnsTrue(): void
-    {
-        $result = $this->controllerPolicy->before($this->makeSuperUser(), [], 'index');
-        $this->assertTrue($result);
-    }
-
-    public function testControllerPolicySuperUserCanIndex(): void
-    {
-        $result = $this->controllerPolicy->before($this->makeSuperUser(), [], 'index');
-        $this->assertTrue($result);
-    }
-
-    // =====================================================
-    // WorkflowsControllerPolicy – regular user denied admin (legacy)
-    // =====================================================
-
-    public function testControllerPolicyRegularUserDeniedIndex(): void
-    {
-        $user = $this->makeRegularUser();
-        $beforeResult = $this->controllerPolicy->before($user, [], 'index');
-        $this->assertNull($beforeResult);
-
-        $this->assertFalse($this->controllerPolicy->canIndex($user, []));
-    }
-
-    public function testControllerPolicyRegularUserDeniedDesigner(): void
-    {
-        $user = $this->makeRegularUser();
-        $this->assertFalse($this->controllerPolicy->canDesigner($user, []));
-    }
-
-    public function testControllerPolicyRegularUserDeniedSave(): void
-    {
-        $user = $this->makeRegularUser();
-        $this->assertFalse($this->controllerPolicy->canSave($user, []));
-    }
-
-    // =====================================================
-    // ApprovalsControllerPolicy – approvals open
+    // WorkflowDefinitionsControllerPolicy – super user bypass
     // =====================================================
 
     public function testControllerPolicyAuthenticatedUserCanApprovals(): void
