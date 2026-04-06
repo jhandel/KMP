@@ -113,19 +113,6 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'alignment' => 'left',
                 'filterType' => 'date-range',
             ],
-
-            'entity_link' => [
-                'key' => 'entity_link',
-                'label' => '',
-                'type' => 'link',
-                'sortable' => false,
-                'filterable' => false,
-                'searchable' => false,
-                'defaultVisible' => true,
-                'width' => '40px',
-                'alignment' => 'center',
-                'skipAutoFilter' => true,
-            ],
         ];
     }
 

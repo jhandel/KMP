@@ -452,11 +452,9 @@ class WorkflowsController extends AppController
                 $ctx = \App\Services\ApprovalContext\ApprovalContextRendererRegistry::render($instance);
                 $approval->request = $ctx->getTitle();
                 $approval->requester = $ctx->getRequester() ?? '—';
-                $approval->entity_link = $ctx->getEntityUrl();
             } else {
                 $approval->request = '—';
                 $approval->requester = '—';
-                $approval->entity_link = null;
             }
         }
 
@@ -576,11 +574,9 @@ class WorkflowsController extends AppController
                 $ctx = \App\Services\ApprovalContext\ApprovalContextRendererRegistry::render($instance);
                 $approval->request = $ctx->getTitle();
                 $approval->requester = $ctx->getRequester() ?? '—';
-                $approval->entity_link = $ctx->getEntityUrl();
             } else {
                 $approval->request = '—';
                 $approval->requester = '—';
-                $approval->entity_link = null;
             }
         }
 
