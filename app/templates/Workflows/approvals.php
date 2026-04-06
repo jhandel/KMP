@@ -94,7 +94,8 @@ $this->KMP->endBlock(); ?>
                     <label class="form-label fw-semibold"><?= __('Select Next Approver') ?></label>
                     <div data-controller="ac"
                          data-ac-url-value="/workflows/eligible-approvers/0"
-                         data-ac-min-length-value="2"
+                         data-ac-min-length-value="0"
+                         data-ac-show-on-focus-value="true"
                          data-ac-allow-other-value="false"
                          role="combobox"
                          class="position-relative mb-3 kmp_autoComplete">
@@ -105,7 +106,7 @@ $this->KMP->endBlock(); ?>
                         <div class="input-group">
                             <input type="text" class="form-control"
                                    data-ac-target="input"
-                                   placeholder="<?= __('Search eligible approvers...') ?>">
+                                   placeholder="<?= __('Click to see all or type to filter...') ?>">
                             <button class="btn btn-outline-secondary" data-ac-target="clearBtn" data-action="ac#clear" disabled><?= __('Clear') ?></button>
                         </div>
                         <ul data-ac-target="results"

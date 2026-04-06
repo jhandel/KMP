@@ -555,7 +555,7 @@ class AutoComplete extends Controller {
         if (this.hasHiddenTextTarget) this.hiddenTextTarget.value = "";
 
         const query = this.inputTarget.value.trim();
-        if ((query && query.length >= this.minLengthValue) || this.hasDataListTarget) {
+        if ((query && query.length >= this.minLengthValue) || this.hasDataListTarget || (this.showOnFocusValue && this.hasUrlValue)) {
             this.fetchResults(query);
         } else {
             this.hideAndRemoveOptions();
