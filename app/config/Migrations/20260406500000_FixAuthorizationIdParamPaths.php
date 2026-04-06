@@ -22,9 +22,9 @@ class FixAuthorizationIdParamPaths extends AbstractMigration
             return;
         }
 
-        $definitionData = file_get_contents($jsonPath);
+        $definitionData = json_decode(file_get_contents($jsonPath), true);
 
-        // Update versions using ORM to avoid SQL escaping issues
+        // Update versions using ORM (definition column is JSON type — expects array)
         $versionsTable = \Cake\ORM\TableRegistry::getTableLocator()->get('WorkflowVersions');
         $versions = $versionsTable->find()
             ->where(['workflow_definition_id' => 4])
