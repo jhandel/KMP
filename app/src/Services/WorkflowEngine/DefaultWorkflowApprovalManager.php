@@ -452,6 +452,93 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     }
 
     /**
+     * Get candidate member IDs for the "next approver" picker in serial pick-next mode.
+     *
+     * Returns the full pool of eligible members with the right permission,
+     * minus those who have already responded and the requesting member.
+     *
+     * @param int $approvalId Workflow approval ID
+     * @param int|null $currentMemberId Current user ID to exclude (they're approving now)
+     * @return int[] Member IDs eligible to be picked as next approver
+     */
+    public function getNextApproverCandidates(int $approvalId, ?int $currentMemberId = null): array
+    {
+        try {
+            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+            /** @var \App\Model\Entity\WorkflowApproval|null $approval */
+            $approval = $approvalsTable->find()
+                ->contain(['WorkflowInstances'])
+                ->where(['WorkflowApprovals.id' => $approvalId])
+                ->first();
+
+            if (!$approval) {
+                return [];
+            }
+
+            // Build exclusion list: previous responders + current user + requester
+            $excludeIds = [];
+
+            // Get IDs of members who already responded to this approval
+            $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
+            $respondedIds = $responsesTable->find()
+                ->select(['member_id'])
+                ->where(['workflow_approval_id' => $approvalId])
+                ->all()
+                ->extract('member_id')
+                ->toArray();
+            $excludeIds = array_merge($excludeIds, array_map('intval', $respondedIds));
+
+            // Exclude current user
+            if ($currentMemberId) {
+                $excludeIds[] = $currentMemberId;
+            }
+
+            // Exclude the requesting member (from workflow instance context)
+            $instanceContext = $approval->workflow_instance->context ?? [];
+            $triggerData = $instanceContext['triggerData'] ?? ($instanceContext['trigger'] ?? []);
+            $requesterId = (int)($triggerData['memberId'] ?? 0);
+            if ($requesterId > 0) {
+                $excludeIds[] = $requesterId;
+            }
+
+            // Also include any exclude_member_ids from approver_config
+            $config = $approval->approver_config ?? [];
+            $configExcludes = $config['exclude_member_ids'] ?? [];
+            $excludeIds = array_merge($excludeIds, array_map('intval', $configExcludes));
+
+            $excludeIds = array_unique(array_filter($excludeIds));
+
+            // Temporarily clear current_approver_id to get the full pool from the resolver
+            $clonedApproval = clone $approval;
+            $clonedConfig = $clonedApproval->approver_config ?? [];
+            unset($clonedConfig['current_approver_id']);
+            $clonedApproval->approver_config = $clonedConfig;
+
+            // Get full candidate pool
+            $candidates = match ($approval->approver_type) {
+                WorkflowApproval::APPROVER_TYPE_DYNAMIC => $this->resolveDynamicApproverIds($clonedApproval),
+                WorkflowApproval::APPROVER_TYPE_PERMISSION => array_map(
+                    fn($m) => $m->id,
+                    $this->findMembersByPermission($config['permission'] ?? '')
+                ),
+                WorkflowApproval::APPROVER_TYPE_ROLE => array_map(
+                    fn($m) => $m->id,
+                    $this->findMembersByRole($config['role'] ?? '')
+                ),
+                default => [],
+            };
+            $candidateIds = array_map('intval', $candidates);
+
+            // Remove excluded IDs
+            return array_values(array_diff($candidateIds, $excludeIds));
+        } catch (\Exception $e) {
+            Log::error("Error fetching next approver candidates for {$approvalId}: {$e->getMessage()}");
+            return [];
+        }
+    }
+
+    /**
      * Check if a member is eligible to respond to an approval based on approver_type.
      */
     private function isMemberEligible(WorkflowApproval $approval, int $memberId): bool

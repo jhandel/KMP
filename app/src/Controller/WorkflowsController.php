@@ -695,9 +695,10 @@ class WorkflowsController extends AppController
         $this->Authorization->skipAuthorization();
 
         $q = $this->request->getQuery('q') ?? '';
+        $currentUser = $this->request->getAttribute('identity');
 
         $approvalManager = $this->getApprovalManager();
-        $eligible = $approvalManager->getEligibleApprovers($approvalId);
+        $eligible = $approvalManager->getNextApproverCandidates($approvalId, $currentUser?->id);
 
         $html = '';
         if (!empty($eligible)) {
