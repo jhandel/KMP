@@ -584,12 +584,22 @@ class WorkflowsController extends AppController
             }
         }
 
+        // Admin grid: ensure Assigned To column is visible
+        $adminColumns = $result['columnsMetadata'];
+        if (isset($adminColumns['current_approver'])) {
+            $adminColumns['current_approver']['defaultVisible'] = true;
+        }
+        $visibleColumns = $result['visibleColumns'];
+        if (!in_array('current_approver', $visibleColumns)) {
+            $visibleColumns[] = 'current_approver';
+        }
+
         $rowActions = \App\KMP\GridColumns\ApprovalsGridColumns::getAdminRowActions();
         $this->set([
             'data' => $result['data'],
             'gridState' => $result['gridState'],
-            'columns' => $result['columnsMetadata'],
-            'visibleColumns' => $result['visibleColumns'],
+            'columns' => $adminColumns,
+            'visibleColumns' => $visibleColumns,
             'searchableColumns' => \App\KMP\GridColumns\ApprovalsGridColumns::getSearchableColumns(),
             'dropdownFilterColumns' => $result['dropdownFilterColumns'],
             'filterOptions' => $result['filterOptions'],
