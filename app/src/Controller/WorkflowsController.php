@@ -421,6 +421,25 @@ class WorkflowsController extends AppController
         ]);
 
         // Enrich paginated rows with virtual fields via ApprovalContextRendererRegistry
+        // Batch-load current approver names to avoid N+1 queries
+        $approverIds = [];
+        foreach ($result['data'] as $approval) {
+            $config = $approval->approver_config ?? [];
+            if (!empty($config['current_approver_id'])) {
+                $approverIds[] = (int)$config['current_approver_id'];
+            }
+        }
+        $approverNames = [];
+        if (!empty($approverIds)) {
+            $membersTable = $this->fetchTable('Members');
+            $approverNames = $membersTable->find()
+                ->select(['id', 'sca_name'])
+                ->where(['id IN' => array_unique($approverIds)])
+                ->all()
+                ->combine('id', 'sca_name')
+                ->toArray();
+        }
+
         foreach ($result['data'] as $approval) {
             // Workflow name (from contained relation)
             $approval->workflow_name = $approval->workflow_instance?->workflow_definition?->name ?? __('Unknown');
@@ -430,6 +449,15 @@ class WorkflowsController extends AppController
                 $approval->status_label = __('Pending ({0}/{1})', $approval->approved_count, $approval->required_count);
             } else {
                 $approval->status_label = ucfirst($approval->status);
+            }
+
+            // Current approver for serial pick-next approvals
+            $config = $approval->approver_config ?? [];
+            if (!empty($config['current_approver_id'])) {
+                $id = (int)$config['current_approver_id'];
+                $approval->current_approver = $approverNames[$id] ?? __('Member #{0}', $id);
+            } else {
+                $approval->current_approver = '—';
             }
 
             // Use ApprovalContextRendererRegistry for entity-aware context
