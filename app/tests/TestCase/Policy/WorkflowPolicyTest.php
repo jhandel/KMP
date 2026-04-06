@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace App\Test\TestCase\Policy;
 
 use App\KMP\KmpIdentityInterface;
+use App\Policy\ApprovalsControllerPolicy;
+use App\Policy\WorkflowApprovalsTablePolicy;
+use App\Policy\WorkflowDefinitionsControllerPolicy;
 use App\Policy\WorkflowDefinitionsTablePolicy;
+use App\Policy\WorkflowInstancesControllerPolicy;
+use App\Policy\WorkflowInstancesTablePolicy;
 use App\Policy\WorkflowsControllerPolicy;
 use Cake\ORM\Table;
 use Cake\TestSuite\TestCase;
@@ -17,6 +22,11 @@ class WorkflowPolicyTest extends TestCase
 {
     private WorkflowDefinitionsTablePolicy $tablePolicy;
     private WorkflowsControllerPolicy $controllerPolicy;
+    private WorkflowDefinitionsControllerPolicy $definitionsControllerPolicy;
+    private WorkflowInstancesControllerPolicy $instancesControllerPolicy;
+    private ApprovalsControllerPolicy $approvalsControllerPolicy;
+    private WorkflowApprovalsTablePolicy $approvalsTablePolicy;
+    private WorkflowInstancesTablePolicy $instancesTablePolicy;
     private Table $table;
 
     protected function setUp(): void
@@ -24,6 +34,11 @@ class WorkflowPolicyTest extends TestCase
         parent::setUp();
         $this->tablePolicy = new WorkflowDefinitionsTablePolicy();
         $this->controllerPolicy = new WorkflowsControllerPolicy();
+        $this->definitionsControllerPolicy = new WorkflowDefinitionsControllerPolicy();
+        $this->instancesControllerPolicy = new WorkflowInstancesControllerPolicy();
+        $this->approvalsControllerPolicy = new ApprovalsControllerPolicy();
+        $this->approvalsTablePolicy = new WorkflowApprovalsTablePolicy();
+        $this->instancesTablePolicy = new WorkflowInstancesTablePolicy();
         // Use a stub Table to avoid database dependency
         $this->table = $this->createMock(Table::class);
     }
@@ -50,19 +65,6 @@ class WorkflowPolicyTest extends TestCase
         $user->method('isSuperUser')->willReturn(false);
         $user->method('getIdentifier')->willReturn($id);
         $user->method('getPolicies')->willReturn([]);
-
-        return $user;
-    }
-
-    /**
-     * Create a mock user with specific policies loaded.
-     */
-    private function makeUserWithPolicies(array $policies, ?int $id = 100): KmpIdentityInterface
-    {
-        $user = $this->createMock(KmpIdentityInterface::class);
-        $user->method('isSuperUser')->willReturn(false);
-        $user->method('getIdentifier')->willReturn($id);
-        $user->method('getPolicies')->willReturn($policies);
 
         return $user;
     }
@@ -153,28 +155,27 @@ class WorkflowPolicyTest extends TestCase
     }
 
     // =====================================================
-    // WorkflowDefinitionsTablePolicy – approvals open to authenticated
+    // WorkflowApprovalsTablePolicy – approvals open to authenticated
     // =====================================================
 
     public function testTablePolicyAuthenticatedUserCanApprovals(): void
     {
-        $this->assertTrue($this->tablePolicy->canApprovals($this->makeRegularUser(), $this->table));
+        $this->assertTrue($this->approvalsTablePolicy->canApprovals($this->makeRegularUser(), $this->table));
     }
 
     public function testTablePolicyAuthenticatedUserCanRecordApproval(): void
     {
-        $this->assertTrue($this->tablePolicy->canRecordApproval($this->makeRegularUser(), $this->table));
+        $this->assertTrue($this->approvalsTablePolicy->canRecordApproval($this->makeRegularUser(), $this->table));
     }
 
     public function testTablePolicyNullIdentifierCannotApprovals(): void
     {
         $user = $this->makeRegularUser(null);
-        // getIdentifier returns null → canApprovals checks !== null
-        $this->assertFalse($this->tablePolicy->canApprovals($user, $this->table));
+        $this->assertFalse($this->approvalsTablePolicy->canApprovals($user, $this->table));
     }
 
     // =====================================================
-    // WorkflowsControllerPolicy – super user bypass
+    // WorkflowsControllerPolicy – super user bypass (legacy)
     // =====================================================
 
     public function testControllerPolicySuperUserBeforeReturnsTrue(): void
@@ -185,23 +186,20 @@ class WorkflowPolicyTest extends TestCase
 
     public function testControllerPolicySuperUserCanIndex(): void
     {
-        // before() returns true for super users, bypassing canIndex
         $result = $this->controllerPolicy->before($this->makeSuperUser(), [], 'index');
         $this->assertTrue($result);
     }
 
     // =====================================================
-    // WorkflowsControllerPolicy – regular user denied admin
+    // WorkflowsControllerPolicy – regular user denied admin (legacy)
     // =====================================================
 
     public function testControllerPolicyRegularUserDeniedIndex(): void
     {
         $user = $this->makeRegularUser();
-        // before() returns null for non-super users
         $beforeResult = $this->controllerPolicy->before($user, [], 'index');
         $this->assertNull($beforeResult);
 
-        // canIndex checks _hasPolicyForUrl which requires policy data
         $this->assertFalse($this->controllerPolicy->canIndex($user, []));
     }
 
@@ -218,16 +216,81 @@ class WorkflowPolicyTest extends TestCase
     }
 
     // =====================================================
-    // WorkflowsControllerPolicy – approvals open
+    // ApprovalsControllerPolicy – approvals open
     // =====================================================
 
     public function testControllerPolicyAuthenticatedUserCanApprovals(): void
     {
-        $this->assertTrue($this->controllerPolicy->canApprovals($this->makeRegularUser(), []));
+        $this->assertTrue($this->approvalsControllerPolicy->canApprovals($this->makeRegularUser(), []));
     }
 
     public function testControllerPolicyAuthenticatedUserCanRecordApproval(): void
     {
-        $this->assertTrue($this->controllerPolicy->canRecordApproval($this->makeRegularUser(), []));
+        $this->assertTrue($this->approvalsControllerPolicy->canRecordApproval($this->makeRegularUser(), []));
+    }
+
+    // =====================================================
+    // WorkflowDefinitionsControllerPolicy – super user bypass
+    // =====================================================
+
+    public function testDefinitionsControllerPolicySuperUserBefore(): void
+    {
+        $result = $this->definitionsControllerPolicy->before($this->makeSuperUser(), [], 'index');
+        $this->assertTrue($result);
+    }
+
+    public function testDefinitionsControllerPolicyRegularUserDenied(): void
+    {
+        $user = $this->makeRegularUser();
+        $this->assertFalse($this->definitionsControllerPolicy->canIndex($user, []));
+    }
+
+    // =====================================================
+    // WorkflowInstancesControllerPolicy
+    // =====================================================
+
+    public function testInstancesControllerPolicySuperUserBefore(): void
+    {
+        $result = $this->instancesControllerPolicy->before($this->makeSuperUser(), [], 'instances');
+        $this->assertTrue($result);
+    }
+
+    public function testInstancesControllerPolicyRegularUserDenied(): void
+    {
+        $user = $this->makeRegularUser();
+        $this->assertFalse($this->instancesControllerPolicy->canInstances($user, []));
+    }
+
+    // =====================================================
+    // WorkflowInstancesTablePolicy
+    // =====================================================
+
+    public function testInstancesTablePolicySuperUserCanInstances(): void
+    {
+        $this->assertTrue($this->instancesTablePolicy->canInstances($this->makeSuperUser(), $this->table));
+    }
+
+    public function testInstancesTablePolicyRegularUserCannotInstances(): void
+    {
+        $this->assertFalse($this->instancesTablePolicy->canInstances($this->makeRegularUser(), $this->table));
+    }
+
+    // =====================================================
+    // WorkflowApprovalsTablePolicy – admin actions
+    // =====================================================
+
+    public function testApprovalsTablePolicySuperUserCanAllApprovals(): void
+    {
+        $this->assertTrue($this->approvalsTablePolicy->canAllApprovals($this->makeSuperUser(), $this->table));
+    }
+
+    public function testApprovalsTablePolicyRegularUserCannotAllApprovals(): void
+    {
+        $this->assertFalse($this->approvalsTablePolicy->canAllApprovals($this->makeRegularUser(), $this->table));
+    }
+
+    public function testApprovalsTablePolicyRegularUserCannotReassign(): void
+    {
+        $this->assertFalse($this->approvalsTablePolicy->canReassignApproval($this->makeRegularUser(), $this->table));
     }
 }

@@ -77,29 +77,4 @@ class WorkflowDefinitionsTablePolicy extends BasePolicy
     {
         return $this->_isSuperUser($user);
     }
-
-    public function canApprovals(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
-    {
-        return $user->getIdentifier() !== null;
-    }
-
-    public function canRecordApproval(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
-    {
-        return $user->getIdentifier() !== null;
-    }
-
-    public function canAllApprovals(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
-    {
-        return $this->_isSuperUser($user);
-    }
-
-    public function canAllApprovalsGridData(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
-    {
-        return $this->_isSuperUser($user);
-    }
-
-    public function canReassignApproval(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
-    {
-        return $this->_isSuperUser($user);
-    }
 }

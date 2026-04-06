@@ -7,9 +7,11 @@ namespace App\Test\TestCase\Controller;
 use App\Test\TestCase\Support\HttpIntegrationTestCase;
 
 /**
- * WorkflowsController authorization integration tests.
+ * WorkflowDefinitions and WorkflowInstances authorization integration tests.
  *
- * @uses \App\Controller\WorkflowsController
+ * @uses \App\Controller\WorkflowDefinitionsController
+ * @uses \App\Controller\WorkflowInstancesController
+ * @uses \App\Controller\ApprovalsController
  */
 class WorkflowsControllerTest extends HttpIntegrationTestCase
 {

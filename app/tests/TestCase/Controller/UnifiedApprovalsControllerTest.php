@@ -12,7 +12,7 @@ use App\Test\TestCase\Support\HttpIntegrationTestCase;
  * Covers the /approvals scope and legacy redirect routes
  * defined in config/routes.php.
  *
- * @uses \App\Controller\WorkflowsController
+ * @uses \App\Controller\ApprovalsController
  */
 class UnifiedApprovalsControllerTest extends HttpIntegrationTestCase
 {

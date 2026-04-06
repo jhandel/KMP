@@ -88,7 +88,9 @@ use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use App\Services\WorkflowEngine\DefaultWorkflowVersionManager;
 use App\Services\WorkflowEngine\Providers\WarrantWorkflowActions;
 use App\Services\WorkflowEngine\WorkflowVersionManagerInterface;
-use App\Controller\WorkflowsController;
+use App\Controller\WorkflowDefinitionsController;
+use App\Controller\WorkflowInstancesController;
+use App\Controller\ApprovalsController;
 use Authentication\AuthenticationService;
 use Authentication\AuthenticationServiceInterface;
 use Authentication\AuthenticationServiceProviderInterface;
@@ -738,12 +740,28 @@ class Application extends BaseApplication implements
         // MembersWorkflowConditions — member condition evaluators
         $container->add(MembersWorkflowConditions::class);
 
-        // Register WorkflowsController for constructor injection
-        $container->add(WorkflowsController::class)
+        // Register WorkflowDefinitionsController for constructor injection
+        $container->add(WorkflowDefinitionsController::class)
             ->addArguments([
                 \Cake\Http\ServerRequest::class,
                 WorkflowEngineInterface::class,
                 WorkflowVersionManagerInterface::class,
+                \Cake\Controller\ComponentRegistry::class,
+            ]);
+
+        // Register WorkflowInstancesController for constructor injection
+        $container->add(WorkflowInstancesController::class)
+            ->addArguments([
+                \Cake\Http\ServerRequest::class,
+                WorkflowEngineInterface::class,
+                \Cake\Controller\ComponentRegistry::class,
+            ]);
+
+        // Register ApprovalsController for constructor injection
+        $container->add(ApprovalsController::class)
+            ->addArguments([
+                \Cake\Http\ServerRequest::class,
+                WorkflowEngineInterface::class,
                 WorkflowApprovalManagerInterface::class,
                 \Cake\Controller\ComponentRegistry::class,
             ]);

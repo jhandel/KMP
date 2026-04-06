@@ -209,66 +209,71 @@ return function (RouteBuilder $routes): void {
          * Unified Approvals Routes
          */
         $builder->scope('/approvals', function (RouteBuilder $builder) {
-            $builder->connect('/', ['controller' => 'Workflows', 'action' => 'approvals']);
-            $builder->connect('/grid-data', ['controller' => 'Workflows', 'action' => 'approvalsGridData']);
-            $builder->connect('/all', ['controller' => 'Workflows', 'action' => 'allApprovals']);
-            $builder->connect('/all/grid-data', ['controller' => 'Workflows', 'action' => 'allApprovalsGridData']);
-            $builder->connect('/respond/{token}', ['controller' => 'Workflows', 'action' => 'approvalByToken'])
+            $builder->connect('/', ['controller' => 'Approvals', 'action' => 'approvals']);
+            $builder->connect('/grid-data', ['controller' => 'Approvals', 'action' => 'approvalsGridData']);
+            $builder->connect('/all', ['controller' => 'Approvals', 'action' => 'allApprovals']);
+            $builder->connect('/all/grid-data', ['controller' => 'Approvals', 'action' => 'allApprovalsGridData']);
+            $builder->connect('/respond/{token}', ['controller' => 'Approvals', 'action' => 'approvalByToken'])
                 ->setPass(['token']);
-            $builder->connect('/record', ['controller' => 'Workflows', 'action' => 'recordApproval']);
-            $builder->connect('/eligible-approvers/{approvalId}', ['controller' => 'Workflows', 'action' => 'eligibleApprovers'])
+            $builder->connect('/record', ['controller' => 'Approvals', 'action' => 'recordApproval']);
+            $builder->connect('/eligible-approvers/{approvalId}', ['controller' => 'Approvals', 'action' => 'eligibleApprovers'])
                 ->setPatterns(['approvalId' => '\d+'])
                 ->setPass(['approvalId']);
-            $builder->connect('/detail/{approvalId}', ['controller' => 'Workflows', 'action' => 'approvalDetail'])
+            $builder->connect('/detail/{approvalId}', ['controller' => 'Approvals', 'action' => 'approvalDetail'])
                 ->setPatterns(['approvalId' => '\d+'])
                 ->setPass(['approvalId']);
-            $builder->connect('/reassign', ['controller' => 'Workflows', 'action' => 'reassignApproval']);
+            $builder->connect('/reassign', ['controller' => 'Approvals', 'action' => 'reassignApproval']);
         });
 
         /**
          * Workflow Engine Routes
          */
         $builder->scope('/workflows', function (RouteBuilder $builder) {
-            $builder->connect('/', ['controller' => 'Workflows', 'action' => 'index']);
-            $builder->connect('/add', ['controller' => 'Workflows', 'action' => 'add']);
-            $builder->connect('/designer/{id}', ['controller' => 'Workflows', 'action' => 'designer'])
+            // Definition management routes → WorkflowDefinitionsController
+            $builder->connect('/', ['controller' => 'WorkflowDefinitions', 'action' => 'index']);
+            $builder->connect('/add', ['controller' => 'WorkflowDefinitions', 'action' => 'add']);
+            $builder->connect('/designer/{id}', ['controller' => 'WorkflowDefinitions', 'action' => 'designer'])
                 ->setPatterns(['id' => '\d+'])
                 ->setPass(['id']);
-            $builder->connect('/designer', ['controller' => 'Workflows', 'action' => 'designer']);
-            $builder->connect('/save', ['controller' => 'Workflows', 'action' => 'save']);
-            $builder->connect('/publish', ['controller' => 'Workflows', 'action' => 'publish']);
-            $builder->connect('/registry', ['controller' => 'Workflows', 'action' => 'registry']);
-            $builder->connect('/load-version/{versionId}', ['controller' => 'Workflows', 'action' => 'loadVersion'])
+            $builder->connect('/designer', ['controller' => 'WorkflowDefinitions', 'action' => 'designer']);
+            $builder->connect('/save', ['controller' => 'WorkflowDefinitions', 'action' => 'save']);
+            $builder->connect('/publish', ['controller' => 'WorkflowDefinitions', 'action' => 'publish']);
+            $builder->connect('/registry', ['controller' => 'WorkflowDefinitions', 'action' => 'registry']);
+            $builder->connect('/load-version/{versionId}', ['controller' => 'WorkflowDefinitions', 'action' => 'loadVersion'])
                 ->setPatterns(['versionId' => '\d+'])
                 ->setPass(['versionId']);
-            $builder->connect('/instances', ['controller' => 'Workflows', 'action' => 'instances']);
-            $builder->connect('/instances/{definitionId}', ['controller' => 'Workflows', 'action' => 'instances'])
+            $builder->connect('/versions/{definitionId}', ['controller' => 'WorkflowDefinitions', 'action' => 'versions'])
                 ->setPatterns(['definitionId' => '\d+'])
                 ->setPass(['definitionId']);
-            $builder->connect('/instance/{id}', ['controller' => 'Workflows', 'action' => 'viewInstance'])
+            $builder->connect('/compare-versions', ['controller' => 'WorkflowDefinitions', 'action' => 'compareVersions']);
+            $builder->connect('/toggle-active/{id}', ['controller' => 'WorkflowDefinitions', 'action' => 'toggleActive'])
                 ->setPatterns(['id' => '\d+'])
                 ->setPass(['id']);
-            $builder->connect('/approvals', ['controller' => 'Workflows', 'action' => 'approvals']);
-            $builder->connect('/approvals-grid-data', ['controller' => 'Workflows', 'action' => 'approvalsGridData']);
-            $builder->connect('/record-approval', ['controller' => 'Workflows', 'action' => 'recordApproval']);
-            $builder->connect('/eligible-approvers/{approvalId}', ['controller' => 'Workflows', 'action' => 'eligibleApprovers'])
-                ->setPatterns(['approvalId' => '\d+'])
-                ->setPass(['approvalId']);
-            $builder->connect('/approval-detail/{approvalId}', ['controller' => 'Workflows', 'action' => 'approvalDetail'])
-                ->setPatterns(['approvalId' => '\d+'])
-                ->setPass(['approvalId']);
-            $builder->connect('/versions/{definitionId}', ['controller' => 'Workflows', 'action' => 'versions'])
+            $builder->connect('/create-draft', ['controller' => 'WorkflowDefinitions', 'action' => 'createDraft']);
+            $builder->connect('/migrate-instances', ['controller' => 'WorkflowDefinitions', 'action' => 'migrateInstances']);
+            $builder->connect('/policy-classes', ['controller' => 'WorkflowDefinitions', 'action' => 'policyClasses']);
+            $builder->connect('/policy-actions', ['controller' => 'WorkflowDefinitions', 'action' => 'policyActions']);
+            $builder->connect('/app-settings', ['controller' => 'WorkflowDefinitions', 'action' => 'appSettings']);
+
+            // Instance monitoring routes → WorkflowInstancesController
+            $builder->connect('/instances', ['controller' => 'WorkflowInstances', 'action' => 'instances']);
+            $builder->connect('/instances/{definitionId}', ['controller' => 'WorkflowInstances', 'action' => 'instances'])
                 ->setPatterns(['definitionId' => '\d+'])
                 ->setPass(['definitionId']);
-            $builder->connect('/compare-versions', ['controller' => 'Workflows', 'action' => 'compareVersions']);
-            $builder->connect('/toggle-active/{id}', ['controller' => 'Workflows', 'action' => 'toggleActive'])
+            $builder->connect('/instance/{id}', ['controller' => 'WorkflowInstances', 'action' => 'viewInstance'])
                 ->setPatterns(['id' => '\d+'])
                 ->setPass(['id']);
-            $builder->connect('/create-draft', ['controller' => 'Workflows', 'action' => 'createDraft']);
-            $builder->connect('/migrate-instances', ['controller' => 'Workflows', 'action' => 'migrateInstances']);
-            $builder->connect('/policy-classes', ['controller' => 'Workflows', 'action' => 'policyClasses']);
-            $builder->connect('/policy-actions', ['controller' => 'Workflows', 'action' => 'policyActions']);
-            $builder->connect('/app-settings', ['controller' => 'Workflows', 'action' => 'appSettings']);
+
+            // Legacy approval routes under /workflows → ApprovalsController (backward compat)
+            $builder->connect('/approvals', ['controller' => 'Approvals', 'action' => 'approvals']);
+            $builder->connect('/approvals-grid-data', ['controller' => 'Approvals', 'action' => 'approvalsGridData']);
+            $builder->connect('/record-approval', ['controller' => 'Approvals', 'action' => 'recordApproval']);
+            $builder->connect('/eligible-approvers/{approvalId}', ['controller' => 'Approvals', 'action' => 'eligibleApprovers'])
+                ->setPatterns(['approvalId' => '\d+'])
+                ->setPass(['approvalId']);
+            $builder->connect('/approval-detail/{approvalId}', ['controller' => 'Approvals', 'action' => 'approvalDetail'])
+                ->setPatterns(['approvalId' => '\d+'])
+                ->setPass(['approvalId']);
         });
 
         /**

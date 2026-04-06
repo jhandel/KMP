@@ -98,7 +98,7 @@ $toggleUrl = $this->Url->build(['action' => 'toggleActive', '__id__']);
                             ) ?>
                             <?= $this->Html->link(
                                 '<i class="bi bi-play-circle"></i> ' . __('Instances'),
-                                ['action' => 'instances', $workflow->id],
+                                ['controller' => 'WorkflowInstances', 'action' => 'instances', $workflow->id],
                                 ['class' => 'btn btn-outline-info', 'escape' => false, 'title' => __('Instances')]
                             ) ?>
                             <?= $this->Html->link(

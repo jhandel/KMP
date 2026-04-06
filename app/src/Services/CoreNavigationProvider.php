@@ -211,7 +211,7 @@ class CoreNavigationProvider
                 'label' => 'All Approvals',
                 'order' => 5,
                 'url' => [
-                    'controller' => 'Workflows',
+                    'controller' => 'Approvals',
                     'action' => 'allApprovals',
                 ],
                 'icon' => 'bi-clipboard-check',
@@ -394,13 +394,13 @@ class CoreNavigationProvider
                 'label' => 'Definitions',
                 'order' => 0,
                 'url' => [
-                    'controller' => 'Workflows',
+                    'controller' => 'WorkflowDefinitions',
                     'action' => 'index',
                 ],
                 'icon' => 'bi-list-task',
                 'activePaths' => [
-                    'Workflows/designer/*',
-                    'Workflows/versions/*',
+                    'WorkflowDefinitions/designer/*',
+                    'WorkflowDefinitions/versions/*',
                 ],
             ],
             [
@@ -409,7 +409,7 @@ class CoreNavigationProvider
                 'label' => 'My Approvals',
                 'order' => 10,
                 'url' => [
-                    'controller' => 'Workflows',
+                    'controller' => 'Approvals',
                     'action' => 'approvals',
                 ],
                 'icon' => 'bi-check2-square',
@@ -426,12 +426,12 @@ class CoreNavigationProvider
                 'label' => 'Instances',
                 'order' => 20,
                 'url' => [
-                    'controller' => 'Workflows',
+                    'controller' => 'WorkflowInstances',
                     'action' => 'instances',
                 ],
                 'icon' => 'bi-play-circle',
                 'activePaths' => [
-                    'Workflows/viewInstance/*',
+                    'WorkflowInstances/viewInstance/*',
                 ],
             ],
         ];

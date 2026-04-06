@@ -10,13 +10,11 @@ use Authorization\Policy\BeforePolicyInterface;
 use Authorization\Policy\ResultInterface;
 
 /**
- * Controller-level policy for WorkflowsController (legacy backward compatibility).
+ * Controller-level policy for WorkflowDefinitionsController.
  *
- * Kept for backward compatibility. New code should use
- * WorkflowDefinitionsControllerPolicy, WorkflowInstancesControllerPolicy,
- * or ApprovalsControllerPolicy.
+ * All actions are admin-only; requires super user or explicit policy grant.
  */
-class WorkflowsControllerPolicy implements BeforePolicyInterface
+class WorkflowDefinitionsControllerPolicy implements BeforePolicyInterface
 {
     public function before(
         ?IdentityInterface $user,
@@ -40,27 +38,12 @@ class WorkflowsControllerPolicy implements BeforePolicyInterface
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }
 
-    public function canInstances(KmpIdentityInterface $user, mixed $resource): bool
-    {
-        return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
-    }
-
-    public function canLoadVersion(KmpIdentityInterface $user, mixed $resource): bool
-    {
-        return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
-    }
-
     public function canDesigner(KmpIdentityInterface $user, mixed $resource): bool
     {
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }
 
-    public function canVersions(KmpIdentityInterface $user, mixed $resource): bool
-    {
-        return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
-    }
-
-    public function canViewInstance(KmpIdentityInterface $user, mixed $resource): bool
+    public function canLoadVersion(KmpIdentityInterface $user, mixed $resource): bool
     {
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }
@@ -80,17 +63,22 @@ class WorkflowsControllerPolicy implements BeforePolicyInterface
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }
 
+    public function canVersions(KmpIdentityInterface $user, mixed $resource): bool
+    {
+        return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
+    }
+
+    public function canCompareVersions(KmpIdentityInterface $user, mixed $resource): bool
+    {
+        return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
+    }
+
     public function canToggleActive(KmpIdentityInterface $user, mixed $resource): bool
     {
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }
 
     public function canCreateDraft(KmpIdentityInterface $user, mixed $resource): bool
-    {
-        return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
-    }
-
-    public function canCompareVersions(KmpIdentityInterface $user, mixed $resource): bool
     {
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }

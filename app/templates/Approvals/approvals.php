@@ -23,7 +23,7 @@ $this->KMP->endBlock(); ?>
      data-approval-detail-url-value="/approvals/detail/">
 <?= $this->element('dv_grid', [
     'frameId' => 'approvals-grid',
-    'dataUrl' => $this->Url->build(['controller' => 'Workflows', 'action' => 'approvalsGridData']),
+    'dataUrl' => $this->Url->build(['controller' => 'Approvals', 'action' => 'approvalsGridData']),
 ]) ?>
 </div>
 
@@ -38,7 +38,7 @@ $this->KMP->endBlock(); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <?= $this->Form->create(null, [
-                'url' => ['controller' => 'Workflows', 'action' => 'recordApproval'],
+                'url' => ['controller' => 'Approvals', 'action' => 'recordApproval'],
                 'id' => 'approvalResponseForm',
                 'data-controller' => 'approval-response',
                 'data-approval-response-serial-pick-next-value' => 'false',
