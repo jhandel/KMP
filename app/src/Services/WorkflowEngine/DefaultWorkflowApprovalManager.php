@@ -182,6 +182,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                     // No next approver specified — clear current to allow any eligible
                     unset($approverConfig['current_approver_id']);
                 }
+                $approval->current_approver_id = $nextApproverId ?: null;
 
                 // Append to approval chain for audit trail
                 $chain = $approverConfig['approval_chain'] ?? [];
@@ -282,6 +283,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 'execution_log_id' => $executionLogId,
                 'approver_type' => $approverType,
                 'approver_config' => $approverConfig,
+                'current_approver_id' => $approverConfig['current_approver_id'] ?? null,
                 'required_count' => $requiredCount,
                 'approved_count' => 0,
                 'rejected_count' => 0,

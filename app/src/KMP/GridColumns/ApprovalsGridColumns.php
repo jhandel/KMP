@@ -61,13 +61,13 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'key' => 'current_approver',
                 'label' => 'Assigned To',
                 'type' => 'string',
-                'sortable' => false,
-                'filterable' => false,
+                'sortable' => true,
+                'filterable' => true,
                 'searchable' => true,
                 'defaultVisible' => true,
                 'width' => '150px',
                 'alignment' => 'left',
-                'skipAutoFilter' => true,
+                'queryField' => 'CurrentApprover.sca_name',
             ],
 
             'status_label' => [

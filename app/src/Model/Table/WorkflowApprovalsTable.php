@@ -46,6 +46,11 @@ class WorkflowApprovalsTable extends BaseTable
             'foreignKey' => 'workflow_approval_id',
             'dependent' => true,
         ]);
+        $this->belongsTo('CurrentApprover', [
+            'className' => 'Members',
+            'foreignKey' => 'current_approver_id',
+            'joinType' => 'LEFT',
+        ]);
 
         $this->addBehavior('Timestamp');
 

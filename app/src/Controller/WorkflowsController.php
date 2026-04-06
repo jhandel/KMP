@@ -365,9 +365,17 @@ class WorkflowsController extends AppController
         $approvalManager = $this->getApprovalManager();
         $approvalsTable = $this->fetchTable('WorkflowApprovals');
 
-        // Base query with workflow context for the workflow_name column
+        // Base query with workflow context and current approver name
+        // leftJoinWith enables sort/filter on CurrentApprover.sca_name
+        // contain hydrates the association for display
         $baseQuery = $approvalsTable->find()
-            ->contain(['WorkflowInstances' => ['WorkflowDefinitions']]);
+            ->contain([
+                'WorkflowInstances' => ['WorkflowDefinitions'],
+                'CurrentApprover' => function ($q) {
+                    return $q->select(['id', 'sca_name']);
+                },
+            ])
+            ->leftJoinWith('CurrentApprover');
 
         // System views
         $systemViews = \App\KMP\GridColumns\ApprovalsGridColumns::getSystemViews();
@@ -421,25 +429,6 @@ class WorkflowsController extends AppController
         ]);
 
         // Enrich paginated rows with virtual fields via ApprovalContextRendererRegistry
-        // Batch-load current approver names to avoid N+1 queries
-        $approverIds = [];
-        foreach ($result['data'] as $approval) {
-            $config = $approval->approver_config ?? [];
-            if (!empty($config['current_approver_id'])) {
-                $approverIds[] = (int)$config['current_approver_id'];
-            }
-        }
-        $approverNames = [];
-        if (!empty($approverIds)) {
-            $membersTable = $this->fetchTable('Members');
-            $approverNames = $membersTable->find()
-                ->select(['id', 'sca_name'])
-                ->where(['id IN' => array_unique($approverIds)])
-                ->all()
-                ->combine('id', 'sca_name')
-                ->toArray();
-        }
-
         foreach ($result['data'] as $approval) {
             // Workflow name (from contained relation)
             $approval->workflow_name = $approval->workflow_instance?->workflow_definition?->name ?? __('Unknown');
@@ -451,14 +440,8 @@ class WorkflowsController extends AppController
                 $approval->status_label = ucfirst($approval->status);
             }
 
-            // Current approver for serial pick-next approvals
-            $config = $approval->approver_config ?? [];
-            if (!empty($config['current_approver_id'])) {
-                $id = (int)$config['current_approver_id'];
-                $approval->current_approver = $approverNames[$id] ?? __('Member #{0}', $id);
-            } else {
-                $approval->current_approver = '—';
-            }
+            // Current approver name from LEFT JOIN
+            $approval->current_approver = $approval->current_approver?->sca_name ?? '—';
 
             // Use ApprovalContextRendererRegistry for entity-aware context
             $instance = $approval->workflow_instance;
