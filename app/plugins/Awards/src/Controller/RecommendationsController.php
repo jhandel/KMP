@@ -703,8 +703,8 @@ class RecommendationsController extends AppController
             $result[] = $rec;
             if (isset($childrenByHead[$rec->id])) {
                 foreach ($childrenByHead[$rec->id] as $child) {
-                    // Mark as linked child with "↳" prefix on state for clarity
-                    $child->state = '↳ Linked';
+                    // Prefix member name to visually indicate linked child in export
+                    $child->member_sca_name = '↳ ' . ($child->member_sca_name ?? '');
                     $child->gatherings = '';
                     $result[] = $child;
                 }
