@@ -2727,7 +2727,7 @@ class RecommendationsController extends AppController
         $log = $logsTable->find()
             ->where([
                 'recommendation_id' => $child->id,
-                'to_state' => 'Linked',
+                'to_state IN' => ['Linked', 'Linked - Closed'],
             ])
             ->orderBy(['created' => 'DESC'])
             ->first();
@@ -2735,7 +2735,6 @@ class RecommendationsController extends AppController
         if ($log && $log->from_state && $log->from_state !== 'New') {
             $child->state = $log->from_state;
         } else {
-            // Fallback to "Submitted" if no log found
             $child->state = 'Submitted';
         }
     }

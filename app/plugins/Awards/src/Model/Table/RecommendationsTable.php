@@ -268,6 +268,11 @@ class RecommendationsTable extends BaseTable
         if ($entity->isDirty('deleted') && $entity->deleted !== null) {
             $this->ungroupChildrenOnDelete($entity);
         }
+
+        // Sync linked children's state when a group head's status changes
+        if ($entity->isDirty('status') && $entity->recommendation_group_id === null) {
+            $this->syncLinkedChildrenState($entity);
+        }
     }
     /**
      * Create audit trail record for state transitions.
@@ -312,7 +317,7 @@ class RecommendationsTable extends BaseTable
             $log = $logsTable->find()
                 ->where([
                     'recommendation_id' => $child->id,
-                    'to_state' => 'Linked',
+                    'to_state IN' => ['Linked', 'Linked - Closed'],
                 ])
                 ->orderBy(['created' => 'DESC'])
                 ->first();
@@ -323,6 +328,40 @@ class RecommendationsTable extends BaseTable
                 $child->state = 'Submitted';
             }
             $this->save($child);
+        }
+    }
+
+    /**
+     * Sync linked children's state when a group head's status changes.
+     *
+     * Moves children between "Linked" and "Linked - Closed" to match the
+     * head's status category so reports accurately reflect closed groups.
+     *
+     * @param \Cake\Datasource\EntityInterface $entity The group head entity
+     * @return void
+     */
+    protected function syncLinkedChildrenState(EntityInterface $entity): void
+    {
+        $children = $this->find()
+            ->where([
+                'recommendation_group_id' => $entity->id,
+                'Recommendations.state IN' => ['Linked', 'Linked - Closed'],
+            ])
+            ->all();
+
+        if ($children->isEmpty()) {
+            return;
+        }
+
+        $closedStatuses = Recommendation::getStatuses()['Closed'] ?? [];
+        $headIsClosed = in_array($entity->state, $closedStatuses, true);
+        $targetState = $headIsClosed ? 'Linked - Closed' : 'Linked';
+
+        foreach ($children as $child) {
+            if ($child->state !== $targetState) {
+                $child->state = $targetState;
+                $this->save($child);
+            }
         }
     }
 
