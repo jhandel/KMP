@@ -91,7 +91,7 @@ class RecommendationsGridColumns extends BaseGridColumns
 
             'group_children_count' => [
                 'key' => 'group_children_count',
-                'label' => 'Grouped',
+                'label' => '',
                 'type' => 'number',
                 'sortable' => false,
                 'filterable' => false,
