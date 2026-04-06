@@ -7,6 +7,7 @@ namespace Activities\Services;
 use Activities\Model\Entity\Authorization;
 use App\KMP\StaticHelpers;
 use Activities\Services\AuthorizationManagerInterface;
+use App\Model\Entity\WorkflowApproval;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
@@ -529,6 +530,10 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
 
             return new ServiceResult(false, "Failed to send authorization status to requester");
         }
+
+        // Cancel any pending workflow engine approvals for this authorization
+        $this->cancelWorkflowApprovalsForEntity($authorizationId);
+
         $table->getConnection()->commit();
 
         return new ServiceResult(true);
@@ -1120,6 +1125,9 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
             }
         }
 
+        // Cancel any pending workflow engine approvals for this authorization
+        $this->cancelWorkflowApprovalsForEntity($authorizationId);
+
         // Commit transaction
         $table->getConnection()->commit();
 
@@ -1176,6 +1184,40 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
         } catch (\Exception $e) {
             // Log but don't fail on notification errors
             return false;
+        }
+    }
+
+    /**
+     * Cancel all pending workflow engine approvals for an authorization entity.
+     *
+     * Finds workflow instances linked to the given authorization ID
+     * (both 'Activities' and 'Activities.Authorizations' entity types)
+     * and sets any pending approvals to cancelled.
+     */
+    private function cancelWorkflowApprovalsForEntity(int $authorizationId): void
+    {
+        $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+        $wfApprovalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+        $instances = $instancesTable->find()
+            ->where([
+                'entity_id' => $authorizationId,
+                'entity_type IN' => ['Activities', 'Activities.Authorizations'],
+            ])
+            ->all();
+
+        foreach ($instances as $instance) {
+            $pendingApprovals = $wfApprovalsTable->find()
+                ->where([
+                    'workflow_instance_id' => $instance->id,
+                    'status' => WorkflowApproval::STATUS_PENDING,
+                ])
+                ->all();
+
+            foreach ($pendingApprovals as $wfApproval) {
+                $wfApproval->status = WorkflowApproval::STATUS_CANCELLED;
+                $wfApprovalsTable->save($wfApproval);
+            }
         }
     }
 

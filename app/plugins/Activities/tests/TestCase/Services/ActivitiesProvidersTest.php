@@ -50,8 +50,6 @@ class ActivitiesProvidersTest extends BaseTestCase
     {
         $items = ActivitiesNavigationProvider::getNavigationItems($this->user);
         $labels = array_column($items, 'label');
-        $this->assertContains('My Auth Queue', $labels);
-        $this->assertContains('Pending Auths', $labels);
         $this->assertContains('Auth Queues', $labels);
         $this->assertContains('Activity Groups', $labels);
         $this->assertContains('Activities', $labels);
@@ -67,20 +65,18 @@ class ActivitiesProvidersTest extends BaseTestCase
         }
     }
 
-    public function testNavigationPendingAuthsHasBadge(): void
+    public function testNavigationAuthQueuesIsLink(): void
     {
         $items = ActivitiesNavigationProvider::getNavigationItems($this->user);
-        $pending = null;
+        $authQueues = null;
         foreach ($items as $item) {
-            if ($item['label'] === 'Pending Auths') {
-                $pending = $item;
+            if ($item['label'] === 'Auth Queues') {
+                $authQueues = $item;
                 break;
             }
         }
-        $this->assertNotNull($pending);
-        $this->assertArrayHasKey('badgeClass', $pending);
-        $this->assertArrayHasKey('badgeValue', $pending);
-        $this->assertSame('bg-danger', $pending['badgeClass']);
+        $this->assertNotNull($authQueues);
+        $this->assertSame('link', $authQueues['type']);
     }
 
     public function testNavigationAcceptsOptionalParams(): void
