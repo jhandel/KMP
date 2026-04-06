@@ -211,6 +211,8 @@ return function (RouteBuilder $routes): void {
         $builder->scope('/approvals', function (RouteBuilder $builder) {
             $builder->connect('/', ['controller' => 'Workflows', 'action' => 'approvals']);
             $builder->connect('/grid-data', ['controller' => 'Workflows', 'action' => 'approvalsGridData']);
+            $builder->connect('/all', ['controller' => 'Workflows', 'action' => 'allApprovals']);
+            $builder->connect('/all/grid-data', ['controller' => 'Workflows', 'action' => 'allApprovalsGridData']);
             $builder->connect('/respond/{token}', ['controller' => 'Workflows', 'action' => 'approvalByToken'])
                 ->setPass(['token']);
             $builder->connect('/record', ['controller' => 'Workflows', 'action' => 'recordApproval']);

@@ -87,4 +87,14 @@ class WorkflowDefinitionsTablePolicy extends BasePolicy
     {
         return $user->getIdentifier() !== null;
     }
+
+    public function canAllApprovals(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $this->_isSuperUser($user);
+    }
+
+    public function canAllApprovalsGridData(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $this->_isSuperUser($user);
+    }
 }

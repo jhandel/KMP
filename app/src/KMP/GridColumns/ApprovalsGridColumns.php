@@ -211,4 +211,55 @@ class ApprovalsGridColumns extends BaseGridColumns
             ],
         ];
     }
+
+    /**
+     * System views for the admin All Approvals grid.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function getAdminSystemViews(): array
+    {
+        return [
+            'sys-admin-pending' => [
+                'id' => 'sys-admin-pending',
+                'name' => __('Pending'),
+                'description' => __('All pending approvals across the system'),
+                'canManage' => false,
+                'config' => [
+                    'filters' => [
+                        ['field' => 'status_label', 'operator' => 'eq', 'value' => WorkflowApproval::STATUS_PENDING],
+                    ],
+                ],
+            ],
+            'sys-admin-approved' => [
+                'id' => 'sys-admin-approved',
+                'name' => __('Approved'),
+                'description' => __('All approved requests'),
+                'canManage' => false,
+                'config' => [
+                    'filters' => [
+                        ['field' => 'status_label', 'operator' => 'eq', 'value' => WorkflowApproval::STATUS_APPROVED],
+                    ],
+                ],
+            ],
+            'sys-admin-rejected' => [
+                'id' => 'sys-admin-rejected',
+                'name' => __('Rejected'),
+                'description' => __('All rejected requests'),
+                'canManage' => false,
+                'config' => [
+                    'filters' => [
+                        ['field' => 'status_label', 'operator' => 'eq', 'value' => WorkflowApproval::STATUS_REJECTED],
+                    ],
+                ],
+            ],
+            'sys-admin-all' => [
+                'id' => 'sys-admin-all',
+                'name' => __('All'),
+                'description' => __('All approvals regardless of status'),
+                'canManage' => false,
+                'config' => [],
+            ],
+        ];
+    }
 }

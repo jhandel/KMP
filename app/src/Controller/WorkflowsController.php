@@ -68,7 +68,9 @@ class WorkflowsController extends AppController
             'createDraft',
             'migrateInstances',
             'approvals',
-            'recordApproval'
+            'recordApproval',
+            'allApprovals',
+            'allApprovalsGridData'
         );
     }
 
@@ -486,6 +488,128 @@ class WorkflowsController extends AppController
             $this->viewBuilder()->setTemplate('../element/dv_grid_table');
         } else {
             $this->set('frameId', 'approvals-grid');
+            $this->viewBuilder()->disableAutoLayout();
+            $this->viewBuilder()->setTemplate('../element/dv_grid_content');
+        }
+    }
+
+    /**
+     * Admin view: all approvals across the system (no user scoping).
+     */
+    public function allApprovals()
+    {
+        // Page shell only — grid lazy-loads via allApprovalsGridData
+    }
+
+    /**
+     * Grid data endpoint for the admin All Approvals DataverseGrid.
+     *
+     * System views show all approvals by status without user scoping.
+     */
+    public function allApprovalsGridData()
+    {
+        $approvalsTable = $this->fetchTable('WorkflowApprovals');
+
+        $baseQuery = $approvalsTable->find()
+            ->contain([
+                'WorkflowInstances' => ['WorkflowDefinitions'],
+                'CurrentApprover' => function ($q) {
+                    return $q->select(['id', 'sca_name']);
+                },
+            ])
+            ->leftJoinWith('CurrentApprover');
+
+        $systemViews = \App\KMP\GridColumns\ApprovalsGridColumns::getAdminSystemViews();
+
+        $queryCallback = function ($query, $systemView) {
+            if ($systemView === null) {
+                $query->where(['WorkflowApprovals.id' => -1]);
+                return $query;
+            }
+
+            if ($systemView['id'] === 'sys-admin-pending') {
+                $query->where(['WorkflowApprovals.status' => \App\Model\Entity\WorkflowApproval::STATUS_PENDING]);
+            } elseif ($systemView['id'] === 'sys-admin-approved') {
+                $query->where(['WorkflowApprovals.status' => \App\Model\Entity\WorkflowApproval::STATUS_APPROVED]);
+            } elseif ($systemView['id'] === 'sys-admin-rejected') {
+                $query->where(['WorkflowApprovals.status' => \App\Model\Entity\WorkflowApproval::STATUS_REJECTED]);
+            }
+            // 'sys-admin-all' — no status filter, show everything
+
+            return $query;
+        };
+
+        $result = $this->processDataverseGrid([
+            'gridKey' => 'Workflows.allApprovals.main',
+            'gridColumnsClass' => \App\KMP\GridColumns\ApprovalsGridColumns::class,
+            'baseQuery' => $baseQuery,
+            'tableName' => 'WorkflowApprovals',
+            'defaultSort' => ['WorkflowApprovals.modified' => 'desc'],
+            'defaultPageSize' => 25,
+            'systemViews' => $systemViews,
+            'defaultSystemView' => 'sys-admin-pending',
+            'queryCallback' => $queryCallback,
+            'showAllTab' => false,
+            'canAddViews' => false,
+            'canFilter' => true,
+            'canExportCsv' => false,
+            'lockedFilters' => ['status_label'],
+            'showFilterPills' => true,
+            'showSearchBox' => true,
+        ]);
+
+        // Enrich rows with virtual fields (same as user-scoped view)
+        foreach ($result['data'] as $approval) {
+            $approval->workflow_name = $approval->workflow_instance?->workflow_definition?->name ?? __('Unknown');
+
+            if ($approval->status === \App\Model\Entity\WorkflowApproval::STATUS_PENDING) {
+                $approval->status_label = __('Pending ({0}/{1})', $approval->approved_count, $approval->required_count);
+            } else {
+                $approval->status_label = ucfirst($approval->status);
+            }
+
+            $approval->current_approver = $approval->current_approver?->sca_name ?? '—';
+
+            $instance = $approval->workflow_instance;
+            if ($instance) {
+                $ctx = \App\Services\ApprovalContext\ApprovalContextRendererRegistry::render($instance);
+                $approval->request = $ctx->getTitle();
+                $approval->requester = $ctx->getRequester() ?? '—';
+                $approval->entity_link = $ctx->getEntityUrl();
+            } else {
+                $approval->request = '—';
+                $approval->requester = '—';
+                $approval->entity_link = null;
+            }
+        }
+
+        $rowActions = \App\KMP\GridColumns\ApprovalsGridColumns::getRowActions();
+        $this->set([
+            'data' => $result['data'],
+            'gridState' => $result['gridState'],
+            'columns' => $result['columnsMetadata'],
+            'visibleColumns' => $result['visibleColumns'],
+            'searchableColumns' => \App\KMP\GridColumns\ApprovalsGridColumns::getSearchableColumns(),
+            'dropdownFilterColumns' => $result['dropdownFilterColumns'],
+            'filterOptions' => $result['filterOptions'],
+            'currentFilters' => $result['currentFilters'],
+            'currentSearch' => $result['currentSearch'],
+            'currentView' => $result['currentView'],
+            'availableViews' => $result['availableViews'],
+            'gridKey' => $result['gridKey'],
+            'currentSort' => $result['currentSort'],
+            'currentMember' => $result['currentMember'],
+            'rowActions' => $rowActions,
+        ]);
+
+        $turboFrame = $this->request->getHeaderLine('Turbo-Frame');
+
+        if ($turboFrame === 'all-approvals-grid-table') {
+            $this->set('tableFrameId', 'all-approvals-grid-table');
+            $this->viewBuilder()->disableAutoLayout();
+            $this->viewBuilder()->setTemplate('../element/dv_grid_table');
+        } else {
+            $this->set('frameId', 'all-approvals-grid');
             $this->viewBuilder()->disableAutoLayout();
             $this->viewBuilder()->setTemplate('../element/dv_grid_content');
         }

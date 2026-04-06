@@ -412,6 +412,17 @@ class CoreNavigationProvider
             [
                 'type' => 'link',
                 'mergePath' => ['Workflows'],
+                'label' => 'All Approvals',
+                'order' => 10,
+                'url' => [
+                    'controller' => 'Workflows',
+                    'action' => 'allApprovals',
+                ],
+                'icon' => 'bi-clipboard-check',
+            ],
+            [
+                'type' => 'link',
+                'mergePath' => ['Workflows'],
                 'label' => 'Instances',
                 'order' => 20,
                 'url' => [
