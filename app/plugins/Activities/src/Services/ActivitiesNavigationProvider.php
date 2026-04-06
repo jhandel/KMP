@@ -104,39 +104,7 @@ class ActivitiesNavigationProvider
         }
 
         return [
-            [
-                "type" => "link",
-                "mergePath" => ["Members", $user->sca_name],
-                "label" => "My Auth Queue",
-                "order" => 20,
-                "url" => [
-                    "controller" => "AuthorizationApprovals",
-                    "plugin" => "Activities",
-                    "model" => "Activities.AuthorizationApprovals",
-                    "action" => "myQueue",
-                ],
-                "icon" => "bi-person-fill-check",
-            ],
-            [
-                "type" => "link",
-                "mergePath" => ["Action Items"],
-                "label" => "Pending Auths",
-                "order" => 20,
-                "url" => [
-                    "controller" => "AuthorizationApprovals",
-                    "plugin" => "Activities",
-                    "model" => "Activities.AuthorizationApprovals",
-                    "action" => "myQueue",
-                    "?" => ['src' => 'action_items']
-                ],
-                "icon" => "bi-person-fill-check",
-                "badgeClass" => "bg-danger",
-                "badgeValue" => [
-                    "class" => "Activities\Model\Table\AuthorizationApprovalsTable",
-                    "method" => "memberAuthQueueCount",
-                    "argument" => $user->id
-                ],
-            ],
+            // "My Auth Queue" and "Pending Auths" removed — unified into top-level "My Approvals"
             [
                 "type" => "link",
                 "mergePath" => ["Members", "Members"],
