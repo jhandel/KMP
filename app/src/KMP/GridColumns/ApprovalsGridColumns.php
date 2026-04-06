@@ -64,7 +64,7 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'sortable' => true,
                 'filterable' => true,
                 'searchable' => true,
-                'defaultVisible' => true,
+                'defaultVisible' => false,
                 'width' => '150px',
                 'alignment' => 'left',
                 'queryField' => 'CurrentApprover.sca_name',
