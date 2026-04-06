@@ -24,6 +24,7 @@ namespace App\Model\Entity;
  * @property \Cake\I18n\DateTime|null $deadline
  * @property array|null $escalation_config
  * @property int $version
+ * @property string|null $approval_token
  * @property \Cake\I18n\DateTime|null $created
  * @property \Cake\I18n\DateTime|null $modified
  *
@@ -64,6 +65,7 @@ class WorkflowApproval extends BaseEntity
         'deadline' => true,
         'escalation_config' => true,
         'version' => true,
+        'approval_token' => true,
     ];
 
     /**

@@ -55,6 +55,7 @@ use App\KMP\StaticHelpers;
 use App\Policy\ControllerResolver;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\ActiveWindowManager\DefaultActiveWindowManager;
+use App\Services\ApprovalContext\ApprovalContextRendererRegistry;
 use App\Services\AuthorizationService as KmpAuthorizationService;
 use App\Services\CoreNavigationProvider;
 use App\Services\CoreViewCellProvider;
@@ -711,6 +712,9 @@ class Application extends BaseApplication implements
 
         // Expression evaluator for workflow templates, dates, and conditionals
         $container->add(ExpressionEvaluator::class);
+
+        // Approval context renderers for unified approvals UI
+        $container->add(ApprovalContextRendererRegistry::class);
 
         // Core workflow actions and conditions
         $container->add(CoreActions::class)

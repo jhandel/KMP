@@ -289,6 +289,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 'allow_parallel' => $allowParallel,
                 'deadline' => $deadline,
                 'version' => 1,
+                'approval_token' => \App\KMP\StaticHelpers::generateToken(32),
             ]);
 
             if (!$approvalsTable->save($approval)) {

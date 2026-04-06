@@ -145,52 +145,33 @@ class AuthorizationsController extends AppController
     /**
      * Submit a new authorization request for a member.
      *
-     * @param \Activities\Services\AuthorizationManagerInterface $maService Authorization management service
+     * Dispatches the Activities.AuthorizationRequested workflow trigger. The workflow
+     * definition handles creating the authorization via Activities.CreateAuthorizationRequest.
+     *
+     * @param \App\Services\WorkflowEngine\TriggerDispatcher $triggerDispatcher Workflow trigger dispatcher
      * @return \Cake\Http\Response|null
      */
-    public function add(AuthorizationManagerInterface $maService, TriggerDispatcher $triggerDispatcher)
+    public function add(TriggerDispatcher $triggerDispatcher)
     {
         $this->request->allowMethod(["post"]);
-        $memberId = $this->request->getData("member_id");
+        $memberId = (int)$this->request->getData("member_id");
 
         $authorization = $this->Authorizations->newEmptyEntity();
         $authorization->member_id = $memberId;
         $this->Authorization->authorize($authorization);
 
-        $activity_id = $this->request->getData("activity");
-        $approverId = $this->request->getData("approver_id");
+        $activityId = (int)$this->request->getData("activity");
+        $approverId = (int)$this->request->getData("approver_id");
 
-        $result = $this->dispatchOrLegacy(
+        $this->dispatchWorkflowEvent(
             $triggerDispatcher,
-            'activities-authorization-request',
             'Activities.AuthorizationRequested',
-            [
-                'member_id' => (int)$memberId,
-                'activity_id' => (int)$activity_id,
-                'approver_id' => (int)$approverId,
-                'renewal' => false,
-            ],
-            function () use ($maService, $memberId, $activity_id, $approverId) {
-                return $maService->request(
-                    (int)$memberId,
-                    (int)$activity_id,
-                    (int)$approverId,
-                    false,
-                );
-            },
+            $this->buildRequestTriggerData($memberId, $activityId, $approverId, false),
         );
 
-        if (is_array($result)) {
-            // Workflow engine handled the request
-            $this->Flash->success(__("The Authorization has been requested."));
-        } elseif ($result->success) {
-            $this->Flash->success(__("The Authorization has been requested."));
-        } else {
-            $this->Flash->error(__($result->reason));
-        }
+        $this->Flash->success(__("The Authorization has been requested."));
 
-        // Redirect to mobile card if request came from mobile interface
-        $mobileRedirect = $this->redirectIfMobileContext((int)$memberId);
+        $mobileRedirect = $this->redirectIfMobileContext($memberId);
         if ($mobileRedirect !== null) {
             return $mobileRedirect;
         }
@@ -201,55 +182,33 @@ class AuthorizationsController extends AppController
     /**
      * Submit a renewal request for an existing authorization.
      *
-     * @param \Activities\Services\AuthorizationManagerInterface $maService Authorization management service
+     * Dispatches the Activities.AuthorizationRequested workflow trigger with isRenewal=true.
+     * The workflow definition handles renewal validation and creation.
+     *
+     * @param \App\Services\WorkflowEngine\TriggerDispatcher $triggerDispatcher Workflow trigger dispatcher
      * @return \Cake\Http\Response|null
      */
-    public function renew(AuthorizationManagerInterface $maService, TriggerDispatcher $triggerDispatcher)
+    public function renew(TriggerDispatcher $triggerDispatcher)
     {
         $this->request->allowMethod(["post"]);
-        $memberId = $this->request->getData("member_id");
+        $memberId = (int)$this->request->getData("member_id");
 
         $authorization = $this->Authorizations->newEmptyEntity();
         $authorization->member_id = $memberId;
-        if (!$authorization) {
-            throw new \Cake\Http\Exception\NotFoundException();
-        }
         $this->Authorization->authorize($authorization);
 
-        $activity_id = $this->request->getData("activity");
-        $approverId = $this->request->getData("approver_id");
+        $activityId = (int)$this->request->getData("activity");
+        $approverId = (int)$this->request->getData("approver_id");
 
-        $result = $this->dispatchOrLegacy(
+        $this->dispatchWorkflowEvent(
             $triggerDispatcher,
-            'activities-authorization-renewal',
             'Activities.AuthorizationRequested',
-            [
-                'member_id' => (int)$memberId,
-                'activity_id' => (int)$activity_id,
-                'approver_id' => (int)$approverId,
-                'renewal' => true,
-            ],
-            function () use ($maService, $memberId, $activity_id, $approverId) {
-                return $maService->request(
-                    (int)$memberId,
-                    (int)$activity_id,
-                    (int)$approverId,
-                    true,
-                );
-            },
+            $this->buildRequestTriggerData($memberId, $activityId, $approverId, true),
         );
 
-        if (is_array($result)) {
-            // Workflow engine handled the renewal
-            $this->Flash->success(__("The Authorization has been requested."));
-        } elseif ($result->success) {
-            $this->Flash->success(__("The Authorization has been requested."));
-        } else {
-            $this->Flash->error(__($result->reason));
-        }
+        $this->Flash->success(__("The Authorization has been requested."));
 
-        // Redirect to mobile card if request came from mobile interface
-        $mobileRedirect = $this->redirectIfMobileContext((int)$memberId);
+        $mobileRedirect = $this->redirectIfMobileContext($memberId);
         if ($mobileRedirect !== null) {
             return $mobileRedirect;
         }
@@ -688,6 +647,43 @@ class AuthorizationsController extends AppController
                     return $q->select(["RevokedBy.sca_name"]);
                 }
             ]);
+    }
+
+    /**
+     * Build the trigger payload for an authorization request workflow event.
+     *
+     * @param int $memberId Requesting member ID
+     * @param int $activityId Activity ID
+     * @param int $approverId Designated approver ID
+     * @param bool $isRenewal Whether this is a renewal
+     * @return array Trigger data matching Activities.AuthorizationRequested schema
+     */
+    private function buildRequestTriggerData(
+        int $memberId,
+        int $activityId,
+        int $approverId,
+        bool $isRenewal,
+    ): array {
+        $member = $this->Authorizations->Members->get($memberId, select: ['id', 'branch_id']);
+
+        $activity = TableRegistry::getTableLocator()->get('Activities.Activities')
+            ->find()
+            ->where(['id' => $activityId])
+            ->first();
+
+        $requiredApprovals = $isRenewal
+            ? ($activity->num_required_renewers ?? 1)
+            : ($activity->num_required_authorizors ?? 1);
+
+        return [
+            'memberId' => $memberId,
+            'activityId' => $activityId,
+            'branchId' => $member->branch_id,
+            'approverId' => $approverId,
+            'isRenewal' => $isRenewal,
+            'requiredApprovals' => $requiredApprovals,
+            'activityName' => $activity->name ?? '',
+        ];
     }
 
     /**

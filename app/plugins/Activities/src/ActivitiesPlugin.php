@@ -181,6 +181,21 @@ class ActivitiesPlugin extends BasePlugin implements KMPPluginInterface, KMPApiP
                 '/approvals',
                 ['status' => 302]
             );
+            $builder->redirect(
+                '/activities/authorization-approvals/mobile-approve-authorizations',
+                '/approvals',
+                ['status' => 302]
+            );
+            $builder->redirect(
+                '/activities/authorization-approvals/mobile-approve/*',
+                '/approvals',
+                ['status' => 302]
+            );
+            $builder->redirect(
+                '/activities/authorization-approvals/mobile-deny/*',
+                '/approvals',
+                ['status' => 302]
+            );
         });
 
         $routes->plugin(

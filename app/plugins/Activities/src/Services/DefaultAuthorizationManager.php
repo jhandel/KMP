@@ -245,27 +245,6 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
         }
         $table->getConnection()->commit();
 
-        // Dispatch workflow trigger after successful request
-        try {
-            $activity = TableRegistry::getTableLocator()->get('Activities.Activities')
-                ->find()->where(['id' => $activityId])->first();
-            $requiredApprovals = $isRenewal
-                ? ($activity->num_required_renewers ?? 1)
-                : ($activity->num_required_authorizors ?? 1);
-
-            $this->triggerDispatcher->dispatch('Activities.AuthorizationRequested', [
-                'authorizationId' => $auth->id,
-                'memberId' => $requesterId,
-                'activityId' => $activityId,
-                'activityName' => $activity->name ?? '',
-                'approverId' => $approverId,
-                'isRenewal' => $isRenewal,
-                'requiredApprovals' => $requiredApprovals,
-            ], $requesterId);
-        } catch (\Throwable $e) {
-            Log::error('Failed to dispatch Activities.AuthorizationRequested trigger: ' . $e->getMessage());
-        }
-
         return new ServiceResult(true);
     }
     /**
