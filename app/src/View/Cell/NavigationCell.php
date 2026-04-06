@@ -151,6 +151,7 @@ class NavigationCell extends Cell
         $parents = [];
         $mainLinks = [];
         $sublinks = [];
+        $activeFound = false;
         foreach ($menuItems as &$item) {
             if (!$item) {
                 continue;
@@ -175,13 +176,20 @@ class NavigationCell extends Cell
             $item['expanded'] = false;
             if ($item['type'] === 'parent') {
                 $parents[$item['label']] = $item;
+            } elseif ($item['type'] === 'top-link') {
+                // Top-level clickable link rendered at parent level
+                $item['isTopLink'] = true;
+                if (!$activeFound && $this->isActive($item, $currentRequestString)) {
+                    $item['active'] = true;
+                    $activeFound = true;
+                }
+                $parents[$item['label']] = $item;
             } elseif ($item['type'] === 'link' && count($item['mergePath']) == 1) {
                 $mainLinks[] = $item;
             } elseif ($item['type'] === 'link' && count($item['mergePath']) > 1) {
                 $sublinks[] = $item;
             }
         }
-        $activeFound = false;
         // add mainlinks to parents
         foreach ($mainLinks as &$mainlink) {
             if (!$activeFound && $this->isActive($mainlink, $currentRequestString)) {

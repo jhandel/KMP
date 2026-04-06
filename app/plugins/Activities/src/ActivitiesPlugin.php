@@ -18,6 +18,8 @@ use Activities\Services\AuthorizationManagerInterface;
 use Activities\Services\DefaultAuthorizationManager;
 use App\Services\NavigationRegistry;
 use App\Services\ViewCellRegistry;
+use App\Services\ApprovalContext\ApprovalContextRendererRegistry;
+use Activities\Services\ActivitiesApprovalContextRenderer;
 use Activities\Services\ActivitiesNavigationProvider;
 use Activities\Services\ActivitiesViewCellProvider;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
@@ -125,6 +127,12 @@ class ActivitiesPlugin extends BasePlugin implements KMPPluginInterface, KMPApiP
             }
         );
 
+        // Register approval context renderer for unified approvals UI
+        ApprovalContextRendererRegistry::register(
+            'Activities',
+            new ActivitiesApprovalContextRenderer()
+        );
+
         // Configuration version management for automatic updates
         $currentConfigVersion = "25.01.11.c"; // Update this each time configuration changes
 
@@ -161,6 +169,20 @@ class ActivitiesPlugin extends BasePlugin implements KMPPluginInterface, KMPApiP
      */
     public function routes(RouteBuilder $routes): void
     {
+        // Redirect old authorization approval queue to unified approvals
+        $routes->scope('/', function (RouteBuilder $builder) {
+            $builder->redirect(
+                '/activities/authorization-approvals/my-queue',
+                '/approvals',
+                ['status' => 302]
+            );
+            $builder->redirect(
+                '/activities/authorization-approvals/my-queue/*',
+                '/approvals',
+                ['status' => 302]
+            );
+        });
+
         $routes->plugin(
             'Activities',
             ['path' => '/activities'],
@@ -268,5 +290,8 @@ class ActivitiesPlugin extends BasePlugin implements KMPPluginInterface, KMPApiP
 
         // Register workflow conditions for Activities plugin
         $container->add(\Activities\Services\ActivitiesWorkflowConditions::class);
+
+        // Register approval context renderer for Activities plugin
+        $container->add(ActivitiesApprovalContextRenderer::class);
     }
 }
