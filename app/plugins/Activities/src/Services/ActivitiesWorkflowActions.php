@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Activities\Services;
 
+use Activities\Model\Entity\Authorization;
 use Activities\Services\AuthorizationManagerInterface;
 use App\KMP\StaticHelpers;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
@@ -158,7 +159,7 @@ class ActivitiesWorkflowActions
                 $denyReason = $context['resumeData']['comment'] ?? 'Denied via workflow';
             }
 
-            // Find the pending approval record by authorization_id
+            // Try finding a pending legacy approval record first
             $approvalsTable = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
             $pendingApproval = $approvalsTable->find()
                 ->where([
@@ -167,14 +168,32 @@ class ActivitiesWorkflowActions
                 ])
                 ->first();
 
-            if (!$pendingApproval) {
-                Log::warning("Workflow HandleDenial: no pending approval for authorization {$authorizationId}");
+            if ($pendingApproval) {
+                $result = $this->authManager->deny($pendingApproval->id, $approverId, $denyReason);
+                return ['denied' => $result->success];
+            }
+
+            // No legacy approval record — update the authorization directly
+            $authTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
+            $authorization = $authTable->get($authorizationId);
+
+            if ($authorization->status !== Authorization::PENDING_STATUS) {
+                Log::warning("Workflow HandleDenial: authorization {$authorizationId} is not pending (status: {$authorization->status})");
                 return ['denied' => false];
             }
 
-            $result = $this->authManager->deny($pendingApproval->id, $approverId, $denyReason);
+            $authorization->status = Authorization::DENIED_STATUS;
+            $authorization->revoker_id = $approverId;
+            $authorization->revoked_reason = $denyReason;
+            $authorization->start_on = DateTime::now()->subSeconds(1);
+            $authorization->expires_on = DateTime::now()->subSeconds(1);
 
-            return ['denied' => $result->success];
+            if (!$authTable->save($authorization)) {
+                Log::error("Workflow HandleDenial: failed to save authorization {$authorizationId}");
+                return ['denied' => false];
+            }
+
+            return ['denied' => true];
         } catch (\Throwable $e) {
             Log::error('Workflow HandleDenial failed: ' . $e->getMessage());
             return ['denied' => false];
