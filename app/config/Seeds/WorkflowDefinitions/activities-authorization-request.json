@@ -29,7 +29,9 @@
                 "params": {
                     "authorizationId": "$.trigger.authorizationId",
                     "memberId": "$.trigger.memberId",
-                    "activityId": "$.trigger.activityId"
+                    "activityId": "$.trigger.activityId",
+                    "approverId": "$.trigger.approverId",
+                    "isRenewal": "$.trigger.isRenewal"
                 }
             },
             "position": { "x": 350, "y": 200 },
