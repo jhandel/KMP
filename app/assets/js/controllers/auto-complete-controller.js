@@ -614,6 +614,11 @@ class AutoComplete extends Controller {
             }
         }
 
+        // Mark as fetching so async results aren't swallowed after connect/close
+        if (this.state === "finished") {
+            this.state = "fetching";
+        }
+
         const url = this.buildURL(query)
         try {
             this.element.dispatchEvent(new CustomEvent("loadstart"))
