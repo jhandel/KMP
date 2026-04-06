@@ -81,8 +81,8 @@ $this->KMP->endBlock(); ?>
                     <textarea class="form-control" id="approvalComment" name="comment" rows="3"
                         data-approval-response-target="comment"
                         placeholder="<?= __('Optional comment...') ?>"></textarea>
-                    <div class="form-text text-muted small">
-                        <i class="bi bi-eye me-1"></i><?= __('Comments may be visible to the person who submitted this request.') ?>
+                    <div class="form-text text-muted small" data-approval-response-target="commentWarning" hidden>
+                        <i class="bi bi-eye me-1"></i><span data-approval-response-target="commentWarningText"></span>
                     </div>
                 </div>
 
@@ -146,6 +146,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const requiredCount = btnData.required_count || 1;
         const approvedCount = btnData.approved_count || 0;
         const serialPickNext = approverConfig.serial_pick_next || false;
+        const commentWarning = approverConfig.comment_warning || '';
 
         // Set hidden field
         document.getElementById('approvalResponseApprovalId').value = approvalId;
@@ -160,6 +161,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 requiredCount: requiredCount,
                 approvedCount: approvedCount,
                 eligibleUrl: '/approvals/eligible-approvers/' + approvalId,
+                commentWarning: commentWarning,
             });
         }
     });

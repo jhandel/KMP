@@ -17,9 +17,15 @@
                     "approvalPermission": "$.event.approvalPermission"
                 }
             },
-            "position": { "x": 50, "y": 200 },
+            "position": {
+                "x": 50,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "validate-request" }
+                {
+                    "port": "next",
+                    "target": "validate-request"
+                }
             ]
         },
         "validate-request": {
@@ -35,9 +41,15 @@
                     "isRenewal": "$.trigger.isRenewal"
                 }
             },
-            "position": { "x": 350, "y": 200 },
+            "position": {
+                "x": 350,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "resolve-approvers" }
+                {
+                    "port": "next",
+                    "target": "resolve-approvers"
+                }
             ]
         },
         "resolve-approvers": {
@@ -51,9 +63,15 @@
                     "excludeMemberIds": []
                 }
             },
-            "position": { "x": 650, "y": 200 },
+            "position": {
+                "x": 650,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "notify-approver" }
+                {
+                    "port": "next",
+                    "target": "notify-approver"
+                }
             ]
         },
         "notify-approver": {
@@ -68,9 +86,15 @@
                     "authorizationToken": "$.nodes.validate-request.result.authorizationToken"
                 }
             },
-            "position": { "x": 950, "y": 200 },
+            "position": {
+                "x": 950,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "approval-gate" }
+                {
+                    "port": "next",
+                    "target": "approval-gate"
+                }
             ]
         },
         "approval-gate": {
@@ -85,13 +109,26 @@
                 "serialPickNext": true,
                 "allowParallel": false,
                 "allowComments": true,
-                "deadline": "30d"
+                "deadline": "30d",
+                "commentWarning": "Comments may be visible to the person who submitted this request."
             },
-            "position": { "x": 1250, "y": 200 },
+            "position": {
+                "x": 1250,
+                "y": 200
+            },
             "outputs": [
-                { "port": "approved", "target": "activate-authorization" },
-                { "port": "rejected", "target": "handle-denial" },
-                { "port": "on_each_approval", "target": "notify-step-approved" }
+                {
+                    "port": "approved",
+                    "target": "activate-authorization"
+                },
+                {
+                    "port": "rejected",
+                    "target": "handle-denial"
+                },
+                {
+                    "port": "on_each_approval",
+                    "target": "notify-step-approved"
+                }
             ]
         },
         "notify-step-approved": {
@@ -107,7 +144,10 @@
                     "nextApproverId": "$.nodes.approval-gate.nextApproverId"
                 }
             },
-            "position": { "x": 1250, "y": 450 },
+            "position": {
+                "x": 1250,
+                "y": 450
+            },
             "outputs": []
         },
         "activate-authorization": {
@@ -120,9 +160,15 @@
                     "approverId": "$.resumeData.approverId"
                 }
             },
-            "position": { "x": 1550, "y": 100 },
+            "position": {
+                "x": 1550,
+                "y": 100
+            },
             "outputs": [
-                { "port": "next", "target": "notify-approved" }
+                {
+                    "port": "next",
+                    "target": "notify-approved"
+                }
             ]
         },
         "notify-approved": {
@@ -138,9 +184,15 @@
                     "nextApproverId": null
                 }
             },
-            "position": { "x": 1850, "y": 100 },
+            "position": {
+                "x": 1850,
+                "y": 100
+            },
             "outputs": [
-                { "port": "next", "target": "end-approved" }
+                {
+                    "port": "next",
+                    "target": "end-approved"
+                }
             ]
         },
         "handle-denial": {
@@ -154,9 +206,15 @@
                     "denyReason": "$.resumeData.comment"
                 }
             },
-            "position": { "x": 1550, "y": 300 },
+            "position": {
+                "x": 1550,
+                "y": 300
+            },
             "outputs": [
-                { "port": "next", "target": "notify-denied" }
+                {
+                    "port": "next",
+                    "target": "notify-denied"
+                }
             ]
         },
         "notify-denied": {
@@ -172,23 +230,35 @@
                     "nextApproverId": null
                 }
             },
-            "position": { "x": 1850, "y": 300 },
+            "position": {
+                "x": 1850,
+                "y": 300
+            },
             "outputs": [
-                { "port": "next", "target": "end-denied" }
+                {
+                    "port": "next",
+                    "target": "end-denied"
+                }
             ]
         },
         "end-approved": {
             "type": "end",
             "label": "Approved Complete",
             "config": {},
-            "position": { "x": 2150, "y": 100 },
+            "position": {
+                "x": 2150,
+                "y": 100
+            },
             "outputs": []
         },
         "end-denied": {
             "type": "end",
             "label": "Denied Complete",
             "config": {},
-            "position": { "x": 2150, "y": 300 },
+            "position": {
+                "x": 2150,
+                "y": 300
+            },
             "outputs": []
         }
     },

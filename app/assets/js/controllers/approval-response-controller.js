@@ -8,7 +8,7 @@ import { Controller } from "@hotwired/stimulus"
  * and serialPickNext configuration.
  */
 class ApprovalResponseController extends Controller {
-    static targets = ["decision", "nextApproverSection", "nextApproverInput", "submitBtn", "comment", "commentRequiredHint", "infoText"]
+    static targets = ["decision", "nextApproverSection", "nextApproverInput", "submitBtn", "comment", "commentRequiredHint", "commentWarning", "commentWarningText", "infoText"]
     static values = {
         serialPickNext: Boolean,
         requiredCount: Number,
@@ -34,6 +34,7 @@ class ApprovalResponseController extends Controller {
         this.requiredCountValue = approvalData.requiredCount || 1
         this.approvedCountValue = approvalData.approvedCount || 0
         this.eligibleUrlValue = approvalData.eligibleUrl || ''
+        this._commentWarning = approvalData.commentWarning || ''
 
         // Reset form
         this.decisionTargets.forEach(el => el.checked = false)
@@ -43,6 +44,16 @@ class ApprovalResponseController extends Controller {
             const acEl = this.nextApproverInputTarget.closest('[data-controller="ac"]')
             if (acEl && acEl.value !== undefined) {
                 acEl.value = ''
+            }
+        }
+
+        // Show/hide comment warning from workflow config
+        if (this.hasCommentWarningTarget) {
+            if (this._commentWarning) {
+                this.commentWarningTextTarget.textContent = this._commentWarning
+                this.commentWarningTarget.hidden = false
+            } else {
+                this.commentWarningTarget.hidden = true
             }
         }
 

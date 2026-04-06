@@ -839,6 +839,11 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             $approverConfig['serial_pick_next'] = true;
         }
 
+        // Preserve commentWarning from config into approverConfig
+        if (!empty($config['commentWarning'])) {
+            $approverConfig['comment_warning'] = $config['commentWarning'];
+        }
+
         // Resolve requiredCount (may be int, or {type: "app_setting", key: "..."})
         $requiredCount = $this->resolveRequiredCount($config['requiredCount'] ?? 1, $instance->context ?? []);
 
