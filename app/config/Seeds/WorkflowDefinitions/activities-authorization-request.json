@@ -116,7 +116,7 @@
             "config": {
                 "action": "Activities.ActivateAuthorization",
                 "params": {
-                    "authorizationId": "$.trigger.authorizationId",
+                    "authorizationId": "$.nodes.validate-request.result.authorizationId",
                     "approverId": "$.resumeData.approverId"
                 }
             },
@@ -149,7 +149,7 @@
             "config": {
                 "action": "Activities.HandleDenial",
                 "params": {
-                    "authorizationId": "$.trigger.authorizationId",
+                    "authorizationId": "$.nodes.validate-request.result.authorizationId",
                     "approverId": "$.resumeData.approverId",
                     "denyReason": "$.resumeData.comment"
                 }
