@@ -97,4 +97,9 @@ class WorkflowDefinitionsTablePolicy extends BasePolicy
     {
         return $this->_isSuperUser($user);
     }
+
+    public function canReassignApproval(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $this->_isSuperUser($user);
+    }
 }

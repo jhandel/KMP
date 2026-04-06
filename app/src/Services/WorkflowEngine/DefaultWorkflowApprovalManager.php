@@ -428,6 +428,63 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     }
 
     /**
+     * Reassign a pending approval to a different eligible member.
+     *
+     * @param int $approvalId Workflow approval ID
+     * @param int $newApproverId Member ID of the new approver
+     * @param int $adminMemberId Member ID of the admin performing the reassignment
+     * @param string|null $reason Optional reason for reassignment
+     * @return ServiceResult Contains approvalId, instanceId, nodeId, previousApproverId, newApproverId on success
+     */
+    public function reassignApproval(int $approvalId, int $newApproverId, int $adminMemberId, ?string $reason = null): ServiceResult
+    {
+        try {
+            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+            /** @var \App\Model\Entity\WorkflowApproval|null $approval */
+            $approval = $approvalsTable->find()
+                ->where(['WorkflowApprovals.id' => $approvalId])
+                ->first();
+
+            if (!$approval) {
+                return new ServiceResult(false, 'Approval not found.');
+            }
+
+            if ($approval->status !== WorkflowApproval::STATUS_PENDING) {
+                return new ServiceResult(false, 'Only pending approvals can be reassigned.');
+            }
+
+            $previousApproverId = $approval->current_approver_id;
+
+            // Update the current approver
+            $approval->current_approver_id = $newApproverId;
+            $config = $approval->approver_config ?? [];
+            $config['current_approver_id'] = $newApproverId;
+            $config['reassigned_by'] = $adminMemberId;
+            $config['reassigned_at'] = DateTime::now()->toIso8601String();
+            if ($reason) {
+                $config['reassignment_reason'] = $reason;
+            }
+            $approval->approver_config = $config;
+
+            if (!$approvalsTable->save($approval)) {
+                return new ServiceResult(false, 'Failed to save reassignment.');
+            }
+
+            return new ServiceResult(true, null, [
+                'approvalId' => $approval->id,
+                'instanceId' => $approval->workflow_instance_id,
+                'nodeId' => $approval->node_id,
+                'previousApproverId' => $previousApproverId,
+                'newApproverId' => $newApproverId,
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Error reassigning approval {$approvalId}: {$e->getMessage()}");
+            return new ServiceResult(false, 'An unexpected error occurred.');
+        }
+    }
+
+    /**
      * @inheritDoc
      */
     public function getEligibleApprovers(int $approvalId): array

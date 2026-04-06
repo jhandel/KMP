@@ -58,4 +58,15 @@ interface WorkflowApprovalManagerInterface
      * @return \App\Model\Entity\Member[]
      */
     public function getEligibleApprovers(int $approvalId): array;
+
+    /**
+     * Reassign a pending approval to a different eligible member.
+     *
+     * @param int $approvalId Workflow approval ID
+     * @param int $newApproverId Member ID to reassign to
+     * @param int $adminMemberId Admin performing the reassignment
+     * @param string|null $reason Optional reason
+     * @return ServiceResult
+     */
+    public function reassignApproval(int $approvalId, int $newApproverId, int $adminMemberId, ?string $reason = null): ServiceResult;
 }

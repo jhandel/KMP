@@ -73,10 +73,15 @@ $this->KMP->endBlock(); ?>
 
                 <!-- Comment -->
                 <div class="mb-3">
-                    <label class="form-label" for="approvalComment"><?= __('Comment') ?></label>
+                    <label class="form-label" for="approvalComment"><?= __('Comment') ?>
+                        <span class="text-danger" data-approval-response-target="commentRequiredHint" hidden><?= __('(required for rejections)') ?></span>
+                    </label>
                     <textarea class="form-control" id="approvalComment" name="comment" rows="3"
                         data-approval-response-target="comment"
                         placeholder="<?= __('Optional comment...') ?>"></textarea>
+                    <div class="form-text text-muted small" data-approval-response-target="commentWarning" hidden>
+                        <i class="bi bi-eye me-1"></i><span data-approval-response-target="commentWarningText"></span>
+                    </div>
                 </div>
 
                 <!-- Next Approver (conditional) -->
@@ -118,41 +123,138 @@ $this->KMP->endBlock(); ?>
     </div>
 </div>
 
+<!-- Approval Reassign Modal -->
+<div class="modal fade" id="approvalReassignModal" tabindex="-1" aria-labelledby="approvalReassignModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="approvalReassignModalLabel">
+                    <i class="bi bi-person-gear me-2"></i><?= __('Reassign Approval') ?>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <?= $this->Form->create(null, [
+                'url' => '/approvals/reassign',
+                'id' => 'approvalReassignForm',
+                'data-controller' => 'approval-reassign',
+            ]) ?>
+            <div class="modal-body">
+                <input type="hidden" name="approvalId" data-approval-reassign-target="approvalId" value="">
+
+                <div class="alert alert-info py-2 small" role="alert">
+                    <i class="bi bi-info-circle me-1"></i>
+                    <?= __('Reassigning this approval will transfer it to a different eligible member. If the workflow has an on_reassigned action configured, the new approver will be notified.') ?>
+                </div>
+
+                <!-- New Approver Picker -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold"><?= __('New Approver') ?></label>
+                    <div data-controller="ac"
+                         data-ac-url-value="/approvals/eligible-approvers/0"
+                         data-ac-min-length-value="2"
+                         data-ac-allow-other-value="false"
+                         role="combobox"
+                         class="position-relative kmp_autoComplete">
+                        <input type="hidden" name="newApproverId"
+                               data-ac-target="hidden"
+                               data-action="change->approval-reassign#onApproverChange">
+                        <input type="hidden" data-ac-target="hiddenText">
+                        <div class="input-group">
+                            <input type="text" class="form-control"
+                                   data-ac-target="input"
+                                   placeholder="<?= __('Search eligible members...') ?>">
+                            <button class="btn btn-outline-secondary" data-ac-target="clearBtn" data-action="ac#clear" disabled><?= __('Clear') ?></button>
+                        </div>
+                        <ul data-ac-target="results"
+                            class="list-group z-3 col-12 position-absolute auto-complete-list"
+                            hidden="hidden"></ul>
+                    </div>
+                </div>
+
+                <!-- Reason -->
+                <div class="mb-3">
+                    <label class="form-label" for="reassignReason"><?= __('Reason') ?></label>
+                    <textarea class="form-control" id="reassignReason" name="reason" rows="2"
+                        data-approval-reassign-target="reason"
+                        placeholder="<?= __('Optional reason for reassignment...') ?>"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= __('Cancel') ?></button>
+                <button type="submit" class="btn btn-warning" data-approval-reassign-target="submitBtn" disabled>
+                    <i class="bi bi-person-gear me-1"></i><?= __('Reassign') ?>
+                </button>
+            </div>
+            <?= $this->Form->end() ?>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const modal = document.getElementById('approvalResponseModal');
-    if (!modal) return;
+    // Response modal handler
+    const responseModal = document.getElementById('approvalResponseModal');
+    if (responseModal) {
+        responseModal.addEventListener('show.bs.modal', function(event) {
+            const btn = event.relatedTarget;
+            if (!btn) return;
 
-    modal.addEventListener('show.bs.modal', function(event) {
-        const btn = event.relatedTarget;
-        if (!btn) return;
+            let btnData = {};
+            try {
+                btnData = JSON.parse(btn.getAttribute('data-outlet-btn-btn-data-value') || '{}');
+            } catch (e) {
+                return;
+            }
 
-        let btnData = {};
-        try {
-            btnData = JSON.parse(btn.getAttribute('data-outlet-btn-btn-data-value') || '{}');
-        } catch (e) {
-            return;
-        }
+            const approvalId = btnData.id || 0;
+            const approverConfig = btnData.approver_config || {};
+            const requiredCount = btnData.required_count || 1;
+            const approvedCount = btnData.approved_count || 0;
+            const serialPickNext = approverConfig.serial_pick_next || false;
+            const commentWarning = approverConfig.comment_warning || '';
 
-        const approvalId = btnData.id || 0;
-        const approverConfig = btnData.approver_config || {};
-        const requiredCount = btnData.required_count || 1;
-        const approvedCount = btnData.approved_count || 0;
-        const serialPickNext = approverConfig.serial_pick_next || false;
+            document.getElementById('approvalResponseApprovalId').value = approvalId;
 
-        document.getElementById('approvalResponseApprovalId').value = approvalId;
+            const form = document.getElementById('approvalResponseForm');
+            const controller = window.Stimulus?.getControllerForElementAndIdentifier(form, 'approval-response');
+            if (controller) {
+                controller.configure({
+                    id: approvalId,
+                    serialPickNext: serialPickNext,
+                    requiredCount: requiredCount,
+                    approvedCount: approvedCount,
+                    eligibleUrl: '/approvals/eligible-approvers/' + approvalId,
+                    commentWarning: commentWarning,
+                });
+            }
+        });
+    }
 
-        const form = document.getElementById('approvalResponseForm');
-        const controller = window.Stimulus?.getControllerForElementAndIdentifier(form, 'approval-response');
-        if (controller) {
-            controller.configure({
-                id: approvalId,
-                serialPickNext: serialPickNext,
-                requiredCount: requiredCount,
-                approvedCount: approvedCount,
-                eligibleUrl: '/approvals/eligible-approvers/' + approvalId,
-            });
-        }
-    });
+    // Reassign modal handler
+    const reassignModal = document.getElementById('approvalReassignModal');
+    if (reassignModal) {
+        reassignModal.addEventListener('show.bs.modal', function(event) {
+            const btn = event.relatedTarget;
+            if (!btn) return;
+
+            let btnData = {};
+            try {
+                btnData = JSON.parse(btn.getAttribute('data-outlet-btn-btn-data-value') || '{}');
+            } catch (e) {
+                return;
+            }
+
+            const approvalId = btnData.id || 0;
+
+            const form = document.getElementById('approvalReassignForm');
+            const controller = window.Stimulus?.getControllerForElementAndIdentifier(form, 'approval-reassign');
+            if (controller) {
+                controller.configure({
+                    id: approvalId,
+                    eligibleUrl: '/approvals/eligible-approvers/' + approvalId,
+                });
+            }
+        });
+    }
 });
 </script>

@@ -70,7 +70,8 @@ class WorkflowsController extends AppController
             'approvals',
             'recordApproval',
             'allApprovals',
-            'allApprovalsGridData'
+            'allApprovalsGridData',
+            'reassignApproval'
         );
     }
 
@@ -583,7 +584,7 @@ class WorkflowsController extends AppController
             }
         }
 
-        $rowActions = \App\KMP\GridColumns\ApprovalsGridColumns::getRowActions();
+        $rowActions = \App\KMP\GridColumns\ApprovalsGridColumns::getAdminRowActions();
         $this->set([
             'data' => $result['data'],
             'gridState' => $result['gridState'],
@@ -867,6 +868,73 @@ class WorkflowsController extends AppController
             ->withStringBody($html);
 
         return $this->response;
+    }
+
+    /**
+     * Admin API: Reassign a pending approval to a different eligible member.
+     *
+     * Fires the on_reassigned output port on the approval-gate node so
+     * workflow-configured notifications (e.g. email) are triggered.
+     *
+     * @return \Cake\Http\Response|null|void
+     */
+    public function reassignApproval()
+    {
+        $this->request->allowMethod(['post']);
+        $approvalId = (int)$this->request->getData('approvalId');
+        $newApproverId = (int)$this->request->getData('newApproverId');
+        $reason = $this->request->getData('reason');
+        $currentUser = $this->request->getAttribute('identity');
+
+        if (!$approvalId || !$newApproverId) {
+            $error = __('Approval ID and new approver are required.');
+            if ($this->request->is('ajax')) {
+                $this->set('result', ['success' => false, 'error' => $error]);
+                $this->viewBuilder()->setOption('serialize', 'result');
+                $this->response = $this->response->withType('application/json');
+                $this->viewBuilder()->setClassName('Json');
+
+                return;
+            }
+            $this->Flash->error($error);
+
+            return $this->redirect(['action' => 'allApprovals']);
+        }
+
+        $approvalManager = $this->getApprovalManager();
+        $result = $approvalManager->reassignApproval($approvalId, $newApproverId, $currentUser->id, $reason);
+
+        // Fire on_reassigned workflow actions if successful
+        if ($result->isSuccess() && $result->getData()) {
+            $data = $result->getData();
+            $engine = $this->getWorkflowEngine();
+            $engine->fireIntermediateApprovalActions(
+                $data['instanceId'],
+                $data['nodeId'],
+                [
+                    'previousApproverId' => $data['previousApproverId'],
+                    'newApproverId' => $data['newApproverId'],
+                    'reassignedBy' => $currentUser->id,
+                    'reason' => $reason,
+                ],
+                'on_reassigned'
+            );
+        }
+
+        if ($this->request->is('ajax')) {
+            $this->set('result', $result);
+            $this->viewBuilder()->setOption('serialize', 'result');
+            $this->response = $this->response->withType('application/json');
+            $this->viewBuilder()->setClassName('Json');
+        } else {
+            if ($result->isSuccess()) {
+                $this->Flash->success(__('Approval reassigned successfully.'));
+            } else {
+                $this->Flash->error($result->getError());
+            }
+
+            return $this->redirect(['action' => 'allApprovals']);
+        }
     }
 
     /**

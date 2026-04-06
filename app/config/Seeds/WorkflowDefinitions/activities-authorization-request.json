@@ -128,6 +128,10 @@
                 {
                     "port": "on_each_approval",
                     "target": "notify-step-approved"
+                },
+                {
+                    "port": "on_reassigned",
+                    "target": null
                 }
             ]
         },

@@ -2092,11 +2092,12 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         int $instanceId,
         string $nodeId,
         array $approvalData,
+        string $outputPort = 'on_each_approval',
     ): ServiceResult {
         $this->visitedNodes = [];
         $this->executionDepth = 0;
 
-        return $this->executeInTransaction(function () use ($instanceId, $nodeId, $approvalData) {
+        return $this->executeInTransaction(function () use ($instanceId, $nodeId, $approvalData, $outputPort) {
                 $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
                 $instance = $instancesTable->get($instanceId, contain: ['WorkflowVersions']);
 
@@ -2133,8 +2134,8 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 ];
                 $instance->context = $context;
 
-                // Get targets from on_each_approval port
-                $targets = $this->getNodeOutputTargets($definition, $nodeId, 'on_each_approval');
+                // Get targets from the specified output port
+                $targets = $this->getNodeOutputTargets($definition, $nodeId, $outputPort);
 
                 if (empty($targets)) {
                     // No intermediate actions configured — just save context and return

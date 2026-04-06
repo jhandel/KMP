@@ -124,6 +124,11 @@ class WorkflowsControllerPolicy implements BeforePolicyInterface
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }
 
+    public function canReassignApproval(KmpIdentityInterface $user, mixed $resource): bool
+    {
+        return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
+    }
+
     /**
      * Check if user has explicit policy grant for a URL action.
      * For a standalone controller policy without BasePolicy, we check

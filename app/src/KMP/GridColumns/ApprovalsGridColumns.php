@@ -213,6 +213,50 @@ class ApprovalsGridColumns extends BaseGridColumns
     }
 
     /**
+     * Row actions for the admin All Approvals grid.
+     * Includes reassignment for pending approvals with an assigned approver.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function getAdminRowActions(): array
+    {
+        $base = self::getRowActions();
+        $base['reassign'] = [
+            'key' => 'reassign',
+            'type' => 'modal',
+            'label' => 'Reassign',
+            'icon' => 'bi-person-gear',
+            'class' => 'btn btn-sm btn-outline-warning',
+            'modalTarget' => '#approvalReassignModal',
+            'statusFilter' => [WorkflowApproval::STATUS_PENDING],
+            'dataAttributes' => [
+                'controller' => 'outlet-btn',
+                'action' => 'click->outlet-btn#fireNotice',
+                'outlet-btn-btn-data-value' => [
+                    'id' => 'id',
+                    'approver_config' => 'approver_config',
+                    'current_approver_id' => 'current_approver_id',
+                ],
+            ],
+        ];
+
+        return $base;
+    }
+
+    /**
+     * Admin columns include Assigned To visible by default.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function getAdminColumns(): array
+    {
+        $columns = self::getColumns();
+        $columns['current_approver']['defaultVisible'] = true;
+
+        return $columns;
+    }
+
+    /**
      * System views for the admin All Approvals grid.
      *
      * @return array<string, array<string, mixed>>

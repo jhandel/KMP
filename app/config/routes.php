@@ -222,6 +222,7 @@ return function (RouteBuilder $routes): void {
             $builder->connect('/detail/{approvalId}', ['controller' => 'Workflows', 'action' => 'approvalDetail'])
                 ->setPatterns(['approvalId' => '\d+'])
                 ->setPass(['approvalId']);
+            $builder->connect('/reassign', ['controller' => 'Workflows', 'action' => 'reassignApproval']);
         });
 
         /**
