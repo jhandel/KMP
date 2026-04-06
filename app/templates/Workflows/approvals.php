@@ -75,10 +75,15 @@ $this->KMP->endBlock(); ?>
 
                 <!-- Comment -->
                 <div class="mb-3">
-                    <label class="form-label" for="approvalComment"><?= __('Comment') ?></label>
+                    <label class="form-label" for="approvalComment"><?= __('Comment') ?>
+                        <span class="text-danger" data-approval-response-target="commentRequiredHint" hidden><?= __('(required for rejections)') ?></span>
+                    </label>
                     <textarea class="form-control" id="approvalComment" name="comment" rows="3"
                         data-approval-response-target="comment"
                         placeholder="<?= __('Optional comment...') ?>"></textarea>
+                    <div class="form-text text-muted small">
+                        <i class="bi bi-eye me-1"></i><?= __('Comments may be visible to the person who submitted this request.') ?>
+                    </div>
                 </div>
 
                 <!-- Next Approver (conditional) -->

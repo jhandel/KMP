@@ -8,7 +8,7 @@ import { Controller } from "@hotwired/stimulus"
  * and serialPickNext configuration.
  */
 class ApprovalResponseController extends Controller {
-    static targets = ["decision", "nextApproverSection", "nextApproverInput", "submitBtn", "comment", "infoText"]
+    static targets = ["decision", "nextApproverSection", "nextApproverInput", "submitBtn", "comment", "commentRequiredHint", "infoText"]
     static values = {
         serialPickNext: Boolean,
         requiredCount: Number,
@@ -73,10 +73,27 @@ class ApprovalResponseController extends Controller {
 
         const decision = this._getSelectedDecision()
         const isApprove = decision === 'approve'
+        const isReject = decision === 'reject'
         const needsMore = (this.approvedCountValue + 1) < this.requiredCountValue
         const showPicker = isApprove && this.serialPickNextValue && needsMore
 
         this.nextApproverSectionTarget.hidden = !showPicker
+
+        // Comment is required for rejections
+        if (this.hasCommentTarget) {
+            if (isReject) {
+                this.commentTarget.setAttribute('required', 'required')
+                this.commentTarget.placeholder = 'A reason is required when rejecting...'
+            } else {
+                this.commentTarget.removeAttribute('required')
+                this.commentTarget.placeholder = 'Optional comment...'
+            }
+        }
+
+        // Show/hide rejection reason label
+        if (this.hasCommentRequiredHintTarget) {
+            this.commentRequiredHintTarget.hidden = !isReject
+        }
 
         // Update required state on hidden input
         if (this.hasNextApproverInputTarget) {

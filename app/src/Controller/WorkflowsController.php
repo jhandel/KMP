@@ -667,6 +667,22 @@ class WorkflowsController extends AppController
         $nextApproverId = $this->request->getData('next_approver_id') ? (int)$this->request->getData('next_approver_id') : null;
         $currentUser = $this->request->getAttribute('identity');
 
+        // Rejection requires a comment
+        if ($decision === 'reject' && empty(trim((string)$comment))) {
+            $error = __('A comment is required when rejecting an approval.');
+            if ($this->request->is('ajax')) {
+                $this->set('result', ['success' => false, 'error' => $error]);
+                $this->viewBuilder()->setOption('serialize', 'result');
+                $this->response = $this->response->withType('application/json');
+                $this->viewBuilder()->setClassName('Json');
+
+                return;
+            }
+            $this->Flash->error($error);
+
+            return $this->redirect(['action' => 'approvals']);
+        }
+
         // Eligibility (including policy checks) is enforced inside recordResponse()
         $approvalManager = $this->getApprovalManager();
         $result = $approvalManager->recordResponse($approvalId, $currentUser->id, $decision, $comment, $nextApproverId);
