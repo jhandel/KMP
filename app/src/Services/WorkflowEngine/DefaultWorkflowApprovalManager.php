@@ -824,11 +824,15 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     ): bool {
         $config = $approval->approver_config ?? [];
 
-        // Serial pick-next: when current_approver_id is set, only that member is eligible
-        if (!empty($config['serial_pick_next']) && !empty($config['current_approver_id'])) {
-            return $memberId === (int)$config['current_approver_id'];
+        // If a specific approver is assigned, only they are eligible
+        $currentApproverId = $approval->current_approver_id
+            ?? (!empty($config['current_approver_id']) ? (int)$config['current_approver_id'] : null);
+
+        if ($currentApproverId !== null) {
+            return $memberId === $currentApproverId;
         }
 
+        // No specific assignee — check by approver type (permission, role, etc.)
         switch ($approval->approver_type) {
             case WorkflowApproval::APPROVER_TYPE_PERMISSION:
                 $permissionName = $config['permission'] ?? null;
