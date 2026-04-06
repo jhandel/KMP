@@ -836,10 +836,19 @@ class WorkflowsController extends AppController
         $this->Authorization->skipAuthorization();
 
         $q = $this->request->getQuery('q') ?? '';
+        $context = $this->request->getQuery('context') ?? '';
         $currentUser = $this->request->getAttribute('identity');
 
         $approvalManager = $this->getApprovalManager();
-        $eligible = $approvalManager->getNextApproverCandidates($approvalId, $currentUser?->id);
+
+        if ($context === 'reassign') {
+            // Admin reassignment: return all eligible members (no exclusions)
+            $eligibleMembers = $approvalManager->getEligibleApprovers($approvalId);
+            $eligible = array_map(fn($m) => $m->id, $eligibleMembers);
+        } else {
+            // Serial pick-next: exclude prior responders, requester, and current user
+            $eligible = $approvalManager->getNextApproverCandidates($approvalId, $currentUser?->id);
+        }
 
         $html = '';
         if (!empty($eligible)) {

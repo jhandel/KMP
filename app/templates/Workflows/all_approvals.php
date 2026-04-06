@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (controller) {
                 controller.configure({
                     id: approvalId,
-                    eligibleUrl: '/approvals/eligible-approvers/' + approvalId,
+                    eligibleUrl: '/approvals/eligible-approvers/' + approvalId + '?context=reassign',
                 });
             }
         });
