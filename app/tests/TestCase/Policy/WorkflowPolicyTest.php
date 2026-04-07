@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Test\TestCase\Policy;
 
 use App\KMP\KmpIdentityInterface;
+use App\Model\Entity\WorkflowApproval;
+use App\Model\Entity\WorkflowInstance;
 use App\Policy\ApprovalsControllerPolicy;
+use App\Policy\WorkflowApprovalPolicy;
 use App\Policy\WorkflowApprovalsTablePolicy;
 use App\Policy\WorkflowDefinitionsControllerPolicy;
 use App\Policy\WorkflowDefinitionsTablePolicy;
+use App\Policy\WorkflowInstancePolicy;
 use App\Policy\WorkflowInstancesControllerPolicy;
 use App\Policy\WorkflowInstancesTablePolicy;
 use Cake\ORM\Table;
@@ -25,6 +29,8 @@ class WorkflowPolicyTest extends TestCase
     private ApprovalsControllerPolicy $approvalsControllerPolicy;
     private WorkflowApprovalsTablePolicy $approvalsTablePolicy;
     private WorkflowInstancesTablePolicy $instancesTablePolicy;
+    private WorkflowApprovalPolicy $approvalEntityPolicy;
+    private WorkflowInstancePolicy $instanceEntityPolicy;
     private Table $table;
 
     protected function setUp(): void
@@ -36,6 +42,8 @@ class WorkflowPolicyTest extends TestCase
         $this->approvalsControllerPolicy = new ApprovalsControllerPolicy();
         $this->approvalsTablePolicy = new WorkflowApprovalsTablePolicy();
         $this->instancesTablePolicy = new WorkflowInstancesTablePolicy();
+        $this->approvalEntityPolicy = new WorkflowApprovalPolicy();
+        $this->instanceEntityPolicy = new WorkflowInstancePolicy();
         // Use a stub Table to avoid database dependency
         $this->table = $this->createMock(Table::class);
     }
@@ -248,5 +256,67 @@ class WorkflowPolicyTest extends TestCase
     public function testApprovalsTablePolicyRegularUserCannotReassign(): void
     {
         $this->assertFalse($this->approvalsTablePolicy->canReassignApproval($this->makeRegularUser(), $this->table));
+    }
+
+    // =====================================================
+    // WorkflowApprovalPolicy (entity-level) – authenticated access
+    // =====================================================
+
+    public function testApprovalEntityPolicySuperUserBeforeReturnsTrue(): void
+    {
+        $result = $this->approvalEntityPolicy->before($this->makeSuperUser(), $this->table, 'view');
+        $this->assertTrue($result);
+    }
+
+    public function testApprovalEntityPolicyAuthenticatedUserCanView(): void
+    {
+        $this->assertTrue($this->approvalEntityPolicy->canView($this->makeRegularUser(), $this->table));
+    }
+
+    public function testApprovalEntityPolicyAuthenticatedUserCanIndex(): void
+    {
+        $this->assertTrue($this->approvalEntityPolicy->canIndex($this->makeRegularUser(), $this->table));
+    }
+
+    public function testApprovalEntityPolicyNullIdentifierCannotView(): void
+    {
+        $this->assertFalse($this->approvalEntityPolicy->canView($this->makeRegularUser(null), $this->table));
+    }
+
+    public function testApprovalEntityPolicyNullIdentifierCannotIndex(): void
+    {
+        $this->assertFalse($this->approvalEntityPolicy->canIndex($this->makeRegularUser(null), $this->table));
+    }
+
+    // =====================================================
+    // WorkflowInstancePolicy (entity-level) – super user only
+    // =====================================================
+
+    public function testInstanceEntityPolicySuperUserBeforeReturnsTrue(): void
+    {
+        $result = $this->instanceEntityPolicy->before($this->makeSuperUser(), $this->table, 'view');
+        $this->assertTrue($result);
+    }
+
+    public function testInstanceEntityPolicyRegularUserCannotView(): void
+    {
+        $this->assertFalse($this->instanceEntityPolicy->canView($this->makeRegularUser(), $this->table));
+    }
+
+    public function testInstanceEntityPolicyRegularUserCannotEdit(): void
+    {
+        $entity = $this->createMock(\App\Model\Entity\BaseEntity::class);
+        $this->assertFalse($this->instanceEntityPolicy->canEdit($this->makeRegularUser(), $entity));
+    }
+
+    public function testInstanceEntityPolicyRegularUserCannotDelete(): void
+    {
+        $entity = $this->createMock(\App\Model\Entity\BaseEntity::class);
+        $this->assertFalse($this->instanceEntityPolicy->canDelete($this->makeRegularUser(), $entity));
+    }
+
+    public function testInstanceEntityPolicyRegularUserCannotIndex(): void
+    {
+        $this->assertFalse($this->instanceEntityPolicy->canIndex($this->makeRegularUser(), $this->table));
     }
 }
