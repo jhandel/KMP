@@ -105,12 +105,14 @@ SeedManager::bootstrap('test');
 $conn = ConnectionManager::get('test');
 $farFuture = '2100-01-01 00:00:00';
 
-// On Postgres (no MySQL seed dump), we also need to run plugin migrations
-// to create all plugin tables from scratch, and seed essential AppSettings.
+// Run plugin migrations on the test connection to pick up new tables
+// added by plugin-level migrations (e.g., Awards recommendation states).
+foreach (['Queue', 'Officers', 'Activities', 'Awards', 'Waivers'] as $plugin) {
+    (new Migrations())->migrate(['connection' => 'test', 'plugin' => $plugin]);
+}
+
+// On Postgres (no MySQL seed dump), we also need to seed essential AppSettings.
 if (SeedManager::isPostgres('test')) {
-    foreach (['Queue', 'Officers', 'Activities', 'Awards', 'Waivers'] as $plugin) {
-        (new Migrations())->migrate(['connection' => 'test', 'plugin' => $plugin]);
-    }
 
     // Seed essential AppSettings that tests expect
     $conn = ConnectionManager::get('test');

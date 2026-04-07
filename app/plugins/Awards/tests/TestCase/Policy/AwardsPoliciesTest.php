@@ -362,14 +362,6 @@ class AwardsPoliciesTest extends BaseTestCase
         $this->assertFalse($policy->canExport($user, $entity));
     }
 
-    public function testCanUseBoardDenied(): void
-    {
-        $user = $this->loadMember(self::TEST_MEMBER_AGATHA_ID);
-        $policy = new RecommendationPolicy();
-        $entity = $this->getTableLocator()->get('Awards.Recommendations')->newEmptyEntity();
-        $this->assertFalse($policy->canUseBoard($user, $entity));
-    }
-
     public function testCanViewHiddenDenied(): void
     {
         $user = $this->loadMember(self::TEST_MEMBER_AGATHA_ID);

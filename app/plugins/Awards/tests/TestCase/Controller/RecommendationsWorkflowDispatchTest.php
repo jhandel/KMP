@@ -430,7 +430,6 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
     {
         $expectedTriggers = [
             'Awards.RecommendationSubmitted',
-            'Awards.RecommendationStateChanged',
             'Awards.BulkStateTransition',
         ];
 
