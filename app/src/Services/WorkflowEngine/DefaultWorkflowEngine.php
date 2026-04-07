@@ -125,18 +125,17 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 return new ServiceResult(false, 'Workflow definition has no nodes.');
             }
 
-            // Duplicate instance prevention — skip for ephemeral workflows
-            if (!$this->ephemeral) {
+            // Duplicate instance prevention — skip for ephemeral workflows and
+            // when entity_id is unknown (e.g. entity created by the workflow itself).
+            if (!$this->ephemeral && $entityId !== null) {
                 $resolvedEntityType = $entityType ?? $workflowDef->entity_type;
                 $duplicateConditions = [
                     'workflow_definition_id' => $workflowDef->id,
                     'status IN' => [WorkflowInstance::STATUS_RUNNING, WorkflowInstance::STATUS_WAITING],
+                    'entity_id' => $entityId,
                 ];
                 if ($resolvedEntityType !== null) {
                     $duplicateConditions['entity_type'] = $resolvedEntityType;
-                }
-                if ($entityId !== null) {
-                    $duplicateConditions['entity_id'] = $entityId;
                 }
                 $existingInstance = $instancesTable->find()
                     ->where($duplicateConditions)
@@ -400,8 +399,6 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 ->contain(['CurrentVersion'])
                 ->all();
 
-            $versionsTable = TableRegistry::getTableLocator()->get('WorkflowVersions');
-
             foreach ($activeDefinitions as $def) {
                 $version = $def->current_version;
                 if (!$version || empty($version->definition['nodes'])) {
@@ -418,13 +415,14 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                         $entityIdField = $triggerNode['config']['entityIdField'] ?? null;
                         $entityId = $entityIdField ? ($eventData[$entityIdField] ?? null) : null;
 
-                        $results[] = $this->startWorkflow(
+                        $result = $this->startWorkflow(
                             $def->slug,
                             $eventData,
                             $triggeredBy,
                             null, // entityType from definition
                             $entityId ? (int)$entityId : null,
                         );
+                        $results[] = $result;
                         break; // Only start once per definition
                     }
                 }
@@ -847,6 +845,16 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         // Resolve requiredCount (may be int, or {type: "app_setting", key: "..."})
         $requiredCount = $this->resolveRequiredCount($config['requiredCount'] ?? 1, $instance->context ?? []);
 
+        // Resolve initial approver from config (e.g., "$.trigger.approverId")
+        $initialApproverId = null;
+        if (!empty($config['initialApproverId'])) {
+            $resolved = $this->resolveParamValue($config['initialApproverId'], $instanceContext);
+            if ($resolved !== null) {
+                $initialApproverId = (int)$resolved;
+                $approverConfig['current_approver_id'] = $initialApproverId;
+            }
+        }
+
         // Parse deadline duration (e.g., "14d", "24h", "7d") into a future DateTime
         $deadline = null;
         if (!empty($config['deadline'])) {
@@ -859,6 +867,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             'execution_log_id' => $log?->id,
             'approver_type' => $config['approverType'] ?? WorkflowApproval::APPROVER_TYPE_PERMISSION,
             'approver_config' => $approverConfig,
+            'current_approver_id' => $initialApproverId,
             'required_count' => $requiredCount,
             'approved_count' => 0,
             'rejected_count' => 0,
@@ -866,6 +875,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             'allow_parallel' => !empty($config['parallel'] ?? $config['allowParallel'] ?? false),
             'deadline' => $deadline,
             'escalation_config' => $config['escalationConfig'] ?? null,
+            'approval_token' => \App\KMP\StaticHelpers::generateToken(32),
         ]);
         if ($approval->getErrors()) {
             Log::error('Approval entity validation errors: ' . json_encode($approval->getErrors()));

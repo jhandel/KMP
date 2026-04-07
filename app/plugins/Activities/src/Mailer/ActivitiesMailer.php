@@ -32,19 +32,28 @@ class ActivitiesMailer extends Mailer
      */
     public function notifyApprover(
         string $to,
-        string $approvalToken,
+        ?string $approvalToken,
         string $memberScaName,
         string $approverScaName,
         string $activityName,
     ) {
         $sendFrom = StaticHelpers::getAppSetting("Email.SystemEmailFromAddress");
-        $url = Router::url([
-            "controller" => "Approvals",
-            "action" => "respond",
-            "plugin" => null,
-            "_full" => true,
-            $approvalToken,
-        ]);
+        if ($approvalToken) {
+            $url = Router::url([
+                "controller" => "Approvals",
+                "action" => "respond",
+                "plugin" => null,
+                "_full" => true,
+                $approvalToken,
+            ]);
+        } else {
+            $url = Router::url([
+                "controller" => "Approvals",
+                "action" => "approvals",
+                "plugin" => null,
+                "_full" => true,
+            ]);
+        }
         $this->setTo($to)
             ->setFrom($sendFrom)
             ->setSubject("Authorization Approval Request")

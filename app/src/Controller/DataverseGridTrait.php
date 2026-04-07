@@ -271,6 +271,8 @@ trait DataverseGridTrait
                             $searchConditions['OR'][$columnMeta['queryField'] . ' LIKE'] = '%'
                                 . $searchTerm . '%';
                         }
+                    } elseif (!empty($columnMeta['queryField'])) {
+                        $searchConditions['OR'][$columnMeta['queryField'] . ' LIKE'] = '%' . $searchTerm . '%';
                     } else {
                         $searchConditions['OR'][$tableName . '.' . $columnKey . ' LIKE'] = '%' . $searchTerm . '%';
                     }

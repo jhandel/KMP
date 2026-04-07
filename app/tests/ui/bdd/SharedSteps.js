@@ -112,6 +112,20 @@ When('I search the grid for {string}', async ({ page }, searchText) => {
     await page.waitForTimeout(500);
 });
 
+Given('I sort the grid by {string} descending', async ({ page }, columnName) => {
+    await page.waitForSelector('table.table tbody tr', { state: 'visible', timeout: 30000 });
+    // Click the column header to sort — may need two clicks for descending
+    const header = page.locator('table.table thead th').filter({ hasText: columnName }).first();
+    await header.click();
+    await page.waitForTimeout(2000);
+    // Check if already descending (look for desc indicator), if not click again
+    const url = new URL(page.url());
+    if (url.searchParams.get('direction') !== 'desc') {
+        await header.click();
+        await page.waitForTimeout(2000);
+    }
+});
+
 Then('the grid should contain {string}', async ({ page }, text) => {
     const grid = page.locator('table.table, .dataTable, [data-controller*="grid"]').first();
     await expect(grid).toContainText(text);

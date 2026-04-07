@@ -35,11 +35,11 @@ Then("I should have 1 pending authorization request", async ({ page }) => {
     await authTab.click();
     await page.waitForTimeout(2000);
 
-    // Switch to the "Pending" system view in the DataverseGrid
+    // Click the "Pending" system view tab
     const authSection = page.locator('#nav-member-authorizations');
-    const viewSelector = authSection.locator('select[data-grid-view-target="systemViewSelect"], [data-grid-view-target="systemViewSelect"]');
-    if (await viewSelector.count() > 0) {
-        await viewSelector.selectOption('pending');
+    const pendingTab = authSection.locator('[role="tab"]').filter({ hasText: /^Pending/i });
+    if (await pendingTab.count() > 0) {
+        await pendingTab.click();
         await page.waitForTimeout(3000);
     }
 
@@ -178,11 +178,11 @@ Then('I should see the approved authorization for {string}', async ({ page }, ac
         await page.waitForTimeout(2000);
     }
 
-    // Switch to "current" system view (active authorizations)
+    // Click the "Active" system view tab
     const authSection = page.locator('#nav-member-authorizations');
-    const viewSelector = authSection.locator('select[data-grid-view-target="systemViewSelect"], [data-grid-view-target="systemViewSelect"]');
-    if (await viewSelector.count() > 0) {
-        await viewSelector.selectOption('current');
+    const activeTab = authSection.locator('[role="tab"]').filter({ hasText: /^Active/i });
+    if (await activeTab.count() > 0) {
+        await activeTab.click();
         await page.waitForTimeout(3000);
     }
 
@@ -201,11 +201,11 @@ Then("I should see the denied authorization for {string} with a reason {string}"
         await page.waitForTimeout(2000);
     }
 
-    // Switch to "previous" system view (denied/expired authorizations)
+    // Click the "Previous" system view tab
     const authSection = page.locator('#nav-member-authorizations');
-    const viewSelector = authSection.locator('select[data-grid-view-target="systemViewSelect"], [data-grid-view-target="systemViewSelect"]');
-    if (await viewSelector.count() > 0) {
-        await viewSelector.selectOption('previous');
+    const previousTab = authSection.locator('[role="tab"]').filter({ hasText: /^Previous/i });
+    if (await previousTab.count() > 0) {
+        await previousTab.click();
         await page.waitForTimeout(3000);
     }
 

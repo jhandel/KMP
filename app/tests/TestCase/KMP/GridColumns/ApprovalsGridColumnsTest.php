@@ -116,8 +116,9 @@ class ApprovalsGridColumnsTest extends TestCase
         $searchable = ApprovalsGridColumns::getSearchableColumns();
         $this->assertNotEmpty($searchable);
         $this->assertContains('workflow_name', $searchable);
-        $this->assertContains('requester', $searchable);
         $this->assertContains('current_approver', $searchable);
+        // 'requester' is virtual (computed from JSON context), not searchable via SQL
+        $this->assertNotContains('requester', $searchable);
     }
 
     public function testStatusFilterOptionsUseConstants(): void

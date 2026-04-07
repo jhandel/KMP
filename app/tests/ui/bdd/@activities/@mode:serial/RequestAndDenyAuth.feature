@@ -18,7 +18,7 @@ Feature: User Requests an Authorization and it is Denied
     Scenario: Authorization request is denied by the approver
         Given I am logged in as "admin@amp.ansteorra.org"
         And I navigate to "/approvals"
-        And I search the grid for "Iris Basic User Demoer"
+        And I sort the grid by "Created" descending
         And I see one approval request for "Armored" from "Iris Basic User Demoer"
         And I click the respond button for the approval request
         And I select the "Reject" decision in the approval modal

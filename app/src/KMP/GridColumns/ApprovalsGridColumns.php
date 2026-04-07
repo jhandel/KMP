@@ -50,7 +50,7 @@ class ApprovalsGridColumns extends BaseGridColumns
                 'type' => 'string',
                 'sortable' => false,
                 'filterable' => false,
-                'searchable' => true,
+                'searchable' => false,
                 'defaultVisible' => true,
                 'width' => '150px',
                 'alignment' => 'left',

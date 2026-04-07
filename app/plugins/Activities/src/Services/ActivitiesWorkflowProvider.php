@@ -159,7 +159,7 @@ class ActivitiesWorkflowProvider
                 ],
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'notifyApprover',
-                'isAsync' => true,
+                'isAsync' => false,
             ],
             [
                 'action' => 'Activities.NotifyRequester',
@@ -177,7 +177,7 @@ class ActivitiesWorkflowProvider
                 ],
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'notifyRequester',
-                'isAsync' => true,
+                'isAsync' => false,
             ],
             [
                 'action' => 'Activities.RevokeAuthorization',

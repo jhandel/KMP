@@ -6,7 +6,6 @@ namespace Activities\Services;
 
 use Activities\Model\Entity\Authorization;
 use Activities\Services\AuthorizationManagerInterface;
-use App\KMP\StaticHelpers;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
 use Cake\Core\App;
 use Cake\I18n\DateTime;
@@ -192,38 +191,24 @@ class ActivitiesWorkflowActions
                 ->first();
 
             if (!$activity || !$member || !$approver || empty($approver->email_address)) {
-                Log::warning('Workflow NotifyApprover: missing data for notification');
+                Log::warning('Workflow NotifyApprover: missing data for notification'
+                    . " activityId={$activityId} requesterId={$requesterId} approverId={$approverId}"
+                    . " activity=" . ($activity ? 'yes' : 'no')
+                    . " member=" . ($member ? 'yes' : 'no')
+                    . " approver=" . ($approver ? 'yes' : 'no')
+                    . " email=" . ($approver->email_address ?? 'null'));
                 return ['sent' => false];
             }
 
             $mailerClass = App::className('Activities.Activities', 'Mailer', 'Mailer');
-            $useQueue = (StaticHelpers::getAppSetting('Email.UseQueue', 'no', null, true) === 'yes');
-
-            $data = [
-                'class' => $mailerClass,
-                'action' => 'notifyApprover',
-                'vars' => [
-                    'to' => $approver->email_address,
-                    'authorizationToken' => $authorizationToken,
-                    'memberScaName' => $member->sca_name,
-                    'approverScaName' => $approver->sca_name,
-                    'activityName' => $activity->name,
-                ],
-            ];
-
-            if ($useQueue) {
-                $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
-                $queuedJobsTable->createJob('Queue.Mailer', $data);
-            } else {
-                $mailer = new $mailerClass();
-                $mailer->send('notifyApprover', [
-                    $approver->email_address,
-                    $authorizationToken,
-                    $member->sca_name,
-                    $approver->sca_name,
-                    $activity->name,
-                ]);
-            }
+            $mailer = new $mailerClass();
+            $mailer->send('notifyApprover', [
+                $approver->email_address,
+                $authorizationToken,
+                $member->sca_name,
+                $approver->sca_name,
+                $activity->name,
+            ]);
 
             return ['sent' => true];
         } catch (\Throwable $e) {
@@ -416,37 +401,16 @@ class ActivitiesWorkflowActions
             }
 
             $mailerClass = App::className('Activities.Activities', 'Mailer', 'Mailer');
-            $useQueue = (StaticHelpers::getAppSetting('Email.UseQueue', 'no', null, true) === 'yes');
-
-            $data = [
-                'class' => $mailerClass,
-                'action' => 'notifyRequester',
-                'vars' => [
-                    'to' => $member->email_address,
-                    'status' => $status,
-                    'memberScaName' => $member->sca_name,
-                    'requesterId' => $requesterId,
-                    'approverScaName' => $approver->sca_name,
-                    'nextApproverScaName' => $nextApproverScaName,
-                    'activityName' => $activity->name,
-                ],
-            ];
-
-            if ($useQueue) {
-                $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
-                $queuedJobsTable->createJob('Queue.Mailer', $data);
-            } else {
-                $mailer = new $mailerClass();
-                $mailer->send('notifyRequester', [
-                    $member->email_address,
-                    $status,
-                    $member->sca_name,
-                    $requesterId,
-                    $approver->sca_name,
-                    $nextApproverScaName,
-                    $activity->name,
-                ]);
-            }
+            $mailer = new $mailerClass();
+            $mailer->send('notifyRequester', [
+                $member->email_address,
+                $status,
+                $member->sca_name,
+                $requesterId,
+                $approver->sca_name,
+                $nextApproverScaName,
+                $activity->name,
+            ]);
 
             return ['sent' => true];
         } catch (\Throwable $e) {

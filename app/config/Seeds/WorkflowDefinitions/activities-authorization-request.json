@@ -82,7 +82,7 @@
                 "params": {
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
-                    "approverId": "$.nodes.resolve-approvers.result.approverIds[0]",
+                    "approverId": "$.trigger.approverId",
                     "authorizationToken": "$.nodes.validate-request.result.authorizationToken"
                 }
             },
@@ -110,7 +110,8 @@
                 "allowParallel": false,
                 "allowComments": true,
                 "deadline": "30d",
-                "commentWarning": "Comments may be visible to the person who submitted this request."
+                "commentWarning": "Comments may be visible to the person who submitted this request.",
+                "initialApproverId": "$.trigger.approverId"
             },
             "position": {
                 "x": 1250,
@@ -144,7 +145,7 @@
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
                     "approverId": "$.nodes.approval-gate.approverId",
-                    "status": "pending",
+                    "status": "Pending",
                     "nextApproverId": "$.nodes.approval-gate.nextApproverId"
                 }
             },
@@ -184,7 +185,7 @@
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
                     "approverId": "$.resumeData.approverId",
-                    "status": "approved",
+                    "status": "Approved",
                     "nextApproverId": null
                 }
             },
@@ -230,7 +231,7 @@
                     "activityId": "$.trigger.activityId",
                     "requesterId": "$.trigger.memberId",
                     "approverId": "$.resumeData.approverId",
-                    "status": "denied",
+                    "status": "Denied",
                     "nextApproverId": null
                 }
             },
