@@ -25,4 +25,14 @@ class WorkflowApprovalPolicy extends BasePolicy
     {
         return $user->getIdentifier() !== null;
     }
+
+    public function canApprovals(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $user->getIdentifier() !== null;
+    }
+
+    public function canRecordApproval(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $user->getIdentifier() !== null;
+    }
 }

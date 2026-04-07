@@ -30,16 +30,22 @@ Given("I submit the authorization request", async ({ page }) => {
 });
 
 Then("I should have 1 pending authorization request", async ({ page }) => {
-    // The Pending tab in the authorization section shows a badge with the count
+    // Click on the Authorizations tab to make it visible
+    const authTab = page.locator('[data-detail-tabs-target="tabBtn"]').filter({ hasText: /Authorizations/i });
+    await authTab.click();
+    await page.waitForTimeout(2000);
+
+    // Switch to the "Pending" system view in the DataverseGrid
     const authSection = page.locator('#nav-member-authorizations');
-    const pendingTab = authSection.getByRole('tab', { name: /Pending/i });
-    await expect(pendingTab).toBeVisible();
-    const tabText = await pendingTab.textContent();
-    // Extract the number from text like "Pending 6"
-    const match = tabText.match(/(\d+)/);
-    expect(match).not.toBeNull();
-    const count = parseInt(match[1]);
-    expect(count).toBeGreaterThanOrEqual(1);
+    const viewSelector = authSection.locator('select[data-grid-view-target="systemViewSelect"], [data-grid-view-target="systemViewSelect"]');
+    if (await viewSelector.count() > 0) {
+        await viewSelector.selectOption('pending');
+        await page.waitForTimeout(3000);
+    }
+
+    // Verify at least one row exists in the grid
+    const rows = authSection.locator('table tbody tr');
+    await expect(rows.first()).toBeVisible({ timeout: 15000 });
 });
 
 When('I click on the {string} button for the authorization request', async ({ page }, buttonText) => {
@@ -74,10 +80,10 @@ When('I click on the {string} button for the authorization request', async ({ pa
 });
 
 Then('My Queue shows {int} pending authorization request(s)', async ({ page }, count) => {
-    // Navigate to the queue page and verify it has at least the expected number of requests
-    const queueLink = page.locator('a:has-text("My Auth Queue")');
-    await expect(queueLink).toBeVisible();
-    // Verify the queue is accessible — the exact count may vary with seed data
+    // Navigate to unified approvals page and verify pending requests
+    await page.goto('/approvals', { waitUntil: 'networkidle' });
+    const rows = page.locator('table tbody tr');
+    await expect(rows.first()).toBeVisible({ timeout: 15000 });
 });
 
 Then('I see one authorization request for {string} from {string}', async ({ page }, activityName, requesterName) => {
@@ -165,52 +171,48 @@ When('I submit the approval response', async ({ page }) => {
 // ── Authorization Profile Verification Steps ────────────────────────
 
 Then('I should see the approved authorization for {string}', async ({ page }, activityName) => {
-    // Click the Authorizations tab to ensure we're looking at the right section
-    const authTab = page.locator('#nav-member-authorizations-tab');
+    // Click the Authorizations tab
+    const authTab = page.locator('[data-detail-tabs-target="tabBtn"]').filter({ hasText: /Authorizations/i });
     if (await authTab.count() > 0) {
         await authTab.click();
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(2000);
     }
 
-    // Wait for authorization content to load (turbo-frame lazy loading)
+    // Switch to "current" system view (active authorizations)
     const authSection = page.locator('#nav-member-authorizations');
-    await authSection.locator('table tbody tr').first().waitFor({ state: 'visible', timeout: 30000 });
-
-    // The Active sub-tab should be selected by default; click it to ensure
-    const activeTab = authSection.locator('button.nav-link:has-text("Active")').first();
-    if (await activeTab.count() > 0) {
-        await activeTab.click({ force: true });
-        await page.waitForTimeout(1000);
+    const viewSelector = authSection.locator('select[data-grid-view-target="systemViewSelect"], [data-grid-view-target="systemViewSelect"]');
+    if (await viewSelector.count() > 0) {
+        await viewSelector.selectOption('current');
+        await page.waitForTimeout(3000);
     }
 
-    // Look for the activity in the auth table
-    const authRow = authSection.locator('table tbody tr').filter({
-        hasText: activityName
-    });
+    // Wait for grid to load and look for the activity
+    await authSection.locator('table tbody tr').first().waitFor({ state: 'visible', timeout: 30000 });
+    const authRow = authSection.locator('table tbody tr').filter({ hasText: activityName });
     await expect(authRow.first()).toBeVisible();
 });
 
 
 Then("I should see the denied authorization for {string} with a reason {string}", async ({ page }, activityName, reason) => {
     // Click the Authorizations tab
-    const authTab = page.locator('#nav-member-authorizations-tab');
+    const authTab = page.locator('[data-detail-tabs-target="tabBtn"]').filter({ hasText: /Authorizations/i });
     if (await authTab.count() > 0) {
         await authTab.click();
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(2000);
     }
 
-    // Wait for authorization content to load (turbo-frame lazy loading)
+    // Switch to "previous" system view (denied/expired authorizations)
     const authSection = page.locator('#nav-member-authorizations');
+    const viewSelector = authSection.locator('select[data-grid-view-target="systemViewSelect"], [data-grid-view-target="systemViewSelect"]');
+    if (await viewSelector.count() > 0) {
+        await viewSelector.selectOption('previous');
+        await page.waitForTimeout(3000);
+    }
+
+    // Wait for grid to load
     await authSection.locator('table').first().waitFor({ state: 'visible', timeout: 30000 });
 
-    // Click the Previous sub-tab
-    const prevTab = authSection.locator('button.nav-link:has-text("Previous")').first();
-    await prevTab.click({ force: true });
-    await page.waitForTimeout(1000);
-
-    // Look for the denied authorization
-    const authRow = authSection.locator('table tbody tr').filter({
-        hasText: activityName
-    });
-    await expect(authRow.first()).toBeVisible();
+    // Look for the denied authorization with the activity name
+    const authRow = authSection.locator('table tbody tr').filter({ hasText: activityName });
+    await expect(authRow.first()).toBeVisible({ timeout: 10000 });
 });

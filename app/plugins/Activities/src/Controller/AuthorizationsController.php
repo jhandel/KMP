@@ -317,10 +317,6 @@ class AuthorizationsController extends AppController
         $baseQuery = $this->Authorizations->find()
             ->where(['member_id' => $id])
             ->contain([
-                "CurrentPendingApprovals" => function (SelectQuery $q) {
-                    return $q->select(["Approvers.sca_name", "requested_on"])
-                        ->contain("Approvers");
-                },
                 "Activities" => function (SelectQuery $q) {
                     return $q->select(["Activities.name", "Activities.id"]);
                 },
@@ -582,10 +578,6 @@ class AuthorizationsController extends AppController
                 "revoker_id",
             ])
             ->contain([
-                "CurrentPendingApprovals" => function (SelectQuery $q) {
-                    return $q->select(["Approvers.sca_name", "requested_on"])
-                        ->contain("Approvers");
-                },
                 "Activities" => function (SelectQuery $q) {
                     return $q->select(["Activities.name", "Activities.id"]);
                 },
@@ -636,10 +628,6 @@ class AuthorizationsController extends AppController
                 "Members.sca_name"
             ])
             ->contain([
-                "CurrentPendingApprovals" => function (SelectQuery $q) {
-                    return $q->select(["Approvers.sca_name", "requested_on"])
-                        ->contain("Approvers");
-                },
                 "Members" => function (SelectQuery $q) {
                     return $q->select(["Members.id", "Members.sca_name"]);
                 },
