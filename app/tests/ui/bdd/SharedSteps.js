@@ -55,6 +55,28 @@ Then('the email should start with the body:', async ({ page }, expectedContent) 
     expect(normalized).toContain(expectedNormalized);
 });
 
+Then('the email should be addressed to {string}', async ({ page }, emailAddress) => {
+    const toCell = page.locator('table tr').filter({ hasText: 'To' }).getByRole('link', { name: emailAddress, exact: true });
+    await expect(toCell).toBeVisible();
+});
+
+Then('the email should be from {string}', async ({ page }, emailAddress) => {
+    const fromCell = page.locator('table tr').filter({ hasText: 'From' }).getByRole('link', { name: emailAddress, exact: true });
+    await expect(fromCell).toBeVisible();
+});
+
+Then('there should be an email to {string} with subject {string}', async ({ page }, recipient, subject) => {
+    const response = await page.request.get('http://localhost:8025/api/v1/search', {
+        params: { query: `to:${recipient} subject:"${subject}"` },
+    });
+    const data = await response.json();
+    expect(data.total).toBeGreaterThanOrEqual(1);
+});
+
+Given('I delete all test emails', async ({ page }) => {
+    await page.request.delete('http://localhost:8025/api/v1/messages');
+});
+
 // Authorization Queue Steps
 When('I click on my name {string}', async ({ page }, userName) => {
     // Click on the user's name link in the sidebar navigation

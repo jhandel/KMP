@@ -5,7 +5,7 @@ Feature: User Requests an Authorization and it is Approved
 
 
     Scenario: Request authorization for an activity
-        Given The test inbox is empty
+        Given I delete all test emails
         And I am logged in as "iris@ampdemo.com"
         And I navigate to my profile page
         And I click on the "Request Authorization" button
@@ -24,6 +24,8 @@ Feature: User Requests an Authorization and it is Approved
             Good day Admin von Admin
             Iris Basic User Demoer has requested your authorization in the fine and noble art of Armored.
             """
+        And the email should be addressed to "admin@amp.ansteorra.org"
+        And the email should be from "donotreply@amp.ansteorra.org"
     Scenario: Authorization request is approved by the approver
         Given I am logged in as "admin@amp.ansteorra.org"
         And I navigate to "/approvals"
@@ -44,6 +46,10 @@ Feature: User Requests an Authorization and it is Approved
             Admin von Admin has responded to your request and the authorization is now Approved for
             Armored.
             """
+        And the email should be addressed to "iris@ampdemo.com"
+        And the email should be from "donotreply@amp.ansteorra.org"
+        And there should be an email to "admin@amp.ansteorra.org" with subject "Authorization Approval Request"
+        And there should be an email to "iris@ampdemo.com" with subject "Update on Authorization Request"
 
     Scenario: User can see the approved authorization in their profile
         Given I am logged in as "iris@ampdemo.com"
