@@ -22,7 +22,7 @@ When('I navigate to the workflow instances page', async ({ page }) => {
 });
 
 When('I navigate to the workflow approvals page', async ({ page }) => {
-    await page.goto('/workflows/approvals', { waitUntil: 'networkidle' });
+    await page.goto('/approvals', { waitUntil: 'networkidle' });
 });
 
 // List verification steps

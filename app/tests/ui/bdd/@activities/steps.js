@@ -106,6 +106,64 @@ Then('I see one authorization request for {string} from {string}', async ({ page
     page._lastMatchedAuthRow = { activityName, requesterName };
 });
 
+// ── Unified Approvals Modal Steps ────────────────────────────────────
+
+Then('I see one approval request for {string} from {string}', async ({ page }, activityName, requesterName) => {
+    // Wait for DataverseGrid to load after search
+    await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 30000 });
+
+    const getRows = () => page.locator('table tbody tr')
+        .filter({ hasText: activityName })
+        .filter({ hasText: requesterName });
+
+    await expect(getRows().first()).toBeVisible({ timeout: 15000 });
+    // Store context for the respond step
+    page._lastMatchedApprovalRow = { activityName, requesterName };
+});
+
+When('I click the respond button for the approval request', async ({ page }) => {
+    const ctx = page._lastMatchedApprovalRow || {};
+    let row;
+    if (ctx.activityName && ctx.requesterName) {
+        row = page.locator('table tbody tr')
+            .filter({ hasText: ctx.activityName })
+            .filter({ hasText: ctx.requesterName })
+            .first();
+    } else {
+        row = page.locator('table tbody tr').first();
+    }
+
+    const respondBtn = row.locator('button:has-text("Respond"), a:has-text("Respond")').first();
+    await respondBtn.click({ force: true });
+    // Wait for the Bootstrap modal to appear
+    await page.waitForSelector('#approvalResponseModal.show', { state: 'visible', timeout: 10000 });
+});
+
+When('I select the {string} decision in the approval modal', async ({ page }, decision) => {
+    const modal = page.locator('#approvalResponseModal');
+    if (decision.toLowerCase() === 'approve') {
+        await modal.locator('#decisionApprove').click();
+    } else {
+        await modal.locator('#decisionReject').click();
+    }
+    await page.waitForTimeout(500);
+});
+
+When('I enter the approval comment {string}', async ({ page }, comment) => {
+    const modal = page.locator('#approvalResponseModal');
+    await modal.locator('#approvalComment').fill(comment);
+});
+
+When('I submit the approval response', async ({ page }) => {
+    const modal = page.locator('#approvalResponseModal');
+    const submitBtn = modal.locator('button[type="submit"]');
+    await submitBtn.click();
+    // Wait for form submission and redirect
+    await page.waitForLoadState('networkidle', { timeout: 15000 });
+});
+
+// ── Authorization Profile Verification Steps ────────────────────────
+
 Then('I should see the approved authorization for {string}', async ({ page }, activityName) => {
     // Click the Authorizations tab to ensure we're looking at the right section
     const authTab = page.locator('#nav-member-authorizations-tab');

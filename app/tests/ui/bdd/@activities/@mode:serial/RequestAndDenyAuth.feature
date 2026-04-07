@@ -17,14 +17,14 @@ Feature: User Requests an Authorization and it is Denied
 
     Scenario: Authorization request is denied by the approver
         Given I am logged in as "admin@amp.ansteorra.org"
-        And I click on my name "Admin von Admin"
-        And I click on the "My Auth Queue" link
+        And I navigate to "/approvals"
         And I search the grid for "Iris Basic User Demoer"
-        And I see one authorization request for "Armored" from "Iris Basic User Demoer"
-        And I click on the "Deny" button for the authorization request
-        And I enter the value "Not ready yet" in the input field with label "Reason for Denial"
-        And I click on the "Submit" button
-        Then I should see the flash message "The authorization approval has been rejected."
+        And I see one approval request for "Armored" from "Iris Basic User Demoer"
+        And I click the respond button for the approval request
+        And I select the "Reject" decision in the approval modal
+        And I enter the approval comment "Not ready yet"
+        And I submit the approval response
+        Then I should see the flash message "Approval response recorded."
 
     Scenario: Denial authorization is sent an email to the user
         Given I am at the test email inbox
