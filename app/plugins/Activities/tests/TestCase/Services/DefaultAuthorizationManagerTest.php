@@ -13,8 +13,9 @@ use App\Services\ActiveWindowManager\DefaultActiveWindowManager;
 /**
  * Activities\Services\DefaultAuthorizationManager Test Case
  *
- * Tests the DefaultAuthorizationManager service including request, approve,
- * deny, revoke, and retract workflows for activity authorizations.
+ * Tests the DefaultAuthorizationManager service including request,
+ * activate, revoke, and retract workflows for activity authorizations.
+ * Approval and denial are handled by the unified workflow engine.
  *
  * @uses \Activities\Services\DefaultAuthorizationManager
  */
@@ -33,13 +34,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
      * @var \Activities\Model\Table\AuthorizationsTable
      */
     protected $Authorizations;
-
-    /**
-     * AuthorizationApprovals table
-     *
-     * @var \Activities\Model\Table\AuthorizationApprovalsTable
-     */
-    protected $AuthorizationApprovals;
 
     /**
      * Activities table
@@ -76,7 +70,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
         $this->skipIfPostgres();
 
         $this->Authorizations = TableRegistry::getTableLocator()->get('Activities.Authorizations');
-        $this->AuthorizationApprovals = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
         $this->Activities = TableRegistry::getTableLocator()->get('Activities.Activities');
         $this->Members = TableRegistry::getTableLocator()->get('Members');
 
@@ -104,7 +97,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
     {
         unset($this->authManager);
         unset($this->Authorizations);
-        unset($this->AuthorizationApprovals);
         unset($this->Activities);
         unset($this->Members);
 
@@ -123,7 +115,7 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
      */
     private function findMemberWithoutPending(int $activityId): int
     {
-        // Use Agatha (2871) — check if she has a pending request for this activity
+        // Use Agatha — check if she has a pending request for this activity
         $pending = $this->Authorizations->find()
             ->where([
                 'member_id' => self::TEST_MEMBER_AGATHA_ID,
@@ -149,42 +141,9 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
             return self::TEST_MEMBER_BRYCE_ID;
         }
 
-        // Use a high-numbered activity that is less likely to have pending
         $this->fail('Could not find a member without a pending authorization for activity ' . $activityId);
 
         return 0;
-    }
-
-    /**
-     * Create a fresh authorization request for testing
-     *
-     * @param int $requesterId
-     * @param int $activityId
-     * @param int $approverId
-     * @return array{auth: \Activities\Model\Entity\Authorization, approval: mixed}
-     */
-    private function createTestAuthorization(int $requesterId, int $activityId, int $approverId): array
-    {
-        $result = $this->authManager->request($requesterId, $activityId, $approverId, false);
-        $this->assertTrue($result->success, 'Test setup: request should succeed - ' . ($result->reason ?? ''));
-
-        $auth = $this->Authorizations->find()
-            ->where([
-                'member_id' => $requesterId,
-                'activity_id' => $activityId,
-                'status' => Authorization::PENDING_STATUS,
-            ])
-            ->orderBy(['id' => 'DESC'])
-            ->first();
-        $this->assertNotNull($auth, 'Test setup: authorization should exist');
-
-        $approval = $this->AuthorizationApprovals->find()
-            ->where(['authorization_id' => $auth->id])
-            ->orderBy(['id' => 'DESC'])
-            ->first();
-        $this->assertNotNull($approval, 'Test setup: approval should exist');
-
-        return ['auth' => $auth, 'approval' => $approval];
     }
 
     // =========================================================================
@@ -196,8 +155,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
      */
     public function testRequestNewAuthorizationSuccess(): void
     {
-        // Use an activity unlikely to have a pending request for Agatha
-        // Pick a higher-numbered activity
         $activity = $this->Activities->find()
             ->orderBy(['id' => 'DESC'])
             ->first();
@@ -226,15 +183,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
         $this->assertNotNull($auth, 'Authorization record should exist');
         $this->assertEquals(Authorization::PENDING_STATUS, $auth->status);
         $this->assertFalse((bool)$auth->is_renewal);
-
-        // Verify approval record was created
-        $approval = $this->AuthorizationApprovals->find()
-            ->where(['authorization_id' => $auth->id])
-            ->first();
-        $this->assertNotNull($approval, 'Approval record should exist');
-        $this->assertEquals(self::ADMIN_MEMBER_ID, $approval->approver_id);
-        $this->assertNotEmpty($approval->authorization_token, 'Token should be generated');
-        $this->assertEquals(32, strlen($approval->authorization_token), 'Token should be 32 chars');
     }
 
     /**
@@ -271,11 +219,9 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
      */
     public function testRequestRenewalWithoutExistingApprovedFails(): void
     {
-        // Use an activity that member has NO approved authorization for
         $activity = $this->Activities->find()->orderBy(['id' => 'DESC'])->first();
         $requesterId = $this->findMemberWithoutPending($activity->id);
 
-        // Make sure no approved auth exists for this member/activity
         $approvedCount = $this->Authorizations->find()
             ->where([
                 'member_id' => $requesterId,
@@ -301,102 +247,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
     }
 
     // =========================================================================
-    // Tests for approve()
-    // =========================================================================
-
-    /**
-     * Test approving a single-approver authorization completes the workflow
-     */
-    public function testApproveSingleApproverSuccess(): void
-    {
-        // Find an activity requiring only 1 approver
-        $activity = $this->Activities->find()
-            ->where(['num_required_authorizors' => 1])
-            ->first();
-        $this->assertNotNull($activity, 'Need an activity requiring 1 approver');
-
-        $requesterId = $this->findMemberWithoutPending($activity->id);
-
-        // Create request
-        $testData = $this->createTestAuthorization(
-            $requesterId,
-            $activity->id,
-            self::ADMIN_MEMBER_ID,
-        );
-
-        // Approve
-        $result = $this->authManager->approve(
-            $testData['approval']->id,
-            self::ADMIN_MEMBER_ID,
-            null,
-        );
-
-        $this->assertTrue($result->success, 'Approval should succeed');
-
-        // Verify authorization status is now approved
-        $updatedAuth = $this->Authorizations->get($testData['auth']->id);
-        $this->assertEquals(
-            Authorization::APPROVED_STATUS,
-            $updatedAuth->status,
-            'Authorization should be approved',
-        );
-
-        // Verify approval record was updated
-        $updatedApproval = $this->AuthorizationApprovals->get($testData['approval']->id);
-        $this->assertTrue((bool)$updatedApproval->approved, 'Approval should be marked approved');
-        $this->assertNotNull($updatedApproval->responded_on, 'Response date should be set');
-    }
-
-    // =========================================================================
-    // Tests for deny()
-    // =========================================================================
-
-    /**
-     * Test denying an authorization request
-     */
-    public function testDenyAuthorizationSuccess(): void
-    {
-        // Find an activity with few pending auths
-        $activity = $this->Activities->find()->where(['id' => 2])->first();
-        $this->assertNotNull($activity);
-
-        $requesterId = $this->findMemberWithoutPending($activity->id);
-
-        // Create request
-        $testData = $this->createTestAuthorization(
-            $requesterId,
-            $activity->id,
-            self::ADMIN_MEMBER_ID,
-        );
-
-        // Deny
-        $denyReason = 'Insufficient training documentation';
-        $result = $this->authManager->deny(
-            $testData['approval']->id,
-            self::ADMIN_MEMBER_ID,
-            $denyReason,
-        );
-
-        $this->assertTrue($result->success, 'Denial should succeed');
-
-        // Verify authorization status
-        $updatedAuth = $this->Authorizations->get($testData['auth']->id);
-        $this->assertEquals(Authorization::DENIED_STATUS, $updatedAuth->status);
-        $this->assertEquals(self::ADMIN_MEMBER_ID, $updatedAuth->revoker_id);
-        $this->assertEquals($denyReason, $updatedAuth->revoked_reason);
-
-        // Verify dates are set to past (immediately expired)
-        $this->assertLessThan(DateTime::now(), $updatedAuth->start_on, 'Start should be in past');
-        $this->assertLessThan(DateTime::now(), $updatedAuth->expires_on, 'Expiry should be in past');
-
-        // Verify approval record
-        $updatedApproval = $this->AuthorizationApprovals->get($testData['approval']->id);
-        $this->assertFalse((bool)$updatedApproval->approved, 'Approval should be marked denied');
-        $this->assertNotNull($updatedApproval->responded_on, 'Response date should be set');
-        $this->assertEquals($denyReason, $updatedApproval->approver_notes);
-    }
-
-    // =========================================================================
     // Tests for revoke()
     // =========================================================================
 
@@ -405,7 +255,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
      */
     public function testRevokeApprovedAuthorizationSuccess(): void
     {
-        // Find an existing approved authorization from seed data
         $approvedAuth = $this->Authorizations->find()
             ->where([
                 'status' => Authorization::APPROVED_STATUS,
@@ -426,7 +275,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
 
         $this->assertTrue($result->success, 'Revocation should succeed');
 
-        // Verify authorization status changed
         $updatedAuth = $this->Authorizations->get($approvedAuth->id);
         $this->assertEquals(Authorization::REVOKED_STATUS, $updatedAuth->status);
     }
@@ -440,37 +288,41 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
      */
     public function testRetractPendingAuthorizationSuccess(): void
     {
-        // Use activity 3 for this test
         $activity = $this->Activities->find()->where(['id' => 3])->first();
         $this->assertNotNull($activity);
 
         $requesterId = $this->findMemberWithoutPending($activity->id);
 
         // Create request
-        $testData = $this->createTestAuthorization(
+        $result = $this->authManager->request(
             $requesterId,
             $activity->id,
             self::ADMIN_MEMBER_ID,
+            false,
         );
+        $this->assertTrue($result->success, 'Test setup: request should succeed');
+
+        $auth = $this->Authorizations->find()
+            ->where([
+                'member_id' => $requesterId,
+                'activity_id' => $activity->id,
+                'status' => Authorization::PENDING_STATUS,
+            ])
+            ->orderBy(['id' => 'DESC'])
+            ->first();
+        $this->assertNotNull($auth, 'Test setup: authorization should exist');
 
         // Retract
-        $result = $this->authManager->retract(
-            $testData['auth']->id,
+        $retractResult = $this->authManager->retract(
+            $auth->id,
             $requesterId,
         );
 
-        $this->assertTrue($result->success, 'Retraction should succeed');
-        $this->assertArrayHasKey('authorization', $result->data, 'Result data should contain authorization');
+        $this->assertTrue($retractResult->success, 'Retraction should succeed');
+        $this->assertArrayHasKey('authorization', $retractResult->data, 'Result data should contain authorization');
 
-        // Verify authorization status
-        $updatedAuth = $this->Authorizations->get($testData['auth']->id);
+        $updatedAuth = $this->Authorizations->get($auth->id);
         $this->assertEquals(Authorization::RETRACTED_STATUS, $updatedAuth->status);
-
-        // Verify the pending approval was closed
-        $approval = $this->AuthorizationApprovals->get($testData['approval']->id);
-        $this->assertNotNull($approval->responded_on, 'Approval should have responded_on set');
-        $this->assertFalse((bool)$approval->approved, 'Approval should be marked false');
-        $this->assertEquals('Retracted by requester', $approval->approver_notes);
     }
 
     /**
@@ -478,7 +330,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
      */
     public function testRetractNonPendingFails(): void
     {
-        // Find an approved authorization
         $approvedAuth = $this->Authorizations->find()
             ->where(['status' => Authorization::APPROVED_STATUS])
             ->first();
@@ -501,31 +352,42 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
      */
     public function testRetractByDifferentMemberFails(): void
     {
-        // Use activity 5 for this test
         $activity = $this->Activities->find()->where(['id' => 5])->first();
         $this->assertNotNull($activity);
 
         $requesterId = $this->findMemberWithoutPending($activity->id);
 
         // Create request
-        $testData = $this->createTestAuthorization(
+        $result = $this->authManager->request(
             $requesterId,
             $activity->id,
             self::ADMIN_MEMBER_ID,
+            false,
         );
+        $this->assertTrue($result->success, 'Test setup: request should succeed');
+
+        $auth = $this->Authorizations->find()
+            ->where([
+                'member_id' => $requesterId,
+                'activity_id' => $activity->id,
+                'status' => Authorization::PENDING_STATUS,
+            ])
+            ->orderBy(['id' => 'DESC'])
+            ->first();
+        $this->assertNotNull($auth, 'Test setup: authorization should exist');
 
         // Try to retract as a different member
         $differentMemberId = ($requesterId === self::TEST_MEMBER_AGATHA_ID)
             ? self::TEST_MEMBER_BRYCE_ID
             : self::TEST_MEMBER_AGATHA_ID;
 
-        $result = $this->authManager->retract(
-            $testData['auth']->id,
+        $retractResult = $this->authManager->retract(
+            $auth->id,
             $differentMemberId,
         );
 
-        $this->assertFalse($result->success, 'Retraction by non-owner should fail');
-        $this->assertStringContainsString('your own', $result->reason);
+        $this->assertFalse($retractResult->success, 'Retraction by non-owner should fail');
+        $this->assertStringContainsString('your own', $retractResult->reason);
     }
 
     /**
@@ -540,15 +402,14 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
     }
 
     // =========================================================================
-    // Tests for full request → approve workflow
+    // Tests for full request workflow
     // =========================================================================
 
     /**
-     * Test complete workflow: request → approve for single-approver activity
+     * Test complete workflow: request creates pending authorization
      */
-    public function testFullRequestApproveWorkflow(): void
+    public function testFullRequestCreatesAuthorizationWorkflow(): void
     {
-        // Find activity with 1 required approver
         $activity = $this->Activities->find()
             ->where(['num_required_authorizors' => 1])
             ->first();
@@ -556,7 +417,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
 
         $requesterId = $this->findMemberWithoutPending($activity->id);
 
-        // Step 1: Request
         $requestResult = $this->authManager->request(
             $requesterId,
             $activity->id,
@@ -565,7 +425,6 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
         );
         $this->assertTrue($requestResult->success, 'Request should succeed');
 
-        // Verify pending state
         $auth = $this->Authorizations->find()
             ->where([
                 'member_id' => $requesterId,
@@ -576,66 +435,5 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
             ->first();
         $this->assertNotNull($auth);
         $this->assertEquals(Authorization::PENDING_STATUS, $auth->status);
-
-        $approval = $this->AuthorizationApprovals->find()
-            ->where(['authorization_id' => $auth->id])
-            ->first();
-        $this->assertNotNull($approval);
-
-        // Step 2: Approve
-        $approveResult = $this->authManager->approve(
-            $approval->id,
-            self::ADMIN_MEMBER_ID,
-            null,
-        );
-        $this->assertTrue($approveResult->success, 'Approve should succeed');
-
-        // Verify final state
-        $finalAuth = $this->Authorizations->get($auth->id);
-        $this->assertEquals(Authorization::APPROVED_STATUS, $finalAuth->status);
-        $this->assertNotNull($finalAuth->start_on, 'Should have start date');
-        $this->assertNotNull($finalAuth->expires_on, 'Should have expiry date');
-    }
-
-    /**
-     * Test complete workflow: request → deny
-     */
-    public function testFullRequestDenyWorkflow(): void
-    {
-        $activity = $this->Activities->find()->where(['id' => 4])->first();
-        $this->assertNotNull($activity);
-
-        $requesterId = $this->findMemberWithoutPending($activity->id);
-
-        // Step 1: Request
-        $testData = $this->createTestAuthorization(
-            $requesterId,
-            $activity->id,
-            self::ADMIN_MEMBER_ID,
-        );
-
-        // Verify pending
-        $this->assertEquals(Authorization::PENDING_STATUS, $testData['auth']->status);
-
-        // Step 2: Deny
-        $denyResult = $this->authManager->deny(
-            $testData['approval']->id,
-            self::ADMIN_MEMBER_ID,
-            'Denied for testing purposes',
-        );
-        $this->assertTrue($denyResult->success, 'Deny should succeed');
-
-        // Verify final state
-        $finalAuth = $this->Authorizations->get($testData['auth']->id);
-        $this->assertEquals(Authorization::DENIED_STATUS, $finalAuth->status);
-
-        // Verify the requester can now create a NEW request (not blocked as duplicate)
-        $newResult = $this->authManager->request(
-            $requesterId,
-            $activity->id,
-            self::ADMIN_MEMBER_ID,
-            false,
-        );
-        $this->assertTrue($newResult->success, 'Should be able to re-request after denial');
     }
 }

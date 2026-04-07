@@ -31,11 +31,11 @@ class ActivitiesWorkflowActions
     }
 
     /**
-     * Create authorization request with first approval record.
+     * Create authorization request.
      *
      * @param array $context Current workflow context
      * @param array $config Config with memberId, activityId, approverId, isRenewal
-     * @return array Output with authorizationId, authorizationApprovalId
+     * @return array Output with authorizationId
      */
     public function createAuthorizationRequest(array $context, array $config): array
     {
@@ -49,10 +49,10 @@ class ActivitiesWorkflowActions
 
             if (!$result->success) {
                 Log::warning('Workflow CreateAuthorizationRequest: ' . $result->reason);
-                return ['authorizationId' => null, 'authorizationApprovalId' => null];
+                return ['authorizationId' => null];
             }
 
-            // Fetch the created authorization and its first approval
+            // Fetch the created authorization
             $authTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
             $auth = $authTable->find()
                 ->where([
@@ -63,23 +63,12 @@ class ActivitiesWorkflowActions
                 ->orderBy(['Authorizations.id' => 'DESC'])
                 ->first();
 
-            $approvalId = null;
-            if ($auth) {
-                $approvalsTable = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
-                $approval = $approvalsTable->find()
-                    ->where(['authorization_id' => $auth->id])
-                    ->orderBy(['id' => 'DESC'])
-                    ->first();
-                $approvalId = $approval ? $approval->id : null;
-            }
-
             return [
                 'authorizationId' => $auth ? $auth->id : null,
-                'authorizationApprovalId' => $approvalId,
             ];
         } catch (\Throwable $e) {
             Log::error('Workflow CreateAuthorizationRequest failed: ' . $e->getMessage());
-            return ['authorizationId' => null, 'authorizationApprovalId' => null];
+            return ['authorizationId' => null];
         }
     }
 
@@ -105,21 +94,6 @@ class ActivitiesWorkflowActions
             if (!$result->success) {
                 Log::warning('Workflow ActivateAuthorization: ' . $result->reason);
                 return ['activated' => false, 'memberRoleId' => null];
-            }
-
-            // Sync workflow approval back to activities_authorization_approvals
-            $approvalsTable = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
-            $pendingApproval = $approvalsTable->find()
-                ->where([
-                    'authorization_id' => $authorizationId,
-                    'responded_on IS' => null,
-                ])
-                ->first();
-            if ($pendingApproval) {
-                $pendingApproval->responded_on = DateTime::now();
-                $pendingApproval->approved = true;
-                $pendingApproval->approver_id = $approverId;
-                $approvalsTable->save($pendingApproval);
             }
 
             $data = $result->data ?? [];
@@ -159,21 +133,7 @@ class ActivitiesWorkflowActions
                 $denyReason = $context['resumeData']['comment'] ?? 'Denied via workflow';
             }
 
-            // Try finding a pending legacy approval record first
-            $approvalsTable = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
-            $pendingApproval = $approvalsTable->find()
-                ->where([
-                    'authorization_id' => $authorizationId,
-                    'responded_on IS' => null,
-                ])
-                ->first();
-
-            if ($pendingApproval) {
-                $result = $this->authManager->deny($pendingApproval->id, $approverId, $denyReason);
-                return ['denied' => $result->success];
-            }
-
-            // No legacy approval record — update the authorization directly
+            // Update the authorization directly
             $authTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
             $authorization = $authTable->get($authorizationId);
 

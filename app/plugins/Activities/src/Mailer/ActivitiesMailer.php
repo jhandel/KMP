@@ -22,7 +22,7 @@ class ActivitiesMailer extends Mailer
     }
 
     /**
-     * Send notification approver.
+     * Send notification to approver.
      *
      * @param string $to
      * @param string $approvalToken
@@ -39,9 +39,9 @@ class ActivitiesMailer extends Mailer
     ) {
         $sendFrom = StaticHelpers::getAppSetting("Email.SystemEmailFromAddress");
         $url = Router::url([
-            "controller" => "AuthorizationApprovals",
-            "action" => "myQueue",
-            "plugin" => 'Activities',
+            "controller" => "Approvals",
+            "action" => "respond",
+            "plugin" => null,
             "_full" => true,
             $approvalToken,
         ]);

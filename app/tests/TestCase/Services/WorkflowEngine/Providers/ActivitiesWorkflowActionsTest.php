@@ -273,7 +273,6 @@ class ActivitiesWorkflowActionsTest extends BaseTestCase
 
         $activityTable = TableRegistry::getTableLocator()->get('Activities.Activities');
         $authTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
-        $approvalsTable = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
 
         $activity = $activityTable->find()->first();
         if (!$activity) {
@@ -282,22 +281,11 @@ class ActivitiesWorkflowActionsTest extends BaseTestCase
 
         $memberId = self::TEST_MEMBER_EIRIK_ID;
 
-        // Create authorization
-        $auth = $this->createTestAuthorization($memberId, $activity->id, Authorization::PENDING_STATUS);
-
-        // Create enough approvals to meet the requirement
+        // Create authorization with enough approval_count to meet the requirement
         $requiredCount = $activity->num_required_authorizors ?? 1;
-        for ($i = 0; $i < $requiredCount; $i++) {
-            $approval = $approvalsTable->newEntity([
-                'authorization_id' => $auth->id,
-                'approver_id' => self::ADMIN_MEMBER_ID,
-                'requested_on' => DateTime::now(),
-                'responded_on' => DateTime::now(),
-                'approved' => true,
-                'authorization_token' => 'test-token-' . $i . '-' . uniqid(),
-            ]);
-            $approvalsTable->saveOrFail($approval);
-        }
+        $auth = $this->createTestAuthorization($memberId, $activity->id, Authorization::PENDING_STATUS);
+        $auth->approval_count = $requiredCount;
+        $authTable->saveOrFail($auth);
 
         $result = $this->conditions->hasRequiredApprovals(
             [],

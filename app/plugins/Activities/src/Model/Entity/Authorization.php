@@ -22,7 +22,6 @@ use App\Model\Entity\ActiveWindowBaseEntity;
  * **Relationships:**
  * - belongsTo Member, Activity, MemberRole (granted_member_role_id)
  * - belongsTo RevokedBy (revoker_id) - who revoked
- * - hasMany AuthorizationApprovals - workflow tracking
  * 
  * @property int $id
  * @property int $member_id
@@ -41,7 +40,6 @@ use App\Model\Entity\ActiveWindowBaseEntity;
  * @property \Activities\Model\Entity\Activity $activity
  * @property \App\Model\Entity\MemberRole $member_role
  * @property \App\Model\Entity\Member $revoked_by
- * @property \Activities\Model\Entity\AuthorizationApproval[] $authorization_approvals
  * 
  * @see \Activities\Model\Table\AuthorizationsTable Table class
  * @see 5.6.7-authorization-entity-reference.md Complete documentation
@@ -72,6 +70,5 @@ class Authorization extends ActiveWindowBaseEntity
         "start_on" => true,
         "member" => true,
         "activity" => true,
-        "authorization_approvals" => true,
     ];
 }

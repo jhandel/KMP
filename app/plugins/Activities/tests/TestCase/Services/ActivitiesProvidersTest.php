@@ -50,7 +50,6 @@ class ActivitiesProvidersTest extends BaseTestCase
     {
         $items = ActivitiesNavigationProvider::getNavigationItems($this->user);
         $labels = array_column($items, 'label');
-        $this->assertContains('Auth Queues', $labels);
         $this->assertContains('Activity Groups', $labels);
         $this->assertContains('Activities', $labels);
         $this->assertContains('Activity Authorizations', $labels);
@@ -65,18 +64,18 @@ class ActivitiesProvidersTest extends BaseTestCase
         }
     }
 
-    public function testNavigationAuthQueuesIsLink(): void
+    public function testNavigationActivityGroupsIsLink(): void
     {
         $items = ActivitiesNavigationProvider::getNavigationItems($this->user);
-        $authQueues = null;
+        $activityGroups = null;
         foreach ($items as $item) {
-            if ($item['label'] === 'Auth Queues') {
-                $authQueues = $item;
+            if ($item['label'] === 'Activity Groups') {
+                $activityGroups = $item;
                 break;
             }
         }
-        $this->assertNotNull($authQueues);
-        $this->assertSame('link', $authQueues['type']);
+        $this->assertNotNull($activityGroups);
+        $this->assertSame('link', $activityGroups['type']);
     }
 
     public function testNavigationAcceptsOptionalParams(): void

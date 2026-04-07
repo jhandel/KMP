@@ -70,6 +70,9 @@ class ActivitiesWorkflowConditions
     /**
      * Check if an authorization has the required number of approvals.
      *
+     * Uses the authorization's approval_count field (maintained by the workflow
+     * engine) rather than counting legacy approval records.
+     *
      * @param array $context Current workflow context
      * @param array $config Config with authorizationId
      * @return bool
@@ -98,17 +101,7 @@ class ActivitiesWorkflowConditions
                 ? ($activity->num_required_renewers ?? 1)
                 : ($activity->num_required_authorizors ?? 1);
 
-            // Count completed approvals
-            $approvalsTable = TableRegistry::getTableLocator()->get('Activities.AuthorizationApprovals');
-            $approvedCount = $approvalsTable->find()
-                ->where([
-                    'authorization_id' => (int)$authorizationId,
-                    'approved' => true,
-                    'responded_on IS NOT' => null,
-                ])
-                ->count();
-
-            return $approvedCount >= $requiredApprovals;
+            return ($authorization->approval_count ?? 0) >= $requiredApprovals;
         } catch (\Throwable $e) {
             Log::error('Condition HasRequiredApprovals failed: ' . $e->getMessage());
             return false;

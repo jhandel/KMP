@@ -11,7 +11,8 @@ use App\Services\ServiceResult;
  * Contract for managing member activity authorizations.
  *
  * Defines the service layer for authorization workflows including requests,
- * approvals, denials, revocations, and retractions. All methods return
+ * activation, revocations, and retractions. Approval and denial are now
+ * handled entirely by the unified workflow engine. All methods return
  * ServiceResult objects and require external transaction management.
  *
  * @package Activities\Services
@@ -21,40 +22,6 @@ use App\Services\ServiceResult;
  */
 interface AuthorizationManagerInterface
 {
-    /**
-     * Process approval of an authorization request.
-     *
-     * Validates approver authority, records approval, and activates authorization
-     * when all required approvals are collected. Requires external transaction.
-     *
-     * @param int $authorizationApprovalId ID of approval record to process
-     * @param int $approverId ID of member providing approval
-     * @param int|null $nextApproverId Optional next approver for multi-level workflow
-     * @return ServiceResult Success with authorization data or error details
-     */
-    public function approve(
-        int $authorizationApprovalId,
-        int $approverId,
-        ?int $nextApproverId = null
-    ): ServiceResult;
-
-    /**
-     * Process denial of an authorization request.
-     *
-     * Records denial reasoning, updates status, and maintains audit trail.
-     * Requires external transaction.
-     *
-     * @param int $authorizationApprovalId ID of approval record to deny
-     * @param int $approverId ID of member providing denial
-     * @param string $denyReason Detailed reason for denial
-     * @return ServiceResult Success with denial confirmation or error details
-     */
-    public function deny(
-        int $authorizationApprovalId,
-        int $approverId,
-        string $denyReason,
-    ): ServiceResult;
-
     /**
      * Initiate a new authorization request.
      *
