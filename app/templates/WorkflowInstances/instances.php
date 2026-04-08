@@ -4,8 +4,8 @@
  * Workflow Instances List
  *
  * @var \App\View\AppView $this
- * @var iterable<\App\Model\Entity\WorkflowInstance> $instances
  * @var int|null $definitionId
+ * @var \App\Model\Entity\WorkflowDefinition|null $workflowDefinition
  */
 
 $this->extend("/layout/TwitterBootstrap/dashboard");
@@ -16,6 +16,10 @@ $this->KMP->endBlock();
 
 $this->assign('title', __('Workflow Instances'));
 
+$gridDataUrl = $definitionId !== null
+    ? $this->Url->build(['controller' => 'WorkflowInstances', 'action' => 'gridData', $definitionId])
+    : $this->Url->build(['controller' => 'WorkflowInstances', 'action' => 'gridData']);
+
 ?>
 
 <div class="workflows instances content">
@@ -23,12 +27,14 @@ $this->assign('title', __('Workflow Instances'));
         <h3>
             <?= $this->element('backButton') ?>
             <?= __('Workflow Instances') ?>
-            <?php if ($definitionId) : ?>
+            <?php if ($workflowDefinition) : ?>
+                <small class="text-muted"><?= h(__('for {0}', $workflowDefinition->name)) ?></small>
+            <?php elseif ($definitionId) : ?>
                 <small class="text-muted"><?= __('(filtered)') ?></small>
             <?php endif; ?>
         </h3>
         <div>
-            <?php if ($definitionId) : ?>
+            <?php if ($definitionId !== null) : ?>
                 <?= $this->Html->link(
                     __('Show All'),
                     ['action' => 'instances'],
@@ -38,65 +44,8 @@ $this->assign('title', __('Workflow Instances'));
         </div>
     </div>
 
-    <div class="table-responsive">
-        <table class="table table-striped table-hover">
-            <thead>
-                <tr>
-                    <th><?= __('ID') ?></th>
-                    <th><?= __('Workflow') ?></th>
-                    <th><?= __('Version') ?></th>
-                    <th><?= __('Entity') ?></th>
-                    <th><?= __('Status') ?></th>
-                    <th><?= __('Started') ?></th>
-                    <th><?= __('Completed') ?></th>
-                    <th class="text-end"><?= __('Actions') ?></th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($instances as $instance) : ?>
-                <tr>
-                    <td><?= h($instance->id) ?></td>
-                    <td><?= h($instance->workflow_definition->name ?? '—') ?></td>
-                    <td>v<?= h($instance->workflow_version->version_number ?? '?') ?></td>
-                    <td>
-                        <?php if ($instance->entity_type) : ?>
-                            <?= h($instance->entity_type) ?>#<?= h($instance->entity_id) ?>
-                        <?php else : ?>
-                            —
-                        <?php endif; ?>
-                    </td>
-                    <td><?= $this->KMP->workflowStatusBadge($instance->status) ?></td>
-                    <td><?= h(\App\KMP\TimezoneHelper::formatDateTime($instance->created)) ?></td>
-                    <td><?= $instance->completed_at ? h(\App\KMP\TimezoneHelper::formatDateTime($instance->completed_at)) : '—' ?></td>
-                    <td class="text-end">
-                        <?= $this->Html->link(
-                            '<i class="bi bi-eye"></i> ' . __('View'),
-                            ['action' => 'viewInstance', $instance->id],
-                            ['class' => 'btn btn-sm btn-outline-primary', 'escape' => false]
-                        ) ?>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-                <?php if (empty($instances) || (is_object($instances) && $instances->count() === 0)) : ?>
-                <tr>
-                    <td colspan="8" class="text-center text-muted py-4">
-                        <?= __('No workflow instances found.') ?>
-                    </td>
-                </tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Pagination -->
-    <nav aria-label="<?= __('Workflow instances pagination') ?>">
-        <div class="d-flex justify-content-between align-items-center mt-3">
-            <div><?= $this->Paginator->counter(__('Page {{page}} of {{pages}}')) ?></div>
-            <ul class="pagination pagination-sm mb-0">
-                <?= $this->Paginator->prev('« ' . __('Previous')) ?>
-                <?= $this->Paginator->numbers() ?>
-                <?= $this->Paginator->next(__('Next') . ' »') ?>
-            </ul>
-        </div>
-    </nav>
+    <?= $this->element('dv_grid', [
+        'frameId' => 'workflow-instances-grid',
+        'dataUrl' => $gridDataUrl,
+    ]) ?>
 </div>

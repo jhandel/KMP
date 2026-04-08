@@ -18,6 +18,11 @@ class WorkflowInstancesTablePolicy extends BasePolicy
         return $this->_isSuperUser($user);
     }
 
+    public function canGridData(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $this->_isSuperUser($user);
+    }
+
     public function canViewInstance(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
     {
         return $this->_isSuperUser($user);

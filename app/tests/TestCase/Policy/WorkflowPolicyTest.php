@@ -225,6 +225,12 @@ class WorkflowPolicyTest extends TestCase
         $this->assertFalse($this->instancesControllerPolicy->canInstances($user, []));
     }
 
+    public function testInstancesControllerPolicyRegularUserDeniedGridData(): void
+    {
+        $user = $this->makeRegularUser();
+        $this->assertFalse($this->instancesControllerPolicy->canGridData($user, []));
+    }
+
     // =====================================================
     // WorkflowInstancesTablePolicy
     // =====================================================
@@ -237,6 +243,16 @@ class WorkflowPolicyTest extends TestCase
     public function testInstancesTablePolicyRegularUserCannotInstances(): void
     {
         $this->assertFalse($this->instancesTablePolicy->canInstances($this->makeRegularUser(), $this->table));
+    }
+
+    public function testInstancesTablePolicySuperUserCanGridData(): void
+    {
+        $this->assertTrue($this->instancesTablePolicy->canGridData($this->makeSuperUser(), $this->table));
+    }
+
+    public function testInstancesTablePolicyRegularUserCannotGridData(): void
+    {
+        $this->assertFalse($this->instancesTablePolicy->canGridData($this->makeRegularUser(), $this->table));
     }
 
     // =====================================================

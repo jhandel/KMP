@@ -97,7 +97,7 @@ class AuthorizationsController extends AppController
      * @param string|null $id Authorization ID to retract
      * @return \Cake\Http\Response|null
      */
-    public function retract(AuthorizationManagerInterface $maService, TriggerDispatcher $triggerDispatcher, $id = null)
+    public function retract(AuthorizationManagerInterface $maService, $id = null)
     {
         $this->request->allowMethod(["post"]);
         if ($id == null) {
@@ -121,13 +121,6 @@ class AuthorizationsController extends AppController
 
             return $this->redirect($this->referer());
         }
-
-        $this->dispatchWorkflowEvent($triggerDispatcher, 'Activities.AuthorizationRetracted', [
-            'authorization_id' => $id,
-            'member_id' => $authorization->member_id,
-            'activity_id' => $authorization->activity_id,
-            'retracted_by' => $requesterId,
-        ]);
 
         $this->Flash->success(
             __("Your authorization request has been retracted."),

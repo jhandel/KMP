@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Activities\Test\TestCase\Services;
 
 use Activities\Model\Entity\Authorization;
+use App\Model\Entity\WorkflowApproval;
+use App\Model\Entity\WorkflowInstance;
 use App\Test\TestCase\BaseTestCase;
 use Cake\I18n\DateTime;
 use Cake\ORM\TableRegistry;
@@ -323,6 +325,118 @@ class DefaultAuthorizationManagerTest extends BaseTestCase
 
         $updatedAuth = $this->Authorizations->get($auth->id);
         $this->assertEquals(Authorization::RETRACTED_STATUS, $updatedAuth->status);
+    }
+
+    public function testRetractCancelsLinkedWorkflowInstance(): void
+    {
+        $activity = $this->Activities->find()->where(['id' => 4])->first();
+        $this->assertNotNull($activity);
+
+        $requesterId = $this->findMemberWithoutPending($activity->id);
+
+        $requestResult = $this->authManager->request(
+            $requesterId,
+            $activity->id,
+            self::ADMIN_MEMBER_ID,
+            false,
+        );
+        $this->assertTrue($requestResult->success, 'Test setup: request should succeed');
+
+        $auth = $this->Authorizations->find()
+            ->where([
+                'member_id' => $requesterId,
+                'activity_id' => $activity->id,
+                'status' => Authorization::PENDING_STATUS,
+            ])
+            ->orderBy(['id' => 'DESC'])
+            ->first();
+        $this->assertNotNull($auth, 'Test setup: authorization should exist');
+
+        $definitionsTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
+        $versionsTable = TableRegistry::getTableLocator()->get('WorkflowVersions');
+        $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+        $logsTable = TableRegistry::getTableLocator()->get('WorkflowExecutionLogs');
+        $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+
+        $definition = $definitionsTable->newEntity([
+            'name' => 'Retract Workflow ' . uniqid(),
+            'slug' => 'retract-workflow-' . uniqid(),
+            'trigger_type' => 'event',
+            'is_active' => true,
+        ]);
+        $definitionsTable->saveOrFail($definition);
+
+        $version = $versionsTable->newEntity([
+            'workflow_definition_id' => $definition->id,
+            'version_number' => 1,
+            'definition' => [
+                'nodes' => [
+                    'trigger1' => ['type' => 'trigger', 'outputs' => [['target' => 'approval-gate']]],
+                    'approval-gate' => ['type' => 'approval', 'outputs' => []],
+                ],
+            ],
+            'status' => 'published',
+        ]);
+        $versionsTable->saveOrFail($version);
+
+        $definition->current_version_id = $version->id;
+        $definitionsTable->saveOrFail($definition);
+
+        $instance = $instancesTable->newEntity([
+            'workflow_definition_id' => $definition->id,
+            'workflow_version_id' => $version->id,
+            'entity_type' => 'Activities.Authorizations',
+            'entity_id' => null,
+            'status' => WorkflowInstance::STATUS_WAITING,
+            'context' => [
+                'trigger' => [
+                    'authorizationId' => $auth->id,
+                    'memberId' => $requesterId,
+                    'activityId' => $activity->id,
+                ],
+            ],
+            'active_nodes' => ['approval-gate'],
+            'started_by' => $requesterId,
+            'started_at' => DateTime::now(),
+        ]);
+        $instancesTable->saveOrFail($instance);
+
+        $log = $logsTable->newEntity([
+            'workflow_instance_id' => $instance->id,
+            'node_id' => 'approval-gate',
+            'node_type' => 'approval',
+            'status' => WorkflowInstance::STATUS_WAITING,
+        ]);
+        $logsTable->saveOrFail($log);
+
+        $approval = $approvalsTable->newEntity([
+            'workflow_instance_id' => $instance->id,
+            'execution_log_id' => $log->id,
+            'node_id' => 'approval-gate',
+            'approver_type' => WorkflowApproval::APPROVER_TYPE_MEMBER,
+            'approver_config' => ['member_id' => self::ADMIN_MEMBER_ID],
+            'required_count' => 1,
+            'approved_count' => 0,
+            'rejected_count' => 0,
+            'status' => WorkflowApproval::STATUS_PENDING,
+            'approval_token' => str_repeat('a', 32),
+        ]);
+        $approvalsTable->saveOrFail($approval);
+
+        $retractResult = $this->authManager->retract($auth->id, $requesterId);
+
+        $this->assertTrue($retractResult->success, 'Retraction should succeed');
+
+        $updatedInstance = $instancesTable->get($instance->id);
+        $updatedApproval = $approvalsTable->get($approval->id);
+
+        $this->assertSame(WorkflowInstance::STATUS_CANCELLED, $updatedInstance->status);
+        $this->assertNotNull($updatedInstance->completed_at);
+        $this->assertSame(
+            'Authorization request retracted',
+            $updatedInstance->error_info['cancellation_reason'] ?? null,
+        );
+        $this->assertSame(WorkflowApproval::STATUS_CANCELLED, $updatedApproval->status);
     }
 
     /**

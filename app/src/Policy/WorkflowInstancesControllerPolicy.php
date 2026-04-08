@@ -33,6 +33,11 @@ class WorkflowInstancesControllerPolicy implements BeforePolicyInterface
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }
 
+    public function canGridData(KmpIdentityInterface $user, mixed $resource): bool
+    {
+        return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
+    }
+
     public function canViewInstance(KmpIdentityInterface $user, mixed $resource): bool
     {
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);

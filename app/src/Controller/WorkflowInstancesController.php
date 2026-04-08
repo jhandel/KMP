@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\KMP\GridColumns\WorkflowInstancesGridColumns;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use Cake\Controller\ComponentRegistry;
 use Cake\Http\ServerRequest;
@@ -17,6 +18,8 @@ use Cake\Http\ServerRequest;
  */
 class WorkflowInstancesController extends AppController
 {
+    use DataverseGridTrait;
+
     protected ?string $defaultTable = 'WorkflowInstances';
 
     private WorkflowEngineInterface $engine;
@@ -35,6 +38,7 @@ class WorkflowInstancesController extends AppController
         parent::initialize();
         $this->Authorization->authorizeModel(
             'instances',
+            'gridData',
             'viewInstance',
         );
     }
@@ -47,16 +51,86 @@ class WorkflowInstancesController extends AppController
      */
     public function instances(?int $definitionId = null)
     {
-        $query = $this->fetchTable('WorkflowInstances')->find()
-            ->contain(['WorkflowDefinitions', 'WorkflowVersions'])
-            ->orderBy(['WorkflowInstances.created' => 'DESC']);
-
-        if ($definitionId) {
-            $query->where(['WorkflowInstances.workflow_definition_id' => $definitionId]);
+        $workflowDefinition = null;
+        if ($definitionId !== null) {
+            $workflowDefinition = $this->fetchTable('WorkflowDefinitions')
+                ->find()
+                ->select(['id', 'name'])
+                ->where(['WorkflowDefinitions.id' => $definitionId])
+                ->first();
         }
 
-        $instances = $this->paginate($query, ['limit' => 25]);
-        $this->set(compact('instances', 'definitionId'));
+        $this->set(compact('definitionId', 'workflowDefinition'));
+    }
+
+    /**
+     * Grid data endpoint for workflow instances Dataverse grid.
+     *
+     * @param int|null $definitionId Optional workflow definition filter
+     * @return \Cake\Http\Response|null|void
+     */
+    public function gridData(?int $definitionId = null)
+    {
+        $baseQuery = $this->fetchTable('WorkflowInstances')->find()
+            ->contain(['WorkflowDefinitions', 'WorkflowVersions']);
+
+        if ($definitionId !== null) {
+            $baseQuery->where(['WorkflowInstances.workflow_definition_id' => $definitionId]);
+        }
+
+        $result = $this->processDataverseGrid([
+            'gridKey' => $definitionId !== null
+                ? "Workflows.instances.definition.{$definitionId}"
+                : 'Workflows.instances.main',
+            'gridColumnsClass' => WorkflowInstancesGridColumns::class,
+            'baseQuery' => $baseQuery,
+            'tableName' => 'WorkflowInstances',
+            'defaultSort' => [
+                'WorkflowInstances.started_at' => 'DESC',
+                'WorkflowInstances.id' => 'DESC',
+            ],
+            'defaultPageSize' => 25,
+            'systemViews' => WorkflowInstancesGridColumns::getSystemViews(),
+            'defaultSystemView' => 'sys-workflow-instances-recent',
+            'showAllTab' => true,
+            'canAddViews' => false,
+            'canFilter' => true,
+            'canExportCsv' => false,
+            'showFilterPills' => true,
+        ]);
+
+        $rowActions = WorkflowInstancesGridColumns::getRowActions();
+        $this->set([
+            'data' => $result['data'],
+            'gridState' => $result['gridState'],
+            'columns' => $result['columnsMetadata'],
+            'visibleColumns' => $result['visibleColumns'],
+            'searchableColumns' => WorkflowInstancesGridColumns::getSearchableColumns(),
+            'dropdownFilterColumns' => $result['dropdownFilterColumns'],
+            'filterOptions' => $result['filterOptions'],
+            'currentFilters' => $result['currentFilters'],
+            'currentSearch' => $result['currentSearch'],
+            'currentView' => $result['currentView'],
+            'availableViews' => $result['availableViews'],
+            'gridKey' => $result['gridKey'],
+            'currentSort' => $result['currentSort'],
+            'currentMember' => $result['currentMember'],
+            'rowActions' => $rowActions,
+        ]);
+
+        $turboFrame = $this->request->getHeaderLine('Turbo-Frame');
+
+        if ($turboFrame === 'workflow-instances-grid-table') {
+            $this->set('tableFrameId', 'workflow-instances-grid-table');
+            $this->viewBuilder()->disableAutoLayout();
+            $this->viewBuilder()->setTemplate('../element/dv_grid_table');
+
+            return;
+        }
+
+        $this->set('frameId', 'workflow-instances-grid');
+        $this->viewBuilder()->disableAutoLayout();
+        $this->viewBuilder()->setTemplate('../element/dv_grid_content');
     }
 
     /**

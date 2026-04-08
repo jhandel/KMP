@@ -7,6 +7,7 @@ namespace Activities\Services;
 use Activities\Model\Entity\Authorization;
 use Activities\Services\AuthorizationManagerInterface;
 use App\Model\Entity\WorkflowApproval;
+use App\Model\Entity\WorkflowInstance;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
@@ -192,8 +193,12 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
             return new ServiceResult(false, "Failed to send authorization status to requester");
         }
 
-        // Cancel any pending workflow engine approvals for this authorization
-        $this->cancelWorkflowApprovalsForEntity($authorizationId);
+        // Cancel any linked workflow engine approvals/instances for this authorization
+        $workflowCancelResult = $this->cancelWorkflowApprovalsForEntity($authorizationId, 'Authorization revoked');
+        if (!$workflowCancelResult->success) {
+            $table->getConnection()->rollback();
+            return $workflowCancelResult;
+        }
 
         $table->getConnection()->commit();
 
@@ -431,8 +436,15 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
         // Reload the authorization to get updated status
         $authorization = $table->get($authorizationId);
 
-        // Cancel any pending workflow engine approvals for this authorization
-        $this->cancelWorkflowApprovalsForEntity($authorizationId);
+        // Cancel any linked workflow engine approvals/instances for this authorization
+        $workflowCancelResult = $this->cancelWorkflowApprovalsForEntity(
+            $authorizationId,
+            'Authorization request retracted',
+        );
+        if (!$workflowCancelResult->success) {
+            $table->getConnection()->rollback();
+            return $workflowCancelResult;
+        }
 
         // Commit transaction
         $table->getConnection()->commit();
@@ -494,25 +506,42 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
     }
 
     /**
-     * Cancel all pending workflow engine approvals for an authorization entity.
+     * Cancel all open workflow engine state for an authorization entity.
      *
      * Finds workflow instances linked to the given authorization ID
-     * (both 'Activities' and 'Activities.Authorizations' entity types)
-     * and sets any pending approvals to cancelled.
+     * (both current and legacy entity_type values, including older instances
+     * that only stored authorizationId in context) and cancels any pending
+     * approvals as well as the waiting/running workflow instance itself.
+     *
+     * @param int $authorizationId Authorization record ID
+     * @param string $cancellationReason Human-readable cancellation reason
+     * @return \App\Services\ServiceResult
      */
-    private function cancelWorkflowApprovalsForEntity(int $authorizationId): void
+    private function cancelWorkflowApprovalsForEntity(int $authorizationId, string $cancellationReason): ServiceResult
     {
         $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
         $wfApprovalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
 
         $instances = $instancesTable->find()
             ->where([
-                'entity_id' => $authorizationId,
                 'entity_type IN' => ['Activities', 'Activities.Authorizations'],
+                'status IN' => [
+                    WorkflowInstance::STATUS_PENDING,
+                    WorkflowInstance::STATUS_RUNNING,
+                    WorkflowInstance::STATUS_WAITING,
+                ],
+                'OR' => [
+                    'entity_id' => $authorizationId,
+                    'entity_id IS' => null,
+                ],
             ])
             ->all();
 
         foreach ($instances as $instance) {
+            if (!$this->workflowInstanceMatchesAuthorization($instance, $authorizationId)) {
+                continue;
+            }
+
             $pendingApprovals = $wfApprovalsTable->find()
                 ->where([
                     'workflow_instance_id' => $instance->id,
@@ -522,9 +551,43 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
 
             foreach ($pendingApprovals as $wfApproval) {
                 $wfApproval->status = WorkflowApproval::STATUS_CANCELLED;
-                $wfApprovalsTable->save($wfApproval);
+                if (!$wfApprovalsTable->save($wfApproval)) {
+                    return new ServiceResult(false, 'Failed to cancel linked workflow approval.');
+                }
+            }
+
+            $errorInfo = $instance->error_info ?? [];
+            $errorInfo['cancellation_reason'] = $cancellationReason;
+            $instance->status = WorkflowInstance::STATUS_CANCELLED;
+            $instance->completed_at = DateTime::now();
+            $instance->error_info = $errorInfo;
+
+            if (!$instancesTable->save($instance)) {
+                return new ServiceResult(false, 'Failed to cancel linked workflow instance.');
             }
         }
+
+        return new ServiceResult(true);
+    }
+
+    /**
+     * Determine whether a workflow instance belongs to the given authorization.
+     *
+     * @param \App\Model\Entity\WorkflowInstance $instance Workflow instance candidate
+     * @param int $authorizationId Authorization record ID
+     * @return bool
+     */
+    private function workflowInstanceMatchesAuthorization(WorkflowInstance $instance, int $authorizationId): bool
+    {
+        if ($instance->entity_id === $authorizationId) {
+            return true;
+        }
+
+        $context = $instance->context ?? [];
+        $triggerAuthorizationId = $context['trigger']['authorizationId'] ?? null;
+        $createdAuthorizationId = $context['nodes']['validate-request']['result']['authorizationId'] ?? null;
+
+        return (int)($triggerAuthorizationId ?? $createdAuthorizationId ?? 0) === $authorizationId;
     }
 
     // endregion

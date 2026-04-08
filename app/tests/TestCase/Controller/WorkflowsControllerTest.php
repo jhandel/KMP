@@ -62,6 +62,12 @@ class WorkflowsControllerTest extends HttpIntegrationTestCase
         $this->assertRedirectContains('/login');
     }
 
+    public function testUnauthenticatedInstancesGridDataRedirects(): void
+    {
+        $this->get('/workflows/instances/grid-data');
+        $this->assertRedirectContains('/login');
+    }
+
     public function testUnauthenticatedApprovalsRedirects(): void
     {
         $this->get('/workflows/approvals');
@@ -118,6 +124,27 @@ class WorkflowsControllerTest extends HttpIntegrationTestCase
         $this->assertResponseOk();
     }
 
+    public function testSuperUserCanAccessInstancesGridData(): void
+    {
+        $this->authenticateAsSuperUser();
+        $this->get('/workflows/instances/grid-data');
+        $this->assertResponseOk();
+        $this->assertNotNull($this->viewVariable('gridState'));
+        $this->assertNotNull($this->viewVariable('data'));
+    }
+
+    public function testWorkflowInstancesGridDataDefaultsToStartedDateFilter(): void
+    {
+        $this->authenticateAsSuperUser();
+        $this->get('/workflows/instances/grid-data');
+        $this->assertResponseOk();
+
+        $gridState = $this->viewVariable('gridState');
+        $this->assertSame('sys-workflow-instances-recent', $gridState['view']['currentId']);
+        $this->assertArrayHasKey('started_at_start', $gridState['filters']['active']);
+        $this->assertNotEmpty($gridState['filters']['active']['started_at_start']);
+    }
+
     public function testSuperUserCanAccessApprovals(): void
     {
         $this->authenticateAsSuperUser();
@@ -154,6 +181,13 @@ class WorkflowsControllerTest extends HttpIntegrationTestCase
     {
         $this->authenticateAsMember(self::TEST_MEMBER_AGATHA_ID);
         $this->get('/workflows/instances');
+        $this->assertRedirect();
+    }
+
+    public function testNonSuperUserBlockedFromInstancesGridData(): void
+    {
+        $this->authenticateAsMember(self::TEST_MEMBER_AGATHA_ID);
+        $this->get('/workflows/instances/grid-data');
         $this->assertRedirect();
     }
 

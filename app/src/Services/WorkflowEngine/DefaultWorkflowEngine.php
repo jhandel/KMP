@@ -199,6 +199,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 }
             }
 
+            $this->hydrateInstanceEntityMetadata($instance, $definition);
             $this->updateInstance($instance, []);
 
             return new ServiceResult(true, null, [
@@ -282,6 +283,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 $this->executeNode($instance, $targetNodeId, $definition);
             }
 
+            $this->hydrateInstanceEntityMetadata($instance, $definition);
             $this->updateInstance($instance, []);
 
             return new ServiceResult(true, null, ['instanceId' => $instanceId]);
@@ -690,6 +692,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         // Store result in context
         $context['nodes'][$nodeId] = ['result' => $result];
         $instance->context = $context;
+        $this->hydrateInstanceEntityMetadata($instance, $definition);
 
         if ($log) {
             $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
@@ -1918,6 +1921,92 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
 
         $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
         $instancesTable->save($instance);
+    }
+
+    /**
+     * Persist the workflow entity_id once it becomes available in context.
+     *
+     * Some durable workflows create the underlying entity inside an action node,
+     * after the workflow instance has already been inserted. When the trigger
+     * node declares an entityIdField, scan the accumulated context for that key
+     * and promote it onto the workflow instance as soon as it appears.
+     *
+     * @param \App\Model\Entity\WorkflowInstance $instance Current workflow instance
+     * @param array $definition Workflow definition graph
+     * @return void
+     */
+    protected function hydrateInstanceEntityMetadata(WorkflowInstance $instance, array $definition): void
+    {
+        if ($this->ephemeral || $instance->entity_id !== null) {
+            return;
+        }
+
+        $entityIdField = $this->getTriggerEntityIdField($definition);
+        if ($entityIdField === null) {
+            return;
+        }
+
+        $context = $instance->context ?? [];
+        $resolvedEntityId = $this->findContextValueByKey($context, $entityIdField);
+        if (!is_numeric($resolvedEntityId)) {
+            return;
+        }
+
+        $resolvedEntityId = (int)$resolvedEntityId;
+        $instance->entity_id = $resolvedEntityId;
+
+        if (!isset($context['trigger']) || !is_array($context['trigger'])) {
+            $context['trigger'] = [];
+        }
+        if (($context['trigger'][$entityIdField] ?? null) === null) {
+            $context['trigger'][$entityIdField] = $resolvedEntityId;
+            $instance->context = $context;
+        }
+    }
+
+    /**
+     * Resolve the trigger-configured entity ID field name for a workflow.
+     *
+     * @param array $definition Workflow definition graph
+     * @return string|null
+     */
+    protected function getTriggerEntityIdField(array $definition): ?string
+    {
+        foreach ($this->findNodesByType($definition, 'trigger') as $triggerNode) {
+            $entityIdField = $triggerNode['config']['entityIdField'] ?? null;
+            if (is_string($entityIdField) && $entityIdField !== '') {
+                return $entityIdField;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Recursively find the first non-empty value for a key in workflow context.
+     *
+     * @param mixed $value Context value to inspect
+     * @param string $targetKey Key to locate
+     * @return mixed
+     */
+    protected function findContextValueByKey(mixed $value, string $targetKey): mixed
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        if (array_key_exists($targetKey, $value) && $value[$targetKey] !== null && $value[$targetKey] !== '') {
+            return $value[$targetKey];
+        }
+
+        foreach ($value as $nestedValue) {
+            $resolvedValue = $this->findContextValueByKey($nestedValue, $targetKey);
+            if ($resolvedValue !== null && $resolvedValue !== '') {
+                return $resolvedValue;
+            }
+        }
+
+        return null;
     }
 
     /**

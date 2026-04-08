@@ -116,4 +116,26 @@ class KmpHelperTest extends BaseTestCase
             );
         }
     }
+
+    public function testWorkflowStatusBadgeUsesReadableClassesForDecisions(): void
+    {
+        $approveBadge = $this->Kmp->workflowStatusBadge('approve');
+        $rejectBadge = $this->Kmp->workflowStatusBadge('reject');
+        $requestChangesBadge = $this->Kmp->workflowStatusBadge('request_changes');
+
+        $this->assertStringContainsString('bg-success', $approveBadge);
+        $this->assertStringContainsString('Approve', $approveBadge);
+        $this->assertStringContainsString('bg-danger', $rejectBadge);
+        $this->assertStringContainsString('Reject', $rejectBadge);
+        $this->assertStringContainsString('bg-warning text-dark', $requestChangesBadge);
+        $this->assertStringContainsString('Request Changes', $requestChangesBadge);
+    }
+
+    public function testWorkflowStatusBadgeReadableFallbackUsesDarkText(): void
+    {
+        $badge = $this->Kmp->workflowStatusBadge('unknown_state');
+
+        $this->assertStringContainsString('bg-light text-dark', $badge);
+        $this->assertStringContainsString('Unknown State', $badge);
+    }
 }

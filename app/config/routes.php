@@ -257,6 +257,10 @@ return function (RouteBuilder $routes): void {
 
             // Instance monitoring routes → WorkflowInstancesController
             $builder->connect('/instances', ['controller' => 'WorkflowInstances', 'action' => 'instances']);
+            $builder->connect('/instances/grid-data', ['controller' => 'WorkflowInstances', 'action' => 'gridData']);
+            $builder->connect('/instances/grid-data/{definitionId}', ['controller' => 'WorkflowInstances', 'action' => 'gridData'])
+                ->setPatterns(['definitionId' => '\d+'])
+                ->setPass(['definitionId']);
             $builder->connect('/instances/{definitionId}', ['controller' => 'WorkflowInstances', 'action' => 'instances'])
                 ->setPatterns(['definitionId' => '\d+'])
                 ->setPass(['definitionId']);

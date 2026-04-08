@@ -26,7 +26,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'description' => 'Handles activity authorization requests with validation, approver resolution, and serial multi-level approval chain.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Activities.AuthorizationRequested'],
-                'entity_type' => 'Activities',
+                'entity_type' => 'Activities.Authorizations',
                 'json_file' => 'activities-authorization-request.json',
                 'execution_mode' => 'durable',
                 'is_active' => true,

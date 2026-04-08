@@ -358,22 +358,27 @@ class KmpHelper extends Helper
     public function workflowStatusBadge(string $status): string
     {
         $map = [
-            'draft' => 'secondary',
-            'published' => 'success',
-            'archived' => 'dark',
-            'running' => 'primary',
-            'completed' => 'success',
-            'failed' => 'danger',
-            'cancelled' => 'secondary',
-            'waiting' => 'warning',
-            'pending' => 'warning',
-            'approved' => 'success',
-            'rejected' => 'danger',
-            'expired' => 'dark',
+            'draft' => 'bg-secondary',
+            'published' => 'bg-success',
+            'archived' => 'bg-dark',
+            'running' => 'bg-primary',
+            'completed' => 'bg-success',
+            'failed' => 'bg-danger',
+            'cancelled' => 'bg-secondary',
+            'waiting' => 'bg-warning text-dark',
+            'pending' => 'bg-warning text-dark',
+            'approved' => 'bg-success',
+            'rejected' => 'bg-danger',
+            'approve' => 'bg-success',
+            'reject' => 'bg-danger',
+            'abstain' => 'bg-secondary',
+            'request_changes' => 'bg-warning text-dark',
+            'expired' => 'bg-dark',
         ];
-        $color = $map[$status] ?? 'light';
+        $badgeClass = $map[$status] ?? 'bg-light text-dark';
+        $label = ucwords(str_replace('_', ' ', $status));
 
-        return '<span class="badge bg-' . $color . '">' . h(ucfirst($status)) . '</span>';
+        return '<span class="badge ' . $badgeClass . '">' . h($label) . '</span>';
     }
 
     /**
