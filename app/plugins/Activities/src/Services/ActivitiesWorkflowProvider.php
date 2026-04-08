@@ -47,6 +47,7 @@ class ActivitiesWorkflowProvider
                     'approverId' => ['type' => 'integer', 'label' => 'Approver ID'],
                     'isRenewal' => ['type' => 'boolean', 'label' => 'Is Renewal'],
                     'requiredApprovals' => ['type' => 'integer', 'label' => 'Required Approvals'],
+                    'approvalPermission' => ['type' => 'string', 'label' => 'Approval Permission'],
                 ],
             ],
             [

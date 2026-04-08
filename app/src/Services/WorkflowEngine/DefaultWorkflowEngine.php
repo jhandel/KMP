@@ -786,6 +786,21 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         // Build approver_config from top-level config keys
         $approverConfig = $config['approverConfig'] ?? [];
         if (empty($approverConfig)) {
+            // Map approverValue (set by UI) to the correct key based on approverType
+            $approverType = $config['approverType'] ?? '';
+            $approverValue = $config['approverValue'] ?? '';
+            if (!empty($approverValue)) {
+                $typeKeyMap = [
+                    'permission' => 'permission',
+                    'role' => 'role',
+                    'member' => 'member_id',
+                ];
+                $mappedKey = $typeKeyMap[$approverType] ?? null;
+                if ($mappedKey) {
+                    $approverConfig[$mappedKey] = $approverValue;
+                }
+            }
+
             if (!empty($config['permission'])) {
                 $approverConfig['permission'] = $config['permission'];
             }

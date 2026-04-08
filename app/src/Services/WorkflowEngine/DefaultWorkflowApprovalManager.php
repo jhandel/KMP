@@ -602,9 +602,18 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     {
         $config = $approval->approver_config ?? [];
 
-        // Serial pick-next: when current_approver_id is set, only that member is eligible
+        // Serial pick-next: when current_approver_id is set, only that member is eligible.
+        // For permission/role-based approvals, also verify the member still holds the
+        // underlying permission/role (e.g. warrant not expired).
         if (!empty($config['serial_pick_next']) && !empty($config['current_approver_id'])) {
-            return $memberId === (int)$config['current_approver_id'];
+            if ($memberId !== (int)$config['current_approver_id']) {
+                return false;
+            }
+            // Member-type approvals are person-to-person — no permission check needed
+            if ($approval->approver_type === WorkflowApproval::APPROVER_TYPE_MEMBER) {
+                return true;
+            }
+            // Fall through to the approver_type switch to validate active permission/role
         }
 
         switch ($approval->approver_type) {
@@ -623,6 +632,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 return $this->memberHasRole($memberId, $roleName);
 
             case WorkflowApproval::APPROVER_TYPE_MEMBER:
+                // Person-to-person: ID match only, no permission required
                 $targetMemberId = (int)($config['member_id'] ?? 0);
                 return $memberId === $targetMemberId;
 
@@ -881,15 +891,24 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
     ): bool {
         $config = $approval->approver_config ?? [];
 
-        // If a specific approver is assigned, only they are eligible
+        // If a specific approver is assigned, only they are eligible.
+        // For permission/role-based approvals, also verify the member still holds
+        // the underlying permission/role (e.g. warrant not expired).
         $currentApproverId = $approval->current_approver_id
             ?? (!empty($config['current_approver_id']) ? (int)$config['current_approver_id'] : null);
 
         if ($currentApproverId !== null) {
-            return $memberId === $currentApproverId;
+            if ($memberId !== $currentApproverId) {
+                return false;
+            }
+            // Member-type approvals are person-to-person — no permission check needed
+            if ($approval->approver_type === WorkflowApproval::APPROVER_TYPE_MEMBER) {
+                return true;
+            }
+            // Fall through to the approver_type switch to validate active permission/role
         }
 
-        // No specific assignee — check by approver type (permission, role, etc.)
+        // No specific assignee or assigned + needs permission/role validation
         switch ($approval->approver_type) {
             case WorkflowApproval::APPROVER_TYPE_PERMISSION:
                 $permissionName = $config['permission'] ?? null;
@@ -900,6 +919,7 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
                 return $roleName && in_array($roleName, $memberRoles, true);
 
             case WorkflowApproval::APPROVER_TYPE_MEMBER:
+                // Person-to-person: ID match only, no permission required
                 $targetMemberId = (int)($config['member_id'] ?? 0);
                 return $memberId === $targetMemberId;
 
