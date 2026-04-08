@@ -740,7 +740,9 @@ class RecommendationsController extends AppController
         $emptyRecommendation->requester_id = $memberId;
 
         $this->Authorization->authorize($emptyRecommendation, 'ViewSubmittedByMember');
-        $canViewHidden = $user->checkCan('ViewHidden', $emptyRecommendation);
+        // Members viewing their own submissions should always see all states
+        $isOwnSubmissions = ($user->id === $memberId);
+        $canViewHidden = $isOwnSubmissions || $user->checkCan('ViewHidden', $emptyRecommendation);
 
         // Build via service
         $built = $queryService->buildMemberSubmittedQuery($this->Recommendations, $memberId);
@@ -827,7 +829,8 @@ class RecommendationsController extends AppController
 
 
         $this->Authorization->authorize($emptyRecommendation, 'ViewSubmittedForMember');
-        $canViewHidden = $user->checkCan('ViewHidden', $emptyRecommendation);
+        // If the user can see this tab at all, they should see all states
+        $canViewHidden = true;
 
         // Build via service
         $built = $queryService->buildRecsForMemberQuery($this->Recommendations, $memberId);
