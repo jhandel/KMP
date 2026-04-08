@@ -1,5 +1,4 @@
 import { Controller } from "@hotwired/stimulus"
-import Drawflow from 'drawflow'
 import WorkflowValidationService from './workflow-validation-service.js'
 import WorkflowVariablePicker from './workflow-variable-picker.js'
 import WorkflowConfigPanel from './workflow-config-panel.js'
@@ -132,7 +131,8 @@ class WorkflowDesignerController extends Controller {
 
     // --- Editor Init ---
 
-    initEditor() {
+    async initEditor() {
+        const { default: Drawflow } = await import('drawflow')
         this.editor = new Drawflow(this.canvasTarget)
         this.editor.reroute = true
         this.editor.reroute_fix_curvature = true

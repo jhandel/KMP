@@ -1,14 +1,45 @@
 {
-  "_backup-restore-status-controller-BrI0sqvx.js": {
-    "file": "js/backup-restore-status-controller-BrI0sqvx.js",
+  "__commonjsHelpers-gnU0ypJ3.js": {
+    "file": "js/_commonjsHelpers-gnU0ypJ3.js",
+    "name": "_commonjsHelpers"
+  },
+  "_backup-restore-status-controller-BZ51RgK8.js": {
+    "file": "js/backup-restore-status-controller-BZ51RgK8.js",
     "name": "backup-restore-status-controller",
     "imports": [
       "_core-DadjCX0b.js"
+    ],
+    "dynamicImports": [
+      "_browser-U7EPk40N.js"
+    ]
+  },
+  "_browser-U7EPk40N.js": {
+    "file": "js/browser-U7EPk40N.js",
+    "name": "browser",
+    "isDynamicEntry": true,
+    "imports": [
+      "__commonjsHelpers-gnU0ypJ3.js"
     ]
   },
   "_core-DadjCX0b.js": {
     "file": "js/core-DadjCX0b.js",
     "name": "core"
+  },
+  "_drawflow.min-PRXT9zZV.js": {
+    "file": "js/drawflow.min-PRXT9zZV.js",
+    "name": "drawflow.min",
+    "isDynamicEntry": true,
+    "imports": [
+      "__commonjsHelpers-gnU0ypJ3.js"
+    ]
+  },
+  "_easymde-DwP9nFny.js": {
+    "file": "js/easymde-DwP9nFny.js",
+    "name": "easymde",
+    "isDynamicEntry": true,
+    "imports": [
+      "__commonjsHelpers-gnU0ypJ3.js"
+    ]
   },
   "assets/css/app.css": {
     "file": "css/app-CDqkeKek.css",
@@ -36,23 +67,31 @@
     "isEntry": true
   },
   "assets/js/controllers-entry.js": {
-    "file": "js/controllers-CPzYFEiC.js",
+    "file": "js/controllers-BHdJsO4a.js",
     "name": "controllers",
     "src": "assets/js/controllers-entry.js",
     "isEntry": true,
     "imports": [
       "_core-DadjCX0b.js",
-      "_backup-restore-status-controller-BrI0sqvx.js"
+      "_backup-restore-status-controller-BZ51RgK8.js"
+    ],
+    "dynamicImports": [
+      "_easymde-DwP9nFny.js",
+      "node_modules/face-api.js/build/es6/index.js",
+      "node_modules/guifier/dist/Guifier.js",
+      "_easymde-DwP9nFny.js",
+      "_drawflow.min-PRXT9zZV.js",
+      "node_modules/pdfjs-dist/build/pdf.mjs"
     ]
   },
   "assets/js/index.js": {
-    "file": "js/index-CXJH32-k.js",
+    "file": "js/index-CDGS1TuE.js",
     "name": "index",
     "src": "assets/js/index.js",
     "isEntry": true,
     "imports": [
       "_core-DadjCX0b.js",
-      "_backup-restore-status-controller-BrI0sqvx.js"
+      "_backup-restore-status-controller-BZ51RgK8.js"
     ]
   },
   "node_modules/@fortawesome/fontawesome-free/webfonts/fa-brands-400.woff2": {
@@ -71,6 +110,24 @@
     "file": "css/drawflow-HpjlPl-5.css",
     "src": "node_modules/drawflow/dist/drawflow.min.css",
     "isEntry": true
+  },
+  "node_modules/face-api.js/build/es6/index.js": {
+    "file": "js/index-Dd0c2INU.js",
+    "name": "index",
+    "src": "node_modules/face-api.js/build/es6/index.js",
+    "isDynamicEntry": true
+  },
+  "node_modules/guifier/dist/Guifier.js": {
+    "file": "js/Guifier-BCq98cc_.js",
+    "name": "Guifier",
+    "src": "node_modules/guifier/dist/Guifier.js",
+    "isDynamicEntry": true
+  },
+  "node_modules/pdfjs-dist/build/pdf.mjs": {
+    "file": "js/pdf-CE_K4jFx.js",
+    "name": "pdf",
+    "src": "node_modules/pdfjs-dist/build/pdf.mjs",
+    "isDynamicEntry": true
   },
   "plugins/Waivers/assets/css/waiver-upload.css": {
     "file": "css/waiver-upload-C4UXAlFD.css",

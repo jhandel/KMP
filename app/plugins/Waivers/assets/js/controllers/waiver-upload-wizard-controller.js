@@ -1,8 +1,14 @@
 import { Controller } from "@hotwired/stimulus"
-import * as pdfjsLib from 'pdfjs-dist'
 
-// Set up PDF.js worker — use static asset path (copied by webpack.mix.js)
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/pdf.worker.min.mjs'
+let _pdfjsLib = null;
+
+async function loadPdfjsLib() {
+    if (!_pdfjsLib) {
+        _pdfjsLib = await import('pdfjs-dist');
+        _pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/pdf.worker.min.mjs';
+    }
+    return _pdfjsLib;
+}
 
 /**
  * Waiver Upload Wizard Controller
@@ -503,6 +509,7 @@ class WaiverUploadWizardController extends Controller {
                         [])
                     
                     if (pdfData.length > 0) {
+                        const pdfjsLib = await loadPdfjsLib()
                         const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise
                         page.pdfPageCount = pdf.numPages
                         

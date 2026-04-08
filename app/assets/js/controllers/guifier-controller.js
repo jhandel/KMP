@@ -1,5 +1,3 @@
-import Guifier from 'guifier';
-
 import { Controller } from "@hotwired/stimulus";
 
 /**
@@ -38,7 +36,8 @@ class GuifierController extends Controller {
      * Connect controller and initialize Guifier
      * Sets up dynamic form interface with data binding and change handling
      */
-    connect() {
+    async connect() {
+        const { default: Guifier } = await import('guifier')
         var params = {
             elementSelector: '#' + this.containerTarget.id,
             data: this.hiddenTarget.value,

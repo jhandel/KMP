@@ -1,5 +1,4 @@
 import { Controller } from "@hotwired/stimulus"
-import EasyMDE from "easymde"
 
 /**
  * Email Template Editor Controller
@@ -32,7 +31,8 @@ class EmailTemplateEditorController extends Controller {
         this.editor = null
     }
 
-    connect() {
+    async connect() {
+        const { default: EasyMDE } = await import('easymde')
         // Initialize EasyMDE on the textarea
         this.editor = new EasyMDE({
             element: this.editorTarget,
