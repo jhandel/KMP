@@ -9,6 +9,7 @@
 import.meta.glob([
     './controllers/**/*-controller.js',
     '../../plugins/*/assets/js/controllers/**/*-controller.js',
+    '../../plugins/*/Assets/js/controllers/**/*-controller.js',
 ], { eager: true });
 
 // Import all service files
