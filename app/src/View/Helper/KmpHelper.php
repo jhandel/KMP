@@ -6,7 +6,6 @@ namespace App\View\Helper;
 use App\KMP\StaticHelpers;
 use App\Model\Entity\Member;
 use App\View\AppView;
-use AssetMix\Mix;
 use Cake\Event\Event;
 use Cake\View\Helper;
 use Cake\View\Helper\HtmlHelper;
@@ -244,34 +243,6 @@ class KmpHelper extends Helper
     public function getAppSettingsStartWith(string $key): array
     {
         return StaticHelpers::getAppSettingsStartWith($key);
-    }
-
-    /**
-     * Get Mix script URL with versioning for cache busting.
-     *
-     * @param string $script The script filename/path relative to webroot/js
-     * @param mixed $Url CakePHP URL helper instance
-     * @return string Versioned script URL with hash parameter
-     */
-    public function getMixScriptUrl(string $script, $Url): string
-    {
-        $url = $Url->script($script);
-
-        return (new Mix())($url);
-    }
-
-    /**
-     * Get Mix style URL with versioning for cache busting.
-     *
-     * @param string $css The CSS filename/path relative to webroot/css
-     * @param mixed $Url CakePHP URL helper instance
-     * @return string Versioned CSS URL with hash parameter
-     */
-    public function getMixStyleUrl(string $css, $Url): string
-    {
-        $url = $Url->css($css);
-
-        return (new Mix())($url);
     }
 
     /**

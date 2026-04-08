@@ -83,7 +83,7 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Crimson+Pro:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 
     <!-- CSS -->
-    <?= $this->AssetMix->css('app') ?>
+    <?= $this->Vite->css('app') ?>
 
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="/bootstrap_u_i/font/bootstrap-icons.min.css">
@@ -1187,10 +1187,8 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
     </style>
 
     <!-- JavaScript -->
-    <?= $this->AssetMix->script('manifest') ?>
-    <?= $this->AssetMix->script('core') ?>
-    <?= $this->AssetMix->script('controllers') ?>
-    <?= $this->AssetMix->script('index') ?>
+    <?= $this->Vite->script('controllers') ?>
+    <?= $this->Vite->script('index') ?>
     <?= $this->fetch('script') ?>
 </head>
 
@@ -1330,11 +1328,9 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
             <?php
             $cacheList = [];
             $cacheList[] = $swUrl;
-            $cacheList[] = $this->KMP->getMixScriptUrl('manifest', $this->Url);
-            $cacheList[] = $this->KMP->getMixScriptUrl('core', $this->Url);
-            $cacheList[] = $this->KMP->getMixScriptUrl('controllers', $this->Url);
-            $cacheList[] = $this->KMP->getMixScriptUrl('index', $this->Url);
-            $cacheList[] = $this->KMP->getMixStyleUrl('app', $this->Url);
+            $cacheList[] = $this->Vite->getScriptUrl('controllers');
+            $cacheList[] = $this->Vite->getScriptUrl('index');
+            $cacheList[] = $this->Vite->getStyleUrl('app');
             $cacheList[] = Asset::imageUrl("favicon.ico");
             $cacheList[] = $this->request->getPath();
             if ($cardUrlForManifest) {

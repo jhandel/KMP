@@ -103,8 +103,6 @@ class KmpHelperTest extends BaseTestCase
         $methods = [
             'getAppSetting',
             'getAppSettingsStartWith',
-            'getMixScriptUrl',
-            'getMixStyleUrl',
             'startBlock',
             'endBlock',
         ];

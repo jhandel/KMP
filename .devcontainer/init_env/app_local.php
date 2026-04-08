@@ -120,13 +120,36 @@ return [
      * See app.php for more configuration options.
      */
     'EmailTransport' => [
+        'default' => match (strtolower(env('EMAIL_DRIVER', 'smtp'))) {
+            'azure' => [
+                'className' => \App\Mailer\Transport\AzureCommunicationTransport::class,
+                'connectionString' => env('AZURE_COMMUNICATION_CONNECTION_STRING'),
+                'apiVersion' => env('AZURE_COMMUNICATION_API_VERSION', '2023-03-31'),
+            ],
+            'sendgrid' => [
+                'className' => \App\Mailer\Transport\SendGridApiTransport::class,
+                'apiKey' => env('EMAIL_API_KEY'),
+            ],
+            'resend' => [
+                'className' => \App\Mailer\Transport\ResendApiTransport::class,
+                'apiKey' => env('EMAIL_API_KEY'),
+            ],
+            default => [
+                'className' => 'Smtp',
+                'host' => env('EMAIL_SMTP_HOST', 'localhost'),
+                'port' => (int)env('EMAIL_SMTP_PORT', 1025),
+                'username' => env('EMAIL_SMTP_USERNAME', ''),
+                'password' => env('EMAIL_SMTP_PASSWORD', ''),
+                'client' => null,
+                'tls' => filter_var(env('EMAIL_SMTP_TLS', false), FILTER_VALIDATE_BOOLEAN),
+                'url' => env('EMAIL_TRANSPORT_DEFAULT_URL', null),
+            ],
+        },
+    ],
+    'Email' => [
         'default' => [
-            'host' => env('EMAIL_SMTP_HOST'),
-            'port' => env('EMAIL_SMTP_PORT'),
-            'username' => env('EMAIL_SMTP_USERNAME'),
-            'password' => env('EMAIL_SMTP_PASSWORD'),
-            'client' => null,
-            'url' => env('EMAIL_TRANSPORT_DEFAULT_URL', null),
+            'transport' => 'default',
+            'from' => env('EMAIL_FROM', 'noreply@localhost'),
         ],
     ],
     'Documents' => [

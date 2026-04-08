@@ -2,7 +2,7 @@
 // export for others scripts to use
 import { Application } from "@hotwired/stimulus";
 import * as Turbo from "@hotwired/turbo";
-import 'bootstrap';
+import * as bootstrap from 'bootstrap';
 import KMP_utils from './KMP_utils.js';
 import './timezone-utils.js';
 
@@ -19,6 +19,7 @@ Turbo.session.drive = false;
 //window.$ = $;
 //window.jQuery = jQuery;
 window.KMP_utils = KMP_utils;
+window.bootstrap = bootstrap;
 const stimulusApp = Application.start();
 window.Stimulus = stimulusApp;
 

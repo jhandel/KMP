@@ -17,7 +17,7 @@ ARG APP_VERSION=dev
 # =============================================================================
 # Stage 1: Frontend assets
 # --platform=$BUILDPLATFORM: always runs on the CI runner's native arch (amd64)
-# No QEMU penalty for Node.js/webpack even in multi-platform builds.
+# No QEMU penalty for Node.js/Vite even in multi-platform builds.
 # =============================================================================
 FROM --platform=$BUILDPLATFORM node:20-alpine AS node-builder
 
@@ -25,17 +25,16 @@ WORKDIR /build
 
 # Layer-cache npm installs separately from app code
 COPY app/package.json app/package-lock.json ./
-COPY app/patches ./patches
 RUN npm ci --no-audit --no-fund
 
-# Copy everything webpack needs
+# Copy everything Vite needs
 COPY app/assets ./assets
 COPY app/plugins ./plugins
-COPY app/webpack.mix.js ./
+COPY app/vite.config.js ./
 COPY app/webroot ./webroot
 
-RUN npm run prod
-# Result: /build/webroot/ has compiled JS, CSS, fonts, and mix-manifest.json
+RUN npm run build
+# Result: /build/webroot/ has compiled JS, CSS, fonts, and .vite/manifest.json
 
 # =============================================================================
 # Stage 2: PHP dependencies

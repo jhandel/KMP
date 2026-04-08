@@ -11,7 +11,7 @@ printf('<html lang="%s" class="h-100">', Configure::read("App.language"));
 $this->KMP->endBlock();
 
 echo $this->KMP->startBlock("css");
-echo $this->AssetMix->css('cover');
+echo $this->Vite->css('cover');
 $this->KMP->endBlock();
 
 $this->prepend(

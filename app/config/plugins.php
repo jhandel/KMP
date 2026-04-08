@@ -17,7 +17,6 @@ return [
     'Muffin/Trash' => [],
     'BootstrapUI' => [],
     'Bootstrap' => [],
-    'AssetMix' => [],
     'Authentication' => [],
     'Authorization' => [],
     'ADmad/Glide' => [],

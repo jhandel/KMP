@@ -5,7 +5,7 @@
  */
 
 echo $this->KMP->startBlock("css");
-echo $this->AssetMix->css('signin');
+echo $this->Vite->css('signin');
 $this->KMP->endBlock();
 
 $this->prepend(

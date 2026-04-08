@@ -1,6 +1,6 @@
 import Guifier from 'guifier';
 
-const { Controller } = require("@hotwired/stimulus");
+import { Controller } from "@hotwired/stimulus";
 
 /**
  * Guifier Stimulus Controller
