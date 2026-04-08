@@ -167,7 +167,9 @@ class RecommendationsController extends AppController
             }
         }
         foreach ($recommendations as $recommendation) {
-            $recommendation->group_children_count = $groupCounts[$recommendation->id] ?? 0;
+            $recommendation->group_children_count = isset($groupCounts[$recommendation->id])
+                ? $groupCounts[$recommendation->id] + 1  // +1 to include the parent/head recommendation
+                : 0;
         }
 
         // Fetch member attendance gatherings for all members in the result set
@@ -966,7 +968,9 @@ class RecommendationsController extends AppController
         }
 
         foreach ($recommendations as $recommendation) {
-            $recommendation->group_children_count = $groupCounts[$recommendation->id] ?? 0;
+            $recommendation->group_children_count = isset($groupCounts[$recommendation->id])
+                ? $groupCounts[$recommendation->id] + 1  // +1 to include the parent/head recommendation
+                : 0;
             // Build OP links HTML
             $recommendation->op_links = $this->buildOpLinksHtml($recommendation);
 

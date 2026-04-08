@@ -98,7 +98,7 @@ class RecommendationsGridColumns extends BaseGridColumns
                 'defaultVisible' => true,
                 'width' => '80px',
                 'alignment' => 'center',
-                'description' => 'Number of recommendations grouped under this one',
+                'description' => 'Total recommendations in this group (including the head)',
                 'clickAction' => 'toggleSubRow:group-children',
                 'clickActionUrl' => '/awards/recommendations/group-children/:id',
                 'cellRenderer' => function ($value, $row, $view) {
