@@ -48,6 +48,8 @@ class ApprovalsController extends AppController
             'allApprovals',
             'allApprovalsGridData',
             'reassignApproval',
+            'mobileApprovals',
+            'mobileApprovalsData',
         );
     }
 
@@ -59,6 +61,83 @@ class ApprovalsController extends AppController
     public function approvals()
     {
         // Page shell only — grid lazy-loads via approvalsGridData
+    }
+
+    /**
+     * Mobile-optimized approval dashboard.
+     *
+     * @return \Cake\Http\Response|null|void
+     */
+    public function mobileApprovals()
+    {
+        $this->set('mobileTitle', 'Approvals');
+        $this->set('mobileSection', 'approvals');
+        $this->set('mobileIcon', 'bi-check2-square');
+
+        $this->viewBuilder()->setLayout('mobile_app');
+    }
+
+    /**
+     * JSON API: Pending approvals with rich context for mobile UI.
+     *
+     * @return \Cake\Http\Response|null|void
+     */
+    public function mobileApprovalsData()
+    {
+        $this->request->allowMethod(['get']);
+        $this->Authorization->skipAuthorization();
+
+        $currentUser = $this->request->getAttribute('identity');
+        $approvalManager = $this->getApprovalManager();
+        $eligible = $approvalManager->getPendingApprovalsForMember($currentUser->id);
+
+        $approvals = [];
+        foreach ($eligible as $approval) {
+            $instance = $approval->workflow_instance;
+            $ctx = $instance
+                ? ApprovalContextRendererRegistry::render($instance)
+                : null;
+
+            $context = $ctx ? $ctx->toArray() : [
+                'title' => __('Unknown Approval'),
+                'description' => '',
+                'fields' => [],
+                'entityUrl' => null,
+                'icon' => 'bi-question-circle',
+                'requester' => null,
+            ];
+
+            $approverConfig = is_string($approval->approver_config)
+                ? json_decode($approval->approver_config, true)
+                : ($approval->approver_config ?? []);
+
+            $approvals[] = [
+                'id' => $approval->id,
+                'title' => $context['title'],
+                'description' => $context['description'],
+                'icon' => $context['icon'],
+                'requester' => $context['requester'] ?? '—',
+                'fields' => $context['fields'],
+                'entityUrl' => $context['entityUrl'],
+                'progress' => [
+                    'required' => $approval->required_count,
+                    'approved' => $approval->approved_count,
+                    'rejected' => $approval->rejected_count,
+                ],
+                'statusLabel' => __('Pending ({0}/{1})', $approval->approved_count, $approval->required_count),
+                'approverConfig' => [
+                    'serialPickNext' => $approverConfig['serial_pick_next'] ?? false,
+                    'commentWarning' => $approverConfig['comment_warning'] ?? '',
+                ],
+                'modified' => $approval->modified ? $approval->modified->toIso8601String() : null,
+            ];
+        }
+
+        $this->response = $this->response
+            ->withType('application/json')
+            ->withStringBody(json_encode(['approvals' => $approvals]));
+
+        return $this->response;
     }
 
     /**

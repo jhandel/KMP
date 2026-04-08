@@ -69,6 +69,30 @@ class CoreViewCellProvider
             'authCallback' => fn($urlParams, $user) => $user !== null,
         ];
 
+        // Approvals - Mobile menu item
+        $cells[] = [
+            'type' => ViewCellRegistry::PLUGIN_TYPE_MOBILE_MENU,
+            'label' => 'Approvals',
+            'icon' => 'bi-check2-square',
+            'url' => ['controller' => 'Approvals', 'action' => 'mobileApprovals', 'plugin' => null],
+            'order' => 30,
+            'color' => 'approvals',
+            'badge' => (function () use ($user) {
+                try {
+                    $manager = new \App\Services\WorkflowEngine\DefaultWorkflowApprovalManager();
+                    $pending = $manager->getPendingApprovalsForMember($user->id);
+                    $count = count($pending);
+                    return $count > 0 ? $count : null;
+                } catch (Exception $e) {
+                    return null;
+                }
+            })(),
+            'validRoutes' => [],
+            'authCallback' => function ($urlParams, $user) {
+                return $user !== null;
+            },
+        ];
+
         return $cells;
     }
 }

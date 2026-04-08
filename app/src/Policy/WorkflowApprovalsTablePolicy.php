@@ -40,4 +40,14 @@ class WorkflowApprovalsTablePolicy extends BasePolicy
     {
         return $this->_isSuperUser($user);
     }
+
+    public function canMobileApprovals(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $user->getIdentifier() !== null;
+    }
+
+    public function canMobileApprovalsData(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $user->getIdentifier() !== null;
+    }
 }

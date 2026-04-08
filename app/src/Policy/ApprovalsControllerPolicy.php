@@ -49,6 +49,22 @@ class ApprovalsControllerPolicy implements BeforePolicyInterface
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
     }
 
+    /**
+     * Mobile approvals view — any authenticated user.
+     */
+    public function canMobileApprovals(KmpIdentityInterface $user, mixed $resource): bool
+    {
+        return true;
+    }
+
+    /**
+     * Mobile approvals data API — any authenticated user.
+     */
+    public function canMobileApprovalsData(KmpIdentityInterface $user, mixed $resource): bool
+    {
+        return true;
+    }
+
     public function canReassignApproval(KmpIdentityInterface $user, mixed $resource): bool
     {
         return $this->_hasPolicyForUrl($user, __FUNCTION__, $resource);
