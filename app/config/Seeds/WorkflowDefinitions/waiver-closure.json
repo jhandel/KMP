@@ -5,15 +5,17 @@
             "label": "Waiver Collection Ready to Close",
             "config": {
                 "event": "Waivers.ReadyToClose",
-                "entityIdField": "collectionId",
-                "inputMapping": {
-                    "gatheringId": "$.event.gatheringId",
-                    "closedBy": "$.event.closedBy"
-                }
+                "entityIdField": "collectionId"
             },
-            "position": { "x": 50, "y": 200 },
+            "position": {
+                "x": 50,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "check-ready-to-close" }
+                {
+                    "port": "next",
+                    "target": "check-ready-to-close"
+                }
             ]
         },
         "check-ready-to-close": {
@@ -23,10 +25,21 @@
                 "condition": "Waivers.IsReadyToClose",
                 "gatheringId": "$.trigger.gatheringId"
             },
-            "position": { "x": 350, "y": 200 },
+            "position": {
+                "x": 350,
+                "y": 200
+            },
             "outputs": [
-                { "port": "true", "target": "close-collection", "label": "Ready" },
-                { "port": "false", "target": "end-not-ready", "label": "Not Ready" }
+                {
+                    "port": "true",
+                    "target": "close-collection",
+                    "label": "Ready"
+                },
+                {
+                    "port": "false",
+                    "target": "end-not-ready",
+                    "label": "Not Ready"
+                }
             ]
         },
         "close-collection": {
@@ -39,23 +52,35 @@
                     "closedBy": "$.trigger.closedBy"
                 }
             },
-            "position": { "x": 650, "y": 100 },
+            "position": {
+                "x": 650,
+                "y": 100
+            },
             "outputs": [
-                { "port": "next", "target": "end-closed" }
+                {
+                    "port": "next",
+                    "target": "end-closed"
+                }
             ]
         },
         "end-closed": {
             "type": "end",
             "label": "Collection Closed",
             "config": {},
-            "position": { "x": 950, "y": 100 },
+            "position": {
+                "x": 950,
+                "y": 100
+            },
             "outputs": []
         },
         "end-not-ready": {
             "type": "end",
             "label": "Not Ready to Close",
             "config": {},
-            "position": { "x": 650, "y": 300 },
+            "position": {
+                "x": 650,
+                "y": 300
+            },
             "outputs": []
         }
     },

@@ -53,24 +53,12 @@ export default class WorkflowVariablePicker {
         if (type === 'trigger') {
             const trigger = this.registryData.triggers?.find(t => t.event === config.event)
             if (trigger?.payloadSchema) {
-                const mapping = config.inputMapping
-                if (mapping && typeof mapping === 'object') {
-                    for (const [key, sourcePath] of Object.entries(mapping)) {
-                        const payloadField = trigger.payloadSchema[key] || {}
-                        vars.push({
-                            path: `$.trigger.${key}`,
-                            label: `Trigger: ${payloadField.label || key}`,
-                            type: payloadField.type || 'string'
-                        })
-                    }
-                } else {
-                    for (const [key, meta] of Object.entries(trigger.payloadSchema)) {
-                        vars.push({
-                            path: `$.trigger.${key}`,
-                            label: `Trigger: ${meta.label || key}`,
-                            type: meta.type || 'string'
-                        })
-                    }
+                for (const [key, meta] of Object.entries(trigger.payloadSchema)) {
+                    vars.push({
+                        path: `$.trigger.${key}`,
+                        label: `Trigger: ${meta.label || key}`,
+                        type: meta.type || 'string'
+                    })
                 }
             } else if (config.event) {
                 vars.push({ path: '$.trigger.entity', label: 'Trigger: entity', type: 'object' })

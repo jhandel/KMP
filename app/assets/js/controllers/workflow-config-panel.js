@@ -17,28 +17,66 @@ export default class WorkflowConfigPanel {
 
     /**
      * Render the full config panel HTML for a selected node.
+     * @param {string} nodeId
+     * @param {object} nodeData
+     * @param {object} [variableInfo] - { available: [], produced: [] }
      */
-    renderConfigHTML(nodeId, nodeData) {
+    renderConfigHTML(nodeId, nodeData, variableInfo) {
         const type = nodeData.data?.type || 'unknown'
         const typeLabels = {
             trigger: 'Trigger', action: 'Action', condition: 'Condition',
             approval: 'Approval Gate', fork: 'Parallel Fork', join: 'Parallel Join',
             loop: 'Loop', forEach: 'For Each', delay: 'Delay', subworkflow: 'Sub-workflow', end: 'End'
         }
-        let html = `
-            <div class="config-panel-header">
+
+        const configTabId = `cfg-tab-${nodeId}`
+        const varsTabId = `vars-tab-${nodeId}`
+        const hasTabs = variableInfo && (variableInfo.available?.length || variableInfo.produced?.length)
+
+        let html = `<div class="config-panel-header">
                 <h6><i class="bi bi-sliders me-1"></i>${typeLabels[type] || type} Configuration</h6>
-            </div>
-            <div class="config-panel-body" aria-live="polite">
+            </div>`
+
+        if (hasTabs) {
+            html += `<ul class="nav nav-tabs nav-fill small" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active py-1 px-2" id="${configTabId}-btn" data-bs-toggle="tab"
+                        data-bs-target="#${configTabId}" type="button" role="tab"
+                        aria-controls="${configTabId}" aria-selected="true">
+                        <i class="bi bi-gear me-1"></i>Config
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link py-1 px-2" id="${varsTabId}-btn" data-bs-toggle="tab"
+                        data-bs-target="#${varsTabId}" type="button" role="tab"
+                        aria-controls="${varsTabId}" aria-selected="false">
+                        <i class="bi bi-code-slash me-1"></i>Variables
+                    </button>
+                </li>
+            </ul>`
+        }
+
+        // Config tab content
+        const activeClass = 'show active'
+        html += hasTabs ? `<div class="tab-content"><div class="tab-pane fade ${activeClass}" id="${configTabId}" role="tabpanel">` : ''
+        html += `<div class="config-panel-body" aria-live="polite">
                 <form data-node-id="${nodeId}">
                     <div class="mb-3">
                         <label class="form-label">Label</label>
                         <input type="text" class="form-control form-control-sm" name="label" value="${nodeData.name || ''}"
                             data-action="change->workflow-designer#updateNodeConfig">
                     </div>`
-
         html += this.getTypeSpecificHTML(type, nodeData.data?.config || {})
         html += `</form></div>`
+        html += hasTabs ? `</div>` : ''
+
+        // Variables tab content
+        if (hasTabs) {
+            html += `<div class="tab-pane fade" id="${varsTabId}" role="tabpanel">`
+            html += this._variableCatalogHTML(variableInfo)
+            html += `</div></div>`
+        }
+
         return html
     }
 
@@ -54,6 +92,54 @@ export default class WorkflowConfigPanel {
                 <i class="bi bi-hand-index"></i>
                 <p>Select a node on the canvas to configure it</p>
             </div>`
+    }
+
+    /**
+     * Render the variable catalog tab content.
+     * @param {{ available: Array, produced: Array }} variableInfo
+     */
+    _variableCatalogHTML(variableInfo) {
+        const { available = [], produced = [] } = variableInfo
+        let html = '<div class="p-2">'
+
+        if (produced.length) {
+            html += '<h6 class="small text-muted mb-2"><i class="bi bi-box-arrow-right me-1"></i>Produced by this Node</h6>'
+            html += this._variableListHTML(produced)
+        }
+
+        if (available.length) {
+            if (produced.length) html += '<hr class="my-2">'
+            html += '<h6 class="small text-muted mb-2"><i class="bi bi-box-arrow-in-right me-1"></i>Available Variables</h6>'
+            html += '<input type="text" class="form-control form-control-sm mb-2" placeholder="Filter variables..." data-action="input->workflow-designer#filterVariableCatalog">'
+            html += this._variableListHTML(available, true)
+        }
+
+        if (!produced.length && !available.length) {
+            html += '<p class="text-muted small">No variables available for this node.</p>'
+        }
+
+        html += '</div>'
+        return html
+    }
+
+    /**
+     * Render a list of variables as copyable badges.
+     * @param {Array<{path:string, label:string, type:string}>} vars
+     * @param {boolean} filterable - add data-var-item for filtering
+     */
+    _variableListHTML(vars, filterable = false) {
+        let html = '<div class="list-group list-group-flush">'
+        for (const v of vars) {
+            const filterAttr = filterable ? ` data-var-item data-var-path="${this._escapeAttr(v.path)}" data-var-label="${this._escapeAttr(v.label)}"` : ''
+            html += `<div class="list-group-item px-0 py-1 border-0"${filterAttr}>
+                <div class="d-flex justify-content-between align-items-start">
+                    <span class="small">${v.label} <span class="text-muted">(${v.type})</span></span>
+                </div>
+                <code class="small text-primary user-select-all d-block">${v.path}</code>
+            </div>`
+        }
+        html += '</div>'
+        return html
     }
 
     getTypeSpecificHTML(type, config) {
@@ -87,23 +173,16 @@ export default class WorkflowConfigPanel {
         if (config.event) {
             const trigger = this.registryData.triggers?.find(t => t.event === config.event)
             if (trigger?.payloadSchema) {
-                html += '<h6 class="mt-3 mb-2 text-muted small">Input Mapping</h6>'
-                html += '<small class="form-text text-muted d-block mb-2">Map trigger event data to context variables</small>'
-                const mapping = config.inputMapping || {}
+                html += '<h6 class="mt-3 mb-2 text-muted small">Trigger Variables</h6>'
+                html += '<small class="form-text text-muted d-block mb-2">Available as <code>$.trigger.*</code> in downstream nodes</small>'
+                html += '<div class="list-group list-group-flush">'
                 for (const [key, meta] of Object.entries(trigger.payloadSchema)) {
-                    const currentVal = mapping[key] || `$.event.${key}`
-                    const escapedVal = this._escapeAttr(currentVal)
-                    html += `<div class="mb-2">
-                        <label class="form-label form-label-sm mb-0">
-                            ${meta.label || key} <span class="text-muted small">(${meta.type})</span>
-                        </label>
-                        <input type="text" class="form-control form-control-sm"
-                            name="inputMapping.${key}" value="${escapedVal}"
-                            placeholder="$.event.${key}"
-                            data-action="change->workflow-designer#updateNodeConfig"
-                            data-variable-picker="true">
+                    html += `<div class="list-group-item px-0 py-1 border-0 d-flex justify-content-between align-items-center">
+                        <span class="small">${meta.label || key} <span class="text-muted">(${meta.type})</span></span>
+                        <code class="small text-primary user-select-all">$.trigger.${key}</code>
                     </div>`
                 }
+                html += '</div>'
             }
         }
 
@@ -208,11 +287,22 @@ export default class WorkflowConfigPanel {
     }
 
     _approvalHTML(config) {
-        // Build initSelection for whichever approver type is active
-        const acInitSelection = (type) =>
-            config.approverType === type && config.approverValue
-                ? { value: config.approverValue, text: config.approverValue } : null;
+        const ac = config.approverConfig || {}
+        const approverType = config.approverType || 'permission'
 
+        // Resolve the effective approver value: prefer approverValue, fall back to approverConfig
+        const typeKeyMap = { permission: 'permission', role: 'role', member: 'member_id' }
+        const effectiveValue = config.approverValue
+            || ac[typeKeyMap[approverType] || '']
+            || ''
+
+        // Detect context variable references (e.g. "$.trigger.approvalPermission")
+        const isContextRef = typeof effectiveValue === 'string' && effectiveValue.startsWith('$.')
+
+        // Determine the active mode for the value picker
+        const valueMode = isContextRef ? 'context' : 'fixed'
+
+        // Build autocomplete for "fixed" mode
         const acSharedOpts = {
             size: 'sm',
             name: 'approverValue',
@@ -220,62 +310,68 @@ export default class WorkflowConfigPanel {
             hiddenAttrs: 'data-action="change->workflow-designer#updateNodeConfig"',
         };
 
-        const permissionAC = renderAutoComplete({
+        const buildAC = (type, url, allowOther, placeholder) => renderAutoComplete({
             ...acSharedOpts,
-            url: '/permissions/auto-complete',
-            allowOther: true,
-            value: config.approverType === 'permission' ? (config.approverValue || '') : '',
-            placeholder: 'Search permissions...',
-            initSelection: acInitSelection('permission'),
-        });
+            url,
+            allowOther,
+            value: approverType === type && !isContextRef ? effectiveValue : '',
+            placeholder,
+            initSelection: approverType === type && effectiveValue && !isContextRef
+                ? { value: effectiveValue, text: effectiveValue } : null,
+        })
 
-        const roleAC = renderAutoComplete({
-            ...acSharedOpts,
-            url: '/roles/auto-complete',
-            allowOther: true,
-            value: config.approverType === 'role' ? (config.approverValue || '') : '',
-            placeholder: 'Search roles...',
-            initSelection: acInitSelection('role'),
-        });
+        const permissionAC = buildAC('permission', '/permissions/auto-complete', true, 'Search permissions...')
+        const roleAC = buildAC('role', '/roles/auto-complete', true, 'Search roles...')
+        const memberAC = buildAC('member', '/members/auto-complete', false, 'Search members...')
 
-        const memberAC = renderAutoComplete({
-            ...acSharedOpts,
-            url: '/members/auto-complete',
-            allowOther: false,
-            value: config.approverType === 'member' ? (config.approverValue || '') : '',
-            placeholder: 'Search members...',
-            initSelection: acInitSelection('member'),
-        });
+        // Context path input for "context" mode
+        const contextInput = `<input type="text" class="form-control form-control-sm"
+            name="approverValue" value="${this._escapeAttr(isContextRef ? effectiveValue : '')}"
+            placeholder="$.trigger.approvalPermission"
+            data-action="change->workflow-designer#updateNodeConfig"
+            data-variable-picker="true">`
+
+        // Mode toggle dropdown (Fixed Value / Context Variable)
+        const modeToggle = `<select class="form-select form-select-sm" data-approver-value-mode
+                style="max-width: 140px;"
+                data-action="change->workflow-designer#onApproverValueModeChange">
+            <option value="fixed" ${valueMode === 'fixed' ? 'selected' : ''}>Fixed Value</option>
+            <option value="context" ${valueMode === 'context' ? 'selected' : ''}>Context Variable</option>
+        </select>`
+
+        // Build each approver section with the mode toggle
+        const approverSection = (type, label, acHtml) => {
+            const show = approverType === type ? 'block' : 'none'
+            return `<div data-approver-section="${type}" style="display:${show};">
+              <div class="mb-3">
+                <label class="form-label">${label}</label>
+                <div class="input-group input-group-sm mb-1">
+                    ${modeToggle}
+                </div>
+                <div data-approver-value-fixed style="display:${valueMode === 'fixed' ? 'block' : 'none'};">
+                    ${acHtml}
+                </div>
+                <div data-approver-value-context style="display:${valueMode === 'context' ? 'block' : 'none'};">
+                    ${contextInput}
+                </div>
+              </div>
+            </div>`
+        }
 
         return `<div class="mb-3">
             <label class="form-label">Approver Type</label>
             <select class="form-select form-select-sm" name="approverType" data-action="change->workflow-designer#onApproverTypeChange">
-                <option value="permission" ${config.approverType === 'permission' || !config.approverType ? 'selected' : ''}>By Permission</option>
-                <option value="role" ${config.approverType === 'role' ? 'selected' : ''}>By Role</option>
-                <option value="member" ${config.approverType === 'member' ? 'selected' : ''}>Specific Member</option>
-                <option value="dynamic" ${config.approverType === 'dynamic' ? 'selected' : ''}>Dynamic (from context)</option>
-                <option value="policy" ${config.approverType === 'policy' ? 'selected' : ''}>By Policy</option>
+                <option value="permission" ${approverType === 'permission' ? 'selected' : ''}>By Permission</option>
+                <option value="role" ${approverType === 'role' ? 'selected' : ''}>By Role</option>
+                <option value="member" ${approverType === 'member' ? 'selected' : ''}>Specific Member</option>
+                <option value="dynamic" ${approverType === 'dynamic' ? 'selected' : ''}>Dynamic (from context)</option>
+                <option value="policy" ${approverType === 'policy' ? 'selected' : ''}>By Policy</option>
             </select>
         </div>
-        <div data-approver-section="permission" style="display:${config.approverType === 'permission' || !config.approverType ? 'block' : 'none'};">
-          <div class="mb-3">
-            <label class="form-label">Permission</label>
-            ${permissionAC}
-          </div>
-        </div>
-        <div data-approver-section="role" style="display:${config.approverType === 'role' ? 'block' : 'none'};">
-          <div class="mb-3">
-            <label class="form-label">Role</label>
-            ${roleAC}
-          </div>
-        </div>
-        <div data-approver-section="member" style="display:${config.approverType === 'member' ? 'block' : 'none'};">
-          <div class="mb-3">
-            <label class="form-label">Member</label>
-            ${memberAC}
-          </div>
-        </div>
-        <div data-approver-section="dynamic" style="display:${config.approverType === 'dynamic' ? 'block' : 'none'};">
+        ${approverSection('permission', 'Permission', permissionAC)}
+        ${approverSection('role', 'Role', roleAC)}
+        ${approverSection('member', 'Member', memberAC)}
+        <div data-approver-section="dynamic" style="display:${approverType === 'dynamic' ? 'block' : 'none'};">
           ${(() => {
             const ac = config.approverConfig || {};
             const selectedResolver = this.resolvers.find(r => r.resolver === ac.service);
@@ -321,7 +417,7 @@ export default class WorkflowConfigPanel {
             return resolverHTML;
           })()}
         </div>
-        <div data-approver-section="policy" style="display:${config.approverType === 'policy' ? 'block' : 'none'};">
+        <div data-approver-section="policy" style="display:${approverType === 'policy' ? 'block' : 'none'};">
           <div class="mb-3">
             <label class="form-label">Policy Class</label>
             <select class="form-select form-select-sm" name="policyClass"
@@ -369,7 +465,7 @@ export default class WorkflowConfigPanel {
             <input type="checkbox" class="form-check-input" name="allowParallel" id="allowParallel" ${config.allowParallel !== false && !config.serialPickNext ? 'checked' : ''} ${config.serialPickNext ? 'disabled' : ''} data-action="change->workflow-designer#updateNodeConfig">
             <label class="form-check-label" for="allowParallel">Allow Parallel Approvals</label>
         </div>
-        <div data-approver-section="dynamic" style="display:${config.approverType === 'dynamic' ? 'block' : 'none'};">
+        <div data-approver-section="dynamic" style="display:${approverType === 'dynamic' ? 'block' : 'none'};">
           <div class="form-check form-switch mb-3">
             <input type="checkbox" class="form-check-input" name="serialPickNext" id="serialPickNext" ${config.serialPickNext ? 'checked' : ''} data-action="change->workflow-designer#onSerialPickNextChange">
             <label class="form-check-label" for="serialPickNext">

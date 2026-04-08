@@ -5,20 +5,17 @@
             "label": "Officer Released",
             "config": {
                 "event": "Officers.Released",
-                "entityIdField": "officerId",
-                "inputMapping": {
-                    "officerId": "$.event.officerId",
-                    "memberId": "$.event.memberId",
-                    "officeId": "$.event.officeId",
-                    "branchId": "$.event.branchId",
-                    "releasedById": "$.event.releasedById",
-                    "reason": "$.event.reason",
-                    "expiresOn": "$.event.expiresOn"
-                }
+                "entityIdField": "officerId"
             },
-            "position": { "x": 50, "y": 200 },
+            "position": {
+                "x": 50,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "release-officer" }
+                {
+                    "port": "next",
+                    "target": "release-officer"
+                }
             ]
         },
         "release-officer": {
@@ -32,9 +29,15 @@
                     "reason": "$.trigger.reason"
                 }
             },
-            "position": { "x": 350, "y": 200 },
+            "position": {
+                "x": 350,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "recalculate-office" }
+                {
+                    "port": "next",
+                    "target": "recalculate-office"
+                }
             ]
         },
         "recalculate-office": {
@@ -47,9 +50,15 @@
                     "updaterId": "$.trigger.releasedById"
                 }
             },
-            "position": { "x": 650, "y": 200 },
+            "position": {
+                "x": 650,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "send-release-notification" }
+                {
+                    "port": "next",
+                    "target": "send-release-notification"
+                }
             ]
         },
         "send-release-notification": {
@@ -62,16 +71,25 @@
                     "reason": "$.trigger.reason"
                 }
             },
-            "position": { "x": 950, "y": 200 },
+            "position": {
+                "x": 950,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "end-complete" }
+                {
+                    "port": "next",
+                    "target": "end-complete"
+                }
             ]
         },
         "end-complete": {
             "type": "end",
             "label": "Release Complete",
             "config": {},
-            "position": { "x": 1250, "y": 200 },
+            "position": {
+                "x": 1250,
+                "y": 200
+            },
             "outputs": []
         }
     },

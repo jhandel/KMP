@@ -5,17 +5,7 @@
             "label": "Authorization Requested",
             "config": {
                 "event": "Activities.AuthorizationRequested",
-                "entityIdField": "authorizationId",
-                "inputMapping": {
-                    "authorizationId": "$.event.authorizationId",
-                    "memberId": "$.event.memberId",
-                    "activityId": "$.event.activityId",
-                    "branchId": "$.event.branchId",
-                    "approverId": "$.event.approverId",
-                    "isRenewal": "$.event.isRenewal",
-                    "requiredApprovals": "$.event.requiredApprovals",
-                    "approvalPermission": "$.event.approvalPermission"
-                }
+                "entityIdField": "authorizationId"
             },
             "position": {
                 "x": 50,

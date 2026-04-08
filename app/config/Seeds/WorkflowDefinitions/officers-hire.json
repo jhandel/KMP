@@ -5,22 +5,17 @@
             "label": "Officer Hire Requested",
             "config": {
                 "event": "Officers.HireRequested",
-                "entityIdField": "officerId",
-                "inputMapping": {
-                    "memberId": "$.event.memberId",
-                    "officeId": "$.event.officeId",
-                    "branchId": "$.event.branchId",
-                    "startOn": "$.event.startOn",
-                    "expiresOn": "$.event.expiresOn",
-                    "deputyToId": "$.event.deputyToId",
-                    "officerId": "$.event.officerId",
-                    "emailAddress": "$.event.emailAddress",
-                    "deputyDescription": "$.event.deputyDescription"
-                }
+                "entityIdField": "officerId"
             },
-            "position": { "x": 50, "y": 250 },
+            "position": {
+                "x": 50,
+                "y": 250
+            },
             "outputs": [
-                { "port": "next", "target": "check-only-one-per-branch" }
+                {
+                    "port": "next",
+                    "target": "check-only-one-per-branch"
+                }
             ]
         },
         "check-only-one-per-branch": {
@@ -30,10 +25,21 @@
                 "condition": "Officers.IsOnlyOnePerBranch",
                 "officeId": "$.trigger.officeId"
             },
-            "position": { "x": 350, "y": 250 },
+            "position": {
+                "x": 350,
+                "y": 250
+            },
             "outputs": [
-                { "port": "true", "target": "check-has-conflict", "label": "Yes" },
-                { "port": "false", "target": "check-requires-warrant", "label": "No" }
+                {
+                    "port": "true",
+                    "target": "check-has-conflict",
+                    "label": "Yes"
+                },
+                {
+                    "port": "false",
+                    "target": "check-requires-warrant",
+                    "label": "No"
+                }
             ]
         },
         "check-has-conflict": {
@@ -44,10 +50,21 @@
                 "officeId": "$.trigger.officeId",
                 "branchId": "$.trigger.branchId"
             },
-            "position": { "x": 650, "y": 150 },
+            "position": {
+                "x": 650,
+                "y": 150
+            },
             "outputs": [
-                { "port": "true", "target": "release-conflicting", "label": "Conflict Found" },
-                { "port": "false", "target": "check-requires-warrant", "label": "No Conflict" }
+                {
+                    "port": "true",
+                    "target": "release-conflicting",
+                    "label": "Conflict Found"
+                },
+                {
+                    "port": "false",
+                    "target": "check-requires-warrant",
+                    "label": "No Conflict"
+                }
             ]
         },
         "release-conflicting": {
@@ -61,9 +78,15 @@
                     "newOfficerStartDate": "$.trigger.startOn"
                 }
             },
-            "position": { "x": 950, "y": 50 },
+            "position": {
+                "x": 950,
+                "y": 50
+            },
             "outputs": [
-                { "port": "next", "target": "check-requires-warrant" }
+                {
+                    "port": "next",
+                    "target": "check-requires-warrant"
+                }
             ]
         },
         "check-requires-warrant": {
@@ -73,10 +96,21 @@
                 "condition": "Officers.OfficeRequiresWarrant",
                 "officeId": "$.trigger.officeId"
             },
-            "position": { "x": 950, "y": 250 },
+            "position": {
+                "x": 950,
+                "y": 250
+            },
             "outputs": [
-                { "port": "true", "target": "check-warrantable", "label": "Yes" },
-                { "port": "false", "target": "create-officer", "label": "No" }
+                {
+                    "port": "true",
+                    "target": "check-warrantable",
+                    "label": "Yes"
+                },
+                {
+                    "port": "false",
+                    "target": "create-officer",
+                    "label": "No"
+                }
             ]
         },
         "check-warrantable": {
@@ -86,10 +120,21 @@
                 "condition": "Officers.IsMemberWarrantable",
                 "memberId": "$.trigger.memberId"
             },
-            "position": { "x": 1250, "y": 150 },
+            "position": {
+                "x": 1250,
+                "y": 150
+            },
             "outputs": [
-                { "port": "true", "target": "create-officer", "label": "Yes" },
-                { "port": "false", "target": "end-rejected", "label": "No" }
+                {
+                    "port": "true",
+                    "target": "create-officer",
+                    "label": "Yes"
+                },
+                {
+                    "port": "false",
+                    "target": "end-rejected",
+                    "label": "No"
+                }
             ]
         },
         "create-officer": {
@@ -107,9 +152,15 @@
                     "deputyDescription": "$.trigger.deputyDescription"
                 }
             },
-            "position": { "x": 1550, "y": 250 },
+            "position": {
+                "x": 1550,
+                "y": 250
+            },
             "outputs": [
-                { "port": "next", "target": "recalculate-office" }
+                {
+                    "port": "next",
+                    "target": "recalculate-office"
+                }
             ]
         },
         "recalculate-office": {
@@ -122,9 +173,15 @@
                     "updaterId": "$.trigger.memberId"
                 }
             },
-            "position": { "x": 1850, "y": 250 },
+            "position": {
+                "x": 1850,
+                "y": 250
+            },
             "outputs": [
-                { "port": "next", "target": "send-hire-notification" }
+                {
+                    "port": "next",
+                    "target": "send-hire-notification"
+                }
             ]
         },
         "send-hire-notification": {
@@ -136,23 +193,35 @@
                     "officerId": "$.nodes.create-officer.result.officerId"
                 }
             },
-            "position": { "x": 2150, "y": 250 },
+            "position": {
+                "x": 2150,
+                "y": 250
+            },
             "outputs": [
-                { "port": "next", "target": "end-complete" }
+                {
+                    "port": "next",
+                    "target": "end-complete"
+                }
             ]
         },
         "end-complete": {
             "type": "end",
             "label": "Hire Complete",
             "config": {},
-            "position": { "x": 2450, "y": 250 },
+            "position": {
+                "x": 2450,
+                "y": 250
+            },
             "outputs": []
         },
         "end-rejected": {
             "type": "end",
-            "label": "Rejected — Not Warrantable",
+            "label": "Rejected \u2014 Not Warrantable",
             "config": {},
-            "position": { "x": 1550, "y": 50 },
+            "position": {
+                "x": 1550,
+                "y": 50
+            },
             "outputs": []
         }
     },

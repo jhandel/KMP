@@ -5,18 +5,17 @@
             "label": "Warrant Roster Created",
             "config": {
                 "event": "Warrants.RosterCreated",
-                "entityIdField": "rosterId",
-                "inputMapping": {
-                    "rosterId": "$.event.rosterId",
-                    "rosterName": "$.event.rosterName",
-                    "approvalsRequired": "$.event.approvalsRequired",
-                    "warrantIds": "$.event.warrantIds",
-                    "createdById": "$.event.createdById"
-                }
+                "entityIdField": "rosterId"
             },
-            "position": { "x": 50, "y": 200 },
+            "position": {
+                "x": 50,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "approval-gate" }
+                {
+                    "port": "next",
+                    "target": "approval-gate"
+                }
             ]
         },
         "approval-gate": {
@@ -29,15 +28,27 @@
                 "policyAction": "canApprove",
                 "entityTable": "WarrantRosters",
                 "entityIdKey": "trigger.rosterId",
-                "requiredCount": { "type": "app_setting", "key": "Warrant.RosterApprovalsRequired" },
+                "requiredCount": {
+                    "type": "app_setting",
+                    "key": "Warrant.RosterApprovalsRequired"
+                },
                 "parallel": true,
                 "deadline": "14d",
                 "allowComments": true
             },
-            "position": { "x": 350, "y": 200 },
+            "position": {
+                "x": 350,
+                "y": 200
+            },
             "outputs": [
-                { "port": "approved", "target": "activate-warrants" },
-                { "port": "rejected", "target": "decline-roster" }
+                {
+                    "port": "approved",
+                    "target": "activate-warrants"
+                },
+                {
+                    "port": "rejected",
+                    "target": "decline-roster"
+                }
             ]
         },
         "activate-warrants": {
@@ -49,9 +60,15 @@
                     "rosterId": "$.trigger.rosterId"
                 }
             },
-            "position": { "x": 650, "y": 100 },
+            "position": {
+                "x": 650,
+                "y": 100
+            },
             "outputs": [
-                { "port": "next", "target": "notify-each-warrant" }
+                {
+                    "port": "next",
+                    "target": "notify-each-warrant"
+                }
             ]
         },
         "notify-each-warrant": {
@@ -68,9 +85,15 @@
                     }
                 }
             },
-            "position": { "x": 950, "y": 100 },
+            "position": {
+                "x": 950,
+                "y": 100
+            },
             "outputs": [
-                { "port": "next", "target": "end-approved" }
+                {
+                    "port": "next",
+                    "target": "end-approved"
+                }
             ]
         },
         "decline-roster": {
@@ -84,23 +107,35 @@
                     "rejecterId": "$.nodes.approval-gate.approverId"
                 }
             },
-            "position": { "x": 650, "y": 300 },
+            "position": {
+                "x": 650,
+                "y": 300
+            },
             "outputs": [
-                { "port": "next", "target": "end-declined" }
+                {
+                    "port": "next",
+                    "target": "end-declined"
+                }
             ]
         },
         "end-approved": {
             "type": "end",
             "label": "Roster Approved",
             "config": {},
-            "position": { "x": 1250, "y": 100 },
+            "position": {
+                "x": 1250,
+                "y": 100
+            },
             "outputs": []
         },
         "end-declined": {
             "type": "end",
             "label": "Roster Declined",
             "config": {},
-            "position": { "x": 950, "y": 300 },
+            "position": {
+                "x": 950,
+                "y": 300
+            },
             "outputs": []
         }
     },

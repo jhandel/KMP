@@ -18,8 +18,8 @@ echo $this->KMP->getAppSetting("KMP.ShortSiteTitle") . ': Workflow Designer';
 $this->KMP->endBlock();
 
 echo $this->KMP->startBlock("css");
-echo $this->Html->css('/css/drawflow.css');
-echo $this->Html->css('/css/workflow-designer.css');
+echo $this->Vite->css('drawflow');
+echo $this->Vite->css('workflow-designer');
 $this->KMP->endBlock();
 ?>
 

@@ -384,6 +384,7 @@ class WorkflowDesignerController extends Controller {
 
     updateNodeConfig(event) { this._nodeConfigHandler.updateNodeConfig(event) }
     onApproverTypeChange(event) { this._nodeConfigHandler.onApproverTypeChange(event) }
+    onApproverValueModeChange(event) { this._nodeConfigHandler.onApproverValueModeChange(event) }
     onSerialPickNextChange(event) { this._nodeConfigHandler.onSerialPickNextChange(event) }
     onResolverChange(event) { this._nodeConfigHandler.onResolverChange(event) }
     onValuePickerTypeChange(event) { this._nodeConfigHandler.onValuePickerTypeChange(event) }
@@ -392,6 +393,16 @@ class WorkflowDesignerController extends Controller {
     addKvRow(event) { this._nodeConfigHandler.addKvRow(event) }
     removeKvRow(event) { this._nodeConfigHandler.removeKvRow(event) }
     onKvValueTypeChange(event) { this._nodeConfigHandler.onKvValueTypeChange(event) }
+
+    filterVariableCatalog(event) {
+        const filter = (event.target.value || '').toLowerCase()
+        const items = event.target.closest('.tab-pane')?.querySelectorAll('[data-var-item]') || []
+        items.forEach(item => {
+            const path = (item.dataset.varPath || '').toLowerCase()
+            const label = (item.dataset.varLabel || '').toLowerCase()
+            item.style.display = (path.includes(filter) || label.includes(filter)) ? '' : 'none'
+        })
+    }
     onEmailTemplateChange(event) { this._nodeConfigHandler.onEmailTemplateChange(event) }
 
     // --- Node Events ---

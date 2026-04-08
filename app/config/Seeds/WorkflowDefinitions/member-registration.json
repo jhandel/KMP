@@ -5,17 +5,17 @@
             "label": "Member Registered",
             "config": {
                 "event": "Members.Registered",
-                "entityIdField": "memberId",
-                "inputMapping": {
-                    "memberId": "$.event.memberId",
-                    "email": "$.event.email",
-                    "scaName": "$.event.scaName",
-                    "branchId": "$.event.branchId"
-                }
+                "entityIdField": "memberId"
             },
-            "position": { "x": 50, "y": 200 },
+            "position": {
+                "x": 50,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "assign-status-and-tokens" }
+                {
+                    "port": "next",
+                    "target": "assign-status-and-tokens"
+                }
             ]
         },
         "assign-status-and-tokens": {
@@ -27,9 +27,15 @@
                     "memberId": "$.trigger.memberId"
                 }
             },
-            "position": { "x": 350, "y": 200 },
+            "position": {
+                "x": 350,
+                "y": 200
+            },
             "outputs": [
-                { "port": "next", "target": "check-is-minor" }
+                {
+                    "port": "next",
+                    "target": "check-is-minor"
+                }
             ]
         },
         "check-is-minor": {
@@ -39,10 +45,21 @@
                 "condition": "Members.IsMinor",
                 "memberId": "$.trigger.memberId"
             },
-            "position": { "x": 650, "y": 200 },
+            "position": {
+                "x": 650,
+                "y": 200
+            },
             "outputs": [
-                { "port": "true", "target": "notify-secretary-minor", "label": "Minor" },
-                { "port": "false", "target": "send-registration-email", "label": "Adult" }
+                {
+                    "port": "true",
+                    "target": "notify-secretary-minor",
+                    "label": "Minor"
+                },
+                {
+                    "port": "false",
+                    "target": "send-registration-email",
+                    "label": "Adult"
+                }
             ]
         },
         "send-registration-email": {
@@ -55,9 +72,15 @@
                     "email": "$.trigger.email"
                 }
             },
-            "position": { "x": 950, "y": 300 },
+            "position": {
+                "x": 950,
+                "y": 300
+            },
             "outputs": [
-                { "port": "next", "target": "notify-secretary-adult" }
+                {
+                    "port": "next",
+                    "target": "notify-secretary-adult"
+                }
             ]
         },
         "notify-secretary-adult": {
@@ -69,9 +92,15 @@
                     "memberId": "$.trigger.memberId"
                 }
             },
-            "position": { "x": 1250, "y": 300 },
+            "position": {
+                "x": 1250,
+                "y": 300
+            },
             "outputs": [
-                { "port": "next", "target": "end-complete" }
+                {
+                    "port": "next",
+                    "target": "end-complete"
+                }
             ]
         },
         "notify-secretary-minor": {
@@ -83,16 +112,25 @@
                     "memberId": "$.trigger.memberId"
                 }
             },
-            "position": { "x": 950, "y": 100 },
+            "position": {
+                "x": 950,
+                "y": 100
+            },
             "outputs": [
-                { "port": "next", "target": "end-complete" }
+                {
+                    "port": "next",
+                    "target": "end-complete"
+                }
             ]
         },
         "end-complete": {
             "type": "end",
             "label": "Registration Complete",
             "config": {},
-            "position": { "x": 1550, "y": 200 },
+            "position": {
+                "x": 1550,
+                "y": 200
+            },
             "outputs": []
         }
     },

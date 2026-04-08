@@ -26,7 +26,8 @@ export default class WorkflowNodeConfigHandler {
         this._highlightSelectedNodes()
         const nodeData = this.editor.getNodeFromId(nodeId)
         if (this.hasNodeConfigTarget && this.configPanel) {
-            this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this.configPanel.renderConfigHTML(nodeId, nodeData)
+            const variableInfo = this._buildVariableInfo(nodeId, nodeData)
+            this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this.configPanel.renderConfigHTML(nodeId, nodeData, variableInfo)
             this.variablePicker?.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
             const nodeConfig = nodeData.data?.config || {}
             if (nodeConfig.approverType === 'policy' && nodeConfig.policyClass) {
@@ -52,6 +53,17 @@ export default class WorkflowNodeConfigHandler {
         }
     }
 
+    /**
+     * Build variable info for the catalog tab.
+     * @returns {{ available: Array, produced: Array }}
+     */
+    _buildVariableInfo(nodeId, nodeData) {
+        if (!this.variablePicker) return null
+        const available = this.variablePicker.buildVariableList(nodeId, this.editor)
+        const produced = this.variablePicker.getNodeOutputSchema(nodeData)
+        return { available, produced }
+    }
+
     _highlightSelectedNodes() {
         this.designer.canvasTarget.querySelectorAll('.drawflow-node').forEach(el => {
             el.classList.remove('wf-multi-selected')
@@ -71,6 +83,26 @@ export default class WorkflowNodeConfigHandler {
         form.querySelectorAll('[data-approver-section]').forEach(section => {
             section.style.display = section.dataset.approverSection === selectedType ? 'block' : 'none'
         })
+    }
+
+    onApproverValueModeChange(event) {
+        const section = event.target.closest('[data-approver-section]')
+        if (!section) return
+        const mode = event.target.value
+        const fixedDiv = section.querySelector('[data-approver-value-fixed]')
+        const contextDiv = section.querySelector('[data-approver-value-context]')
+        if (fixedDiv) fixedDiv.style.display = mode === 'fixed' ? 'block' : 'none'
+        if (contextDiv) contextDiv.style.display = mode === 'context' ? 'block' : 'none'
+
+        // Clear the value in the hidden mode so it doesn't persist
+        if (mode === 'fixed') {
+            const ctxInput = contextDiv?.querySelector('input[name="approverValue"]')
+            if (ctxInput) ctxInput.value = ''
+        } else {
+            const acHidden = fixedDiv?.querySelector('input[name="approverValue"]')
+            if (acHidden) acHidden.value = ''
+        }
+        this.updateNodeConfig(event)
     }
 
     onSerialPickNextChange(event) {
@@ -263,8 +295,6 @@ export default class WorkflowNodeConfigHandler {
 
         const newParams = {}
         let hasParams = false
-        const newInputMapping = {}
-        let hasInputMapping = false
         const newApproverConfig = {}
         let hasApproverConfig = false
 
@@ -287,10 +317,6 @@ export default class WorkflowNodeConfigHandler {
                 const acKey = key.substring(15)
                 newApproverConfig[acKey] = value
                 hasApproverConfig = true
-            } else if (key.startsWith('inputMapping.')) {
-                const mapKey = key.substring(13)
-                newInputMapping[mapKey] = value
-                hasInputMapping = true
             } else {
                 nodeData.data.config[key] = value
             }
@@ -329,9 +355,6 @@ export default class WorkflowNodeConfigHandler {
         if (hasParams) {
             nodeData.data.config.params = newParams
         }
-        if (hasInputMapping) {
-            nodeData.data.config.inputMapping = newInputMapping
-        }
         if (hasApproverConfig) {
             nodeData.data.config.approverConfig = newApproverConfig
         }
@@ -348,7 +371,8 @@ export default class WorkflowNodeConfigHandler {
         if (changedField === 'action' || changedField === 'condition' || changedField === 'event') {
             const updatedNode = this.editor.getNodeFromId(nodeId)
             if (this.hasNodeConfigTarget && this.configPanel) {
-                this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this.configPanel.renderConfigHTML(nodeId, updatedNode)
+                const variableInfo = this._buildVariableInfo(nodeId, updatedNode)
+                this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this.configPanel.renderConfigHTML(nodeId, updatedNode, variableInfo)
                 if (this.variablePicker) {
                     this.variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
                 }
