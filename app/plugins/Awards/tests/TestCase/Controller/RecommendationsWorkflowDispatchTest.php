@@ -1,21 +1,25 @@
 <?php
-
 declare(strict_types=1);
 
 namespace Awards\Test\TestCase\Controller;
 
+use App\Controller\WorkflowDispatchTrait;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Test\TestCase\BaseTestCase;
-use Awards\Services\RecommendationStateService;
+use ArrayAccess;
+use Awards\Controller\RecommendationsController;
+use Awards\Services\RecommendationTransitionService;
 use Cake\I18n\DateTime;
+use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\ORM\TableRegistry;
+use RuntimeException;
 
 /**
- * Tests for workflow dispatch integration in RecommendationsController.
+ * Tests for workflow dispatch integration used by RecommendationsController.
  *
  * Uses a lightweight stub controller that mirrors the real controller's
  * workflow dispatch wiring. This avoids the full HTTP stack while testing
- * the trait integration, event payloads, and dual-path dispatch logic.
+ * the trait integration, event payloads, and workflow-only dispatch helpers.
  */
 class RecommendationsWorkflowDispatchTest extends BaseTestCase
 {
@@ -58,13 +62,13 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
     {
         $mock = $this->createMock(TriggerDispatcher::class);
         $mock->method('dispatch')
-            ->willThrowException(new \RuntimeException('Workflow engine offline'));
+            ->willThrowException(new RuntimeException('Workflow engine offline'));
 
         return $mock;
     }
 
     /**
-     * Create an active workflow definition so dispatchOrLegacy chooses the workflow path.
+     * Create an active workflow definition so workflow-only dispatch can proceed.
      */
     private function activateWorkflow(string $slug): int
     {
@@ -163,38 +167,44 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
         $branchId = $branchId ?? self::KINGDOM_BRANCH_ID;
 
         return new class ($identityId, $branchId) {
-            use \App\Controller\WorkflowDispatchTrait;
-            use \Cake\ORM\Locator\LocatorAwareTrait;
+            use WorkflowDispatchTrait;
+            use LocatorAwareTrait;
 
             public object $request;
 
             public function __construct(?int $identityId, ?int $branchId)
             {
                 $identity = $identityId !== null
-                    ? new class ($identityId, $branchId) implements \ArrayAccess {
+                    ? new class ($identityId, $branchId) implements ArrayAccess {
                         private int $id;
                         private array $data;
+
                         public function __construct(int $id, ?int $branchId)
                         {
                             $this->id = $id;
                             $this->data = ['id' => $id, 'branch_id' => $branchId];
                         }
+
                         public function getIdentifier(): int
                         {
                             return $this->id;
                         }
+
                         public function offsetExists(mixed $offset): bool
                         {
                             return isset($this->data[$offset]);
                         }
+
                         public function offsetGet(mixed $offset): mixed
                         {
                             return $this->data[$offset] ?? null;
                         }
+
                         public function offsetSet(mixed $offset, mixed $value): void
                         {
                             $this->data[$offset] = $value;
                         }
+
                         public function offsetUnset(mixed $offset): void
                         {
                             unset($this->data[$offset]);
@@ -204,10 +214,12 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
 
                 $this->request = new class ($identity) {
                     private $identity;
+
                     public function __construct($identity)
                     {
                         $this->identity = $identity;
                     }
+
                     public function getAttribute(string $name): mixed
                     {
                         return $name === 'identity' ? $this->identity : null;
@@ -215,18 +227,17 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
                 };
             }
 
-            public function callDispatchOrLegacy(
-                \App\Services\WorkflowEngine\TriggerDispatcher $dispatcher,
+            public function callDispatchWorkflowOrFail(
+                TriggerDispatcher $dispatcher,
                 string $slug,
                 string $trigger,
                 array $ctx,
-                callable $legacy,
-            ): mixed {
-                return $this->dispatchOrLegacy($dispatcher, $slug, $trigger, $ctx, $legacy);
+            ): array {
+                return $this->dispatchWorkflowOrFail($dispatcher, $slug, $trigger, $ctx);
             }
 
             public function callDispatchWorkflowEvent(
-                \App\Services\WorkflowEngine\TriggerDispatcher $dispatcher,
+                TriggerDispatcher $dispatcher,
                 string $trigger,
                 array $ctx,
             ): void {
@@ -235,59 +246,56 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
         };
     }
 
-    // ── 1. Legacy path runs when no workflow is active ───────────────
+    // ── 1. Workflow-only dispatch fails when no workflow is active ───
 
-    public function testDispatchOrLegacyRunsLegacyWhenNoWorkflow(): void
+    public function testDispatchWorkflowOrFailThrowsWhenNoWorkflow(): void
     {
-        $this->deactivateWorkflow('awards-recommendation-lifecycle');
+        $this->deactivateWorkflow('awards-recommendation-submitted');
         $stub = $this->buildTraitStub(self::ADMIN_MEMBER_ID);
         $dispatcher = $this->buildMockDispatcher();
 
-        $legacyCalled = false;
-        $result = $stub->callDispatchOrLegacy(
-            $dispatcher,
-            'awards-recommendation-lifecycle',
-            'Awards.RecommendationSubmitted',
-            ['recommendationId' => 1],
-            function () use (&$legacyCalled) {
-                $legacyCalled = true;
+        try {
+            $stub->callDispatchWorkflowOrFail(
+                $dispatcher,
+                'awards-recommendation-submitted',
+                'Awards.RecommendationCreateRequested',
+                ['data' => ['award_id' => 1]],
+            );
+            $this->fail('Expected workflow-only dispatch to throw when inactive.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString(
+                'awards-recommendation-submitted',
+                $exception->getMessage(),
+            );
+        }
 
-                return 'legacy-result';
-            },
-        );
-
-        $this->assertTrue($legacyCalled, 'Legacy callable should run when no workflow is active');
-        $this->assertEquals('legacy-result', $result);
         $this->assertEmpty($this->dispatched, 'No workflow dispatch when no active definition');
     }
 
     // ── 2. Workflow path dispatches when workflow is active ──────────
 
-    public function testDispatchOrLegacyDispatchesWhenWorkflowActive(): void
+    public function testDispatchWorkflowOrFailDispatchesWhenWorkflowActive(): void
     {
-        $this->activateWorkflow('awards-recommendation-lifecycle');
+        $this->activateWorkflow('awards-recommendation-submitted');
         $dispatcher = $this->buildMockDispatcher();
         $stub = $this->buildTraitStub(self::ADMIN_MEMBER_ID);
 
-        $legacyCalled = false;
-        $stub->callDispatchOrLegacy(
+        $stub->callDispatchWorkflowOrFail(
             $dispatcher,
-            'awards-recommendation-lifecycle',
-            'Awards.RecommendationSubmitted',
+            'awards-recommendation-submitted',
+            'Awards.RecommendationCreateRequested',
             [
-                'recommendationId' => 42,
-                'awardId' => 1,
-                'state' => 'Submitted',
+                'data' => [
+                    'award_id' => 1,
+                    'reason' => 'Test recommendation',
+                ],
+                'submissionMode' => 'authenticated',
             ],
-            function () use (&$legacyCalled) {
-                $legacyCalled = true;
-            },
         );
 
-        $this->assertFalse($legacyCalled, 'Legacy callable should NOT run when workflow is active');
         $this->assertCount(1, $this->dispatched);
-        $this->assertEquals('Awards.RecommendationSubmitted', $this->dispatched[0]['event']);
-        $this->assertEquals(42, $this->dispatched[0]['data']['recommendationId']);
+        $this->assertEquals('Awards.RecommendationCreateRequested', $this->dispatched[0]['event']);
+        $this->assertEquals(1, $this->dispatched[0]['data']['data']['award_id']);
         $this->assertEquals(self::ADMIN_MEMBER_ID, $this->dispatched[0]['triggeredBy']);
     }
 
@@ -331,7 +339,7 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
 
         $stub->callDispatchWorkflowEvent(
             $dispatcher,
-            'Awards.BulkStateTransition',
+            'Awards.RecommendationBulkTransitionRequested',
             [
                 'recommendationIds' => [(string)$recId1, (string)$recId2],
                 'targetState' => 'In Consideration',
@@ -341,7 +349,7 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
 
         $this->assertCount(1, $this->dispatched);
         $call = $this->dispatched[0];
-        $this->assertEquals('Awards.BulkStateTransition', $call['event']);
+        $this->assertEquals('Awards.RecommendationBulkTransitionRequested', $call['event']);
         $this->assertContains((string)$recId1, $call['data']['recommendationIds']);
         $this->assertContains((string)$recId2, $call['data']['recommendationIds']);
         $this->assertEquals('In Consideration', $call['data']['targetState']);
@@ -364,21 +372,20 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
         $this->assertTrue(true, 'dispatchWorkflowEvent should swallow exceptions');
     }
 
-    // ── 6. dispatchOrLegacy passes identity ID to trigger ───────────
+    // ── 6. workflow-only dispatch passes identity ID to trigger ─────
 
-    public function testDispatchOrLegacyPassesActorId(): void
+    public function testDispatchWorkflowOrFailPassesActorId(): void
     {
-        $this->activateWorkflow('awards-recommendation-lifecycle');
+        $this->activateWorkflow('awards-recommendation-submitted');
         $dispatcher = $this->buildMockDispatcher();
         $actorId = self::TEST_MEMBER_AGATHA_ID;
         $stub = $this->buildTraitStub($actorId);
 
-        $stub->callDispatchOrLegacy(
+        $stub->callDispatchWorkflowOrFail(
             $dispatcher,
-            'awards-recommendation-lifecycle',
-            'Awards.RecommendationSubmitted',
-            ['recommendationId' => 99],
-            function () {},
+            'awards-recommendation-submitted',
+            'Awards.RecommendationCreateRequested',
+            ['data' => ['award_id' => 1]],
         );
 
         $this->assertEquals($actorId, $this->dispatched[0]['triggeredBy']);
@@ -390,12 +397,12 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
     {
         $recId = $this->createTestRecommendation('Submitted');
         $table = TableRegistry::getTableLocator()->get('Awards.Recommendations');
-        $stateService = new RecommendationStateService();
+        $transitionService = new RecommendationTransitionService();
 
-        $success = $stateService->bulkUpdateStates(
+        $result = $transitionService->transitionMany(
             $table,
             [
-                'ids' => [(string)$recId],
+                'recommendationIds' => [(string)$recId],
                 'newState' => 'In Consideration',
                 'gathering_id' => null,
                 'given' => null,
@@ -405,7 +412,7 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
             self::ADMIN_MEMBER_ID,
         );
 
-        $this->assertTrue($success, 'Bulk state update should succeed');
+        $this->assertTrue($result['success'], 'Bulk state update should succeed');
 
         $updated = $table->get($recId);
         $this->assertEquals('In Consideration', $updated->state);
@@ -416,7 +423,7 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
 
     public function testRecommendationsControllerUsesWorkflowDispatchTrait(): void
     {
-        $uses = class_uses(\Awards\Controller\RecommendationsController::class);
+        $uses = class_uses(RecommendationsController::class);
         $this->assertArrayHasKey(
             'App\Controller\WorkflowDispatchTrait',
             $uses,
@@ -429,8 +436,13 @@ class RecommendationsWorkflowDispatchTest extends BaseTestCase
     public function testWorkflowTriggerNamesMatchProvider(): void
     {
         $expectedTriggers = [
-            'Awards.RecommendationSubmitted',
-            'Awards.BulkStateTransition',
+            'Awards.RecommendationCreateRequested',
+            'Awards.RecommendationUpdateRequested',
+            'Awards.RecommendationBulkTransitionRequested',
+            'Awards.RecommendationsGroupRequested',
+            'Awards.RecommendationsUngroupRequested',
+            'Awards.RecommendationRemoveFromGroupRequested',
+            'Awards.RecommendationDeleteRequested',
         ];
 
         // Verify the controller source references each expected trigger

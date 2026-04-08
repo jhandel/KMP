@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace Awards\Services;
@@ -8,6 +7,7 @@ use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Services\WorkflowRegistry\WorkflowEntityRegistry;
 use App\Services\WorkflowRegistry\WorkflowTriggerRegistry;
+use Awards\Model\Table\RecommendationsTable;
 
 /**
  * Registers award recommendation workflow triggers, actions, conditions,
@@ -37,6 +37,18 @@ class AwardsWorkflowProvider
     {
         WorkflowTriggerRegistry::register(self::SOURCE, [
             [
+                'event' => 'Awards.RecommendationCreateRequested',
+                'label' => 'Recommendation Create Requested',
+                'description' => 'When a workflow should create a recommendation from submitted form data',
+                'payloadSchema' => [
+                    'data' => ['type' => 'object', 'label' => 'Recommendation Data'],
+                    'requesterContext' => ['type' => 'object', 'label' => 'Authenticated Requester Context'],
+                    'submissionMode' => ['type' => 'string', 'label' => 'Submission Mode'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                    'branchId' => ['type' => 'integer', 'label' => 'Branch ID'],
+                ],
+            ],
+            [
                 'event' => 'Awards.RecommendationSubmitted',
                 'label' => 'Recommendation Submitted',
                 'description' => 'When a new award recommendation is submitted',
@@ -54,6 +66,27 @@ class AwardsWorkflowProvider
                 ],
             ],
             [
+                'event' => 'Awards.RecommendationUpdateRequested',
+                'label' => 'Recommendation Update Requested',
+                'description' => 'When a workflow should update an existing recommendation',
+                'payloadSchema' => [
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID'],
+                    'data' => ['type' => 'object', 'label' => 'Updated Recommendation Data'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+            ],
+            [
+                'event' => 'Awards.RecommendationTransitionRequested',
+                'label' => 'Recommendation Transition Requested',
+                'description' => 'When a workflow should transition a single recommendation',
+                'payloadSchema' => [
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID'],
+                    'targetState' => ['type' => 'string', 'label' => 'Target State'],
+                    'data' => ['type' => 'object', 'label' => 'Transition Data'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+            ],
+            [
                 'event' => 'Awards.RecommendationStateChanged',
                 'label' => 'Recommendation State Changed',
                 'description' => 'When a recommendation transitions to a new state',
@@ -67,12 +100,59 @@ class AwardsWorkflowProvider
                 ],
             ],
             [
+                'event' => 'Awards.RecommendationBulkTransitionRequested',
+                'label' => 'Recommendation Bulk Transition Requested',
+                'description' => 'When a workflow should perform a bulk recommendation transition',
+                'payloadSchema' => [
+                    'recommendationIds' => ['type' => 'array', 'label' => 'Recommendation IDs'],
+                    'targetState' => ['type' => 'string', 'label' => 'Target State'],
+                    'data' => ['type' => 'object', 'label' => 'Bulk Transition Data'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+            ],
+            [
                 'event' => 'Awards.BulkStateTransition',
                 'label' => 'Bulk State Transition',
                 'description' => 'When multiple recommendations are transitioned in bulk',
                 'payloadSchema' => [
                     'recommendationIds' => ['type' => 'array', 'label' => 'Recommendation IDs'],
                     'targetState' => ['type' => 'string', 'label' => 'Target State'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+            ],
+            [
+                'event' => 'Awards.RecommendationsGroupRequested',
+                'label' => 'Recommendations Group Requested',
+                'description' => 'When selected recommendations should be grouped under a shared head',
+                'payloadSchema' => [
+                    'recommendationIds' => ['type' => 'array', 'label' => 'Recommendation IDs'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+            ],
+            [
+                'event' => 'Awards.RecommendationsUngroupRequested',
+                'label' => 'Recommendations Ungroup Requested',
+                'description' => 'When all children should be removed from a recommendation group',
+                'payloadSchema' => [
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Group Head Recommendation ID'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+            ],
+            [
+                'event' => 'Awards.RecommendationRemoveFromGroupRequested',
+                'label' => 'Recommendation Remove From Group Requested',
+                'description' => 'When a single grouped recommendation should be restored to its origin state',
+                'payloadSchema' => [
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Grouped Recommendation ID'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+            ],
+            [
+                'event' => 'Awards.RecommendationDeleteRequested',
+                'label' => 'Recommendation Delete Requested',
+                'description' => 'When a workflow should delete an existing recommendation',
+                'payloadSchema' => [
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID'],
                     'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
                 ],
             ],
@@ -99,16 +179,47 @@ class AwardsWorkflowProvider
                     'reason' => ['type' => 'string', 'label' => 'Reason', 'required' => true],
                     'requesterId' => ['type' => 'integer', 'label' => 'Requester ID'],
                     'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
+                    'memberPublicId' => ['type' => 'string', 'label' => 'Member Public ID'],
                     'branchId' => ['type' => 'integer', 'label' => 'Branch ID'],
+                    'data' => ['type' => 'object', 'label' => 'Recommendation Data'],
+                    'requesterContext' => ['type' => 'object', 'label' => 'Authenticated Requester Context'],
+                    'submissionMode' => ['type' => 'string', 'label' => 'Submission Mode'],
+                    'notFound' => ['type' => 'boolean', 'label' => 'Member Not Found'],
+                    'gatheringIds' => ['type' => 'array', 'label' => 'Gathering IDs'],
+                    'gatherings' => ['type' => 'object', 'label' => 'Gathering Association Data'],
                     'status' => ['type' => 'string', 'label' => 'Initial Status'],
                     'state' => ['type' => 'string', 'label' => 'Initial State'],
                 ],
                 'outputSchema' => [
                     'success' => ['type' => 'boolean', 'label' => 'Creation Successful'],
                     'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID'],
+                    'eventPayload' => ['type' => 'object', 'label' => 'Submission Event Payload'],
                 ],
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'createRecommendation',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Awards.UpdateRecommendation',
+                'label' => 'Update Recommendation',
+                'description' => 'Update an existing recommendation using the shared mutation service',
+                'inputSchema' => [
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID', 'required' => true],
+                    'data' => ['type' => 'object', 'label' => 'Recommendation Data'],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID', 'required' => true],
+                    'memberPublicId' => ['type' => 'string', 'label' => 'Member Public ID'],
+                    'gatheringIds' => ['type' => 'array', 'label' => 'Gathering IDs'],
+                    'note' => ['type' => 'string', 'label' => 'Update Note'],
+                    'given' => ['type' => 'string', 'label' => 'Given Date'],
+                    'notFound' => ['type' => 'boolean', 'label' => 'Member Not Found'],
+                ],
+                'outputSchema' => [
+                    'success' => ['type' => 'boolean', 'label' => 'Update Successful'],
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID'],
+                    'noteId' => ['type' => 'integer', 'label' => 'Created Note ID'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'updateRecommendation',
                 'isAsync' => false,
             ],
             [
@@ -118,7 +229,13 @@ class AwardsWorkflowProvider
                 'inputSchema' => [
                     'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID', 'required' => true],
                     'targetState' => ['type' => 'string', 'label' => 'Target State', 'required' => true],
+                    'toState' => ['type' => 'string', 'label' => 'Target State Alias'],
                     'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                    'data' => ['type' => 'object', 'label' => 'Transition Data'],
+                    'gatheringId' => ['type' => 'integer', 'label' => 'Gathering ID'],
+                    'given' => ['type' => 'string', 'label' => 'Given Date'],
+                    'note' => ['type' => 'string', 'label' => 'Note'],
+                    'closeReason' => ['type' => 'string', 'label' => 'Close Reason'],
                 ],
                 'outputSchema' => [
                     'success' => ['type' => 'boolean', 'label' => 'Transition Successful'],
@@ -138,6 +255,7 @@ class AwardsWorkflowProvider
                     'recommendationIds' => ['type' => 'array', 'label' => 'Recommendation IDs', 'required' => true],
                     'targetState' => ['type' => 'string', 'label' => 'Target State', 'required' => true],
                     'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                    'data' => ['type' => 'object', 'label' => 'Bulk Transition Data'],
                     'gatheringId' => ['type' => 'integer', 'label' => 'Gathering ID'],
                     'given' => ['type' => 'string', 'label' => 'Given Date'],
                     'note' => ['type' => 'string', 'label' => 'Note'],
@@ -150,6 +268,85 @@ class AwardsWorkflowProvider
                 ],
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'bulkTransitionState',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Awards.GroupRecommendations',
+                'label' => 'Group Recommendations',
+                'description' => 'Group multiple recommendations under a shared head recommendation',
+                'inputSchema' => [
+                    'recommendationIds' => ['type' => 'array', 'label' => 'Recommendation IDs', 'required' => true],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+                'outputSchema' => [
+                    'success' => ['type' => 'boolean', 'label' => 'Grouping Successful'],
+                    'headId' => ['type' => 'integer', 'label' => 'Group Head Recommendation ID'],
+                    'groupedCount' => ['type' => 'integer', 'label' => 'Grouped Count'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'groupRecommendations',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Awards.UngroupRecommendations',
+                'label' => 'Ungroup Recommendations',
+                'description' => 'Restore all grouped children back to their origin states',
+                'inputSchema' => [
+                    'recommendationId' => [
+                        'type' => 'integer',
+                        'label' => 'Group Head Recommendation ID',
+                        'required' => true,
+                    ],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+                'outputSchema' => [
+                    'success' => ['type' => 'boolean', 'label' => 'Ungroup Successful'],
+                    'headId' => ['type' => 'integer', 'label' => 'Group Head Recommendation ID'],
+                    'restoredCount' => ['type' => 'integer', 'label' => 'Restored Child Count'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'ungroupRecommendations',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Awards.RemoveRecommendationFromGroup',
+                'label' => 'Remove Recommendation From Group',
+                'description' => 'Restore a single grouped recommendation and auto-restore the final child when needed',
+                'inputSchema' => [
+                    'recommendationId' => [
+                        'type' => 'integer',
+                        'label' => 'Grouped Recommendation ID',
+                        'required' => true,
+                    ],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+                'outputSchema' => [
+                    'success' => ['type' => 'boolean', 'label' => 'Removal Successful'],
+                    'formerHeadId' => ['type' => 'integer', 'label' => 'Former Group Head Recommendation ID'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'removeRecommendationFromGroup',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Awards.DeleteRecommendation',
+                'label' => 'Delete Recommendation',
+                'description' => 'Soft-delete a recommendation and restore grouped children when deleting a head',
+                'inputSchema' => [
+                    'recommendationId' => [
+                        'type' => 'integer',
+                        'label' => 'Recommendation ID',
+                        'required' => true,
+                    ],
+                    'actorId' => ['type' => 'integer', 'label' => 'Actor ID'],
+                ],
+                'outputSchema' => [
+                    'success' => ['type' => 'boolean', 'label' => 'Delete Successful'],
+                    'recommendationId' => ['type' => 'integer', 'label' => 'Recommendation ID'],
+                    'restoredChildCount' => ['type' => 'integer', 'label' => 'Restored Child Count'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'deleteRecommendation',
                 'isAsync' => false,
             ],
             [
@@ -287,7 +484,7 @@ class AwardsWorkflowProvider
                 'entityType' => 'Awards.Recommendations',
                 'label' => 'Recommendation',
                 'description' => 'Award recommendation with state machine workflow',
-                'tableClass' => \Awards\Model\Table\RecommendationsTable::class,
+                'tableClass' => RecommendationsTable::class,
                 'fields' => [
                     'id' => ['type' => 'integer', 'label' => 'ID'],
                     'award_id' => ['type' => 'integer', 'label' => 'Award ID'],

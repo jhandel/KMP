@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Controller;
@@ -7,8 +6,10 @@ namespace App\Test\TestCase\Controller;
 use App\Controller\WorkflowDispatchTrait;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Test\TestCase\BaseTestCase;
+use ArrayAccess;
 use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\ORM\TableRegistry;
+use RuntimeException;
 
 /**
  * Workflow migration regression tests.
@@ -56,7 +57,7 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
     {
         $mock = $this->createMock(TriggerDispatcher::class);
         $mock->method('dispatch')
-            ->willThrowException(new \RuntimeException('Workflow engine offline'));
+            ->willThrowException(new RuntimeException('Workflow engine offline'));
 
         return $mock;
     }
@@ -72,7 +73,7 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
             public function __construct(?int $identityId)
             {
                 $identity = $identityId !== null
-                    ? new class ($identityId) implements \ArrayAccess {
+                    ? new class ($identityId) implements ArrayAccess {
                         private int $id;
                         private array $data;
 
@@ -339,7 +340,7 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
         $dispatcher = $this->buildMockDispatcher();
 
         $legacyCalled = false;
-        $result = $stub->callDispatchOrLegacy(
+        $stub->callDispatchOrLegacy(
             $dispatcher,
             'officer-hire',
             'Officers.HireRequested',
@@ -373,7 +374,7 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
         $dispatcher = $this->buildMockDispatcher();
 
         $legacyCalled = false;
-        $result = $stub->callDispatchOrLegacy(
+        $stub->callDispatchOrLegacy(
             $dispatcher,
             'officers-release',
             'Officers.Released',
@@ -460,12 +461,14 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
         $legacyCalled = false;
         $result = $stub->callDispatchOrLegacy(
             $dispatcher,
-            'awards-recommendation-lifecycle',
-            'Awards.RecommendationSubmitted',
+            'awards-recommendation-submitted',
+            'Awards.RecommendationCreateRequested',
             [
-                'recommendationId' => 42,
-                'awardId' => 1,
-                'state' => 'Submitted',
+                'data' => [
+                    'award_id' => 1,
+                    'reason' => 'Legacy fallback test',
+                ],
+                'submissionMode' => 'authenticated',
             ],
             function () use (&$legacyCalled) {
                 $legacyCalled = true;
@@ -699,7 +702,7 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
             'nonexistent-slug',
             'Test.NullReturn',
             [],
-            fn () => null,
+            fn() => null,
         );
         $this->assertNull($result, 'Null return from legacy must pass through');
 
@@ -709,7 +712,7 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
             'nonexistent-slug',
             'Test.FalseReturn',
             [],
-            fn () => false,
+            fn() => false,
         );
         $this->assertFalse($result, 'False return from legacy must pass through');
 
@@ -720,7 +723,7 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
             'nonexistent-slug',
             'Test.ObjectReturn',
             [],
-            fn () => $obj,
+            fn() => $obj,
         );
         $this->assertSame($obj, $result, 'Object return from legacy must be the same reference');
     }
@@ -773,7 +776,7 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
             'context-test',
             'Test.ContextCheck',
             $context,
-            fn () => 'should-not-run',
+            fn() => 'should-not-run',
         );
 
         $this->assertCount(1, $this->dispatched);

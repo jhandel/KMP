@@ -2,12 +2,12 @@
   "nodes": {
     "trigger": {
       "type": "trigger",
-      "label": "Bulk Recommendation Transition Requested",
+      "label": "Recommendation Update Requested",
       "config": {
-        "event": "Awards.RecommendationBulkTransitionRequested",
+        "event": "Awards.RecommendationUpdateRequested",
+        "entityIdField": "recommendationId",
         "inputMapping": {
-          "recommendationIds": "$.event.recommendationIds",
-          "targetState": "$.event.targetState",
+          "recommendationId": "$.event.recommendationId",
           "data": "$.event.data",
           "actorId": "$.event.actorId"
         }
@@ -19,18 +19,17 @@
       "outputs": [
         {
           "port": "next",
-          "target": "bulk-transition"
+          "target": "update-recommendation"
         }
       ]
     },
-    "bulk-transition": {
+    "update-recommendation": {
       "type": "action",
-      "label": "Bulk Transition Recommendations",
+      "label": "Update Recommendation",
       "config": {
-        "action": "Awards.BulkTransitionState",
+        "action": "Awards.UpdateRecommendation",
         "params": {
-          "recommendationIds": "$.trigger.recommendationIds",
-          "targetState": "$.trigger.targetState",
+          "recommendationId": "$.trigger.recommendationId",
           "data": "$.trigger.data",
           "actorId": "$.trigger.actorId"
         }
@@ -42,16 +41,16 @@
       "outputs": [
         {
           "port": "next",
-          "target": "bulk-succeeded"
+          "target": "update-succeeded"
         }
       ]
     },
-    "bulk-succeeded": {
+    "update-succeeded": {
       "type": "condition",
-      "label": "Bulk Transition Succeeded?",
+      "label": "Update Succeeded?",
       "config": {
         "condition": "Core.FieldEquals",
-        "field": "$.nodes.bulk-transition.result.success",
+        "field": "$.nodes.update-recommendation.result.success",
         "value": true
       },
       "position": {
@@ -62,7 +61,7 @@
         {
           "port": "true",
           "target": "end-success",
-          "label": "Transitioned"
+          "label": "Updated"
         },
         {
           "port": "false",
@@ -73,9 +72,9 @@
     },
     "end-success": {
       "type": "end",
-      "label": "Bulk Transition Complete",
+      "label": "Update Complete",
       "config": {
-        "result": "$.nodes.bulk-transition.result"
+        "result": "$.nodes.update-recommendation.result"
       },
       "position": {
         "x": 950,
@@ -85,9 +84,9 @@
     },
     "end-failed": {
       "type": "end",
-      "label": "Bulk Transition Failed",
+      "label": "Update Failed",
       "config": {
-        "result": "$.nodes.bulk-transition.result"
+        "result": "$.nodes.update-recommendation.result"
       },
       "position": {
         "x": 950,

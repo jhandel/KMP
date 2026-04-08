@@ -9,20 +9,18 @@ use Cake\Datasource\EntityInterface;
 use Cake\Event\EventInterface;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
-use Cake\ORM\TableRegistry;
 use App\Model\Table\BaseTable;
 
 /**
- * Manages award recommendations with complex state machine and workflow management.
- * 
- * Handles complete recommendation lifecycle from submission through approval to presentation.
- * Implements automated state logging via afterSave() hooks and supports both authenticated
- * and guest recommendation workflows.
- * 
+ * Manages award recommendations and their workflow-facing persistence rules.
+ *
+ * Handles the core recommendation record, associations, validation, and field-level
+ * persistence constraints. Workflow mutation services own audit logging, grouping
+ * side effects, and delete orchestration.
+ *
  * See /docs/5.2.4-awards-recommendations-table.md for complete documentation.
- * 
+ *
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Requesters
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Members
  * @property \Awards\Model\Table\EventsTable&\Cake\ORM\Association\BelongsTo $ScheduledEvent
@@ -247,121 +245,6 @@ class RecommendationsTable extends BaseTable
         $state = (string)($entity->state ?? '');
         if ($state !== '' && !Recommendation::supportsGatheringAssignmentForState($state)) {
             $entity->gathering_id = null;
-        }
-    }
-
-    /**
-     * After save lifecycle hook for automated state change logging and group cleanup.
-     *
-     * @param bool $created Whether the entity was created (true) or updated (false)
-     * @param \Cake\Datasource\EntityInterface $entity The recommendation entity that was saved
-     * @param \ArrayObject $options Save operation options and configuration
-     * @return void
-     */
-    public function afterSave($created, $entity, $options): void
-    {
-        if ($entity->isDirty('state')) {
-            $this->logStateChange($entity);
-        }
-
-        // If a group head is soft-deleted, ungroup its children
-        if ($entity->isDirty('deleted') && $entity->deleted !== null) {
-            $this->ungroupChildrenOnDelete($entity);
-        }
-
-        // Sync linked children's state when a group head's status changes
-        if ($entity->isDirty('status') && $entity->recommendation_group_id === null) {
-            $this->syncLinkedChildrenState($entity);
-        }
-    }
-    /**
-     * Create audit trail record for state transitions.
-     *
-     * @param \Cake\Datasource\EntityInterface $entity The recommendation entity with state changes
-     * @return void
-     */
-    protected function logStateChange($entity)
-    {
-        $logTbl = TableRegistry::getTableLocator()->get('Awards.RecommendationsStatesLogs');
-        $log = $logTbl->newEmptyEntity();
-        $log->recommendation_id = $entity->id;
-        $log->to_state = $entity->state;
-        $log->to_status = $entity->status;
-        $log->from_status = $entity->beforeStatus ? $entity->beforeStatus : "New";
-        $log->from_state = $entity->beforeState ? $entity->beforeState : "New";
-        $log->created_by = $entity->modified_by;
-        $logTbl->save($log);
-    }
-
-    /**
-     * When a group head is soft-deleted, restore children to their pre-linked state.
-     *
-     * @param \Cake\Datasource\EntityInterface $entity The soft-deleted group head entity
-     * @return void
-     */
-    protected function ungroupChildrenOnDelete(EntityInterface $entity): void
-    {
-        $children = $this->find()
-            ->where(['recommendation_group_id' => $entity->id])
-            ->all();
-
-        if ($children->isEmpty()) {
-            return;
-        }
-
-        $logsTable = TableRegistry::getTableLocator()->get('Awards.RecommendationsStatesLogs');
-        foreach ($children as $child) {
-            $child->recommendation_group_id = null;
-
-            // Restore pre-linked state
-            $log = $logsTable->find()
-                ->where([
-                    'recommendation_id' => $child->id,
-                    'to_state IN' => ['Linked', 'Linked - Closed'],
-                ])
-                ->orderBy(['created' => 'DESC'])
-                ->first();
-
-            if ($log && $log->from_state && $log->from_state !== 'New') {
-                $child->state = $log->from_state;
-            } else {
-                $child->state = 'Submitted';
-            }
-            $this->save($child);
-        }
-    }
-
-    /**
-     * Sync linked children's state when a group head's status changes.
-     *
-     * Moves children between "Linked" and "Linked - Closed" to match the
-     * head's status category so reports accurately reflect closed groups.
-     *
-     * @param \Cake\Datasource\EntityInterface $entity The group head entity
-     * @return void
-     */
-    protected function syncLinkedChildrenState(EntityInterface $entity): void
-    {
-        $children = $this->find()
-            ->where([
-                'recommendation_group_id' => $entity->id,
-                'Recommendations.state IN' => ['Linked', 'Linked - Closed'],
-            ])
-            ->all();
-
-        if ($children->isEmpty()) {
-            return;
-        }
-
-        $closedStatuses = Recommendation::getStatuses()['Closed'] ?? [];
-        $headIsClosed = in_array($entity->state, $closedStatuses, true);
-        $targetState = $headIsClosed ? 'Linked - Closed' : 'Linked';
-
-        foreach ($children as $child) {
-            if ($child->state !== $targetState) {
-                $child->state = $targetState;
-                $this->save($child);
-            }
         }
     }
 

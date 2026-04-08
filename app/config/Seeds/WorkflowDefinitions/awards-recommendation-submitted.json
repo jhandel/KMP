@@ -1,1 +1,127 @@
-{"nodes":{"trigger":{"type":"trigger","label":"Recommendation Submitted","config":{"event":"Awards.RecommendationSubmitted","entityIdField":"recommendationId","inputMapping":{"recommendationId":"$.event.recommendationId","awardId":"$.event.awardId","memberId":"$.event.memberId","submittedById":"$.event.requesterId","branchId":"$.event.branchId","state":"$.event.state","memberScaName":"$.event.memberScaName","awardName":"$.event.awardName","reason":"$.event.reason","contactEmail":"$.event.contactEmail"}},"position":{"x":50,"y":250},"outputs":[{"port":"next","target":"validate-fields"}]},"validate-fields":{"type":"condition","label":"Has Required Fields?","config":{"condition":"Awards.HasRequiredFields","recommendationId":"$.trigger.recommendationId","targetState":"$.trigger.state","awardId":"$.trigger.awardId"},"position":{"x":350,"y":250},"outputs":[{"port":"true","target":"log-submitted","label":"Valid"},{"port":"false","target":"end-invalid","label":"Invalid"}]},"log-submitted":{"type":"action","label":"Log Submitted State","config":{"action":"Awards.CreateStateLog","params":{"recommendationId":"$.trigger.recommendationId","fromState":"","toState":"$.trigger.state","fromStatus":"","toStatus":"In Progress","actorId":"$.trigger.submittedById"}},"position":{"x":650,"y":250},"outputs":[{"port":"next","target":"notify-crown"}]},"notify-crown":{"type":"action","label":"Email Crown","config":{"action":"Core.SendEmail","params":{"to":"crown@ansteorra.org","template":"11","vars":{"memberScaName":"$.trigger.memberScaName","awardName":"$.trigger.awardName","reason":"$.trigger.reason","contactEmail":"$.trigger.contactEmail"}}},"position":{"x":950,"y":250},"outputs":[{"port":"next","target":"end-submitted"}]},"end-submitted":{"type":"end","label":"Submission Complete","config":{},"position":{"x":1250,"y":250},"outputs":[]},"end-invalid":{"type":"end","label":"Invalid - Missing Fields","config":{},"position":{"x":650,"y":400},"outputs":[]}},"startNode":"trigger"}
+{
+  "nodes": {
+    "trigger": {
+      "type": "trigger",
+      "label": "Create Recommendation Requested",
+      "config": {
+        "event": "Awards.RecommendationCreateRequested",
+        "inputMapping": {
+          "data": "$.event.data",
+          "requesterContext": "$.event.requesterContext",
+          "submissionMode": "$.event.submissionMode",
+          "actorId": "$.event.actorId",
+          "branchId": "$.event.branchId"
+        }
+      },
+      "position": {
+        "x": 50,
+        "y": 250
+      },
+      "outputs": [
+        {
+          "port": "next",
+          "target": "create-recommendation"
+        }
+      ]
+    },
+    "create-recommendation": {
+      "type": "action",
+      "label": "Create Recommendation",
+      "config": {
+        "action": "Awards.CreateRecommendation",
+        "params": {
+          "data": "$.trigger.data",
+          "requesterContext": "$.trigger.requesterContext",
+          "submissionMode": "$.trigger.submissionMode"
+        }
+      },
+      "position": {
+        "x": 350,
+        "y": 250
+      },
+      "outputs": [
+        {
+          "port": "next",
+          "target": "create-succeeded"
+        }
+      ]
+    },
+    "create-succeeded": {
+      "type": "condition",
+      "label": "Create Succeeded?",
+      "config": {
+        "condition": "Core.FieldEquals",
+        "field": "$.nodes.create-recommendation.result.success",
+        "value": true
+      },
+      "position": {
+        "x": 650,
+        "y": 250
+      },
+      "outputs": [
+        {
+          "port": "true",
+          "target": "notify-crown",
+          "label": "Created"
+        },
+        {
+          "port": "false",
+          "target": "end-failed",
+          "label": "Failed"
+        }
+      ]
+    },
+    "notify-crown": {
+      "type": "action",
+      "label": "Email Crown",
+      "config": {
+        "action": "Core.SendEmail",
+        "params": {
+          "to": "crown@ansteorra.org",
+          "template": "11",
+          "vars": {
+            "memberScaName": "$.nodes.create-recommendation.result.data.eventPayload.memberScaName",
+            "awardName": "$.nodes.create-recommendation.result.data.eventPayload.awardName",
+            "reason": "$.nodes.create-recommendation.result.data.eventPayload.reason",
+            "contactEmail": "$.nodes.create-recommendation.result.data.eventPayload.contactEmail"
+          }
+        }
+      },
+      "position": {
+        "x": 950,
+        "y": 250
+      },
+      "outputs": [
+        {
+          "port": "next",
+          "target": "end-created"
+        }
+      ]
+    },
+    "end-created": {
+      "type": "end",
+      "label": "Create Complete",
+      "config": {
+        "result": "$.nodes.create-recommendation.result"
+      },
+      "position": {
+        "x": 1250,
+        "y": 250
+      },
+      "outputs": []
+    },
+    "end-failed": {
+      "type": "end",
+      "label": "Create Failed",
+      "config": {
+        "result": "$.nodes.create-recommendation.result"
+      },
+      "position": {
+        "x": 950,
+        "y": 400
+      },
+      "outputs": []
+    }
+  },
+  "startNode": "trigger"
+}

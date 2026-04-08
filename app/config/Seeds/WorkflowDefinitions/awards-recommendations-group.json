@@ -2,13 +2,11 @@
   "nodes": {
     "trigger": {
       "type": "trigger",
-      "label": "Bulk Recommendation Transition Requested",
+      "label": "Recommendations Group Requested",
       "config": {
-        "event": "Awards.RecommendationBulkTransitionRequested",
+        "event": "Awards.RecommendationsGroupRequested",
         "inputMapping": {
           "recommendationIds": "$.event.recommendationIds",
-          "targetState": "$.event.targetState",
-          "data": "$.event.data",
           "actorId": "$.event.actorId"
         }
       },
@@ -19,19 +17,17 @@
       "outputs": [
         {
           "port": "next",
-          "target": "bulk-transition"
+          "target": "group-recommendations"
         }
       ]
     },
-    "bulk-transition": {
+    "group-recommendations": {
       "type": "action",
-      "label": "Bulk Transition Recommendations",
+      "label": "Group Recommendations",
       "config": {
-        "action": "Awards.BulkTransitionState",
+        "action": "Awards.GroupRecommendations",
         "params": {
           "recommendationIds": "$.trigger.recommendationIds",
-          "targetState": "$.trigger.targetState",
-          "data": "$.trigger.data",
           "actorId": "$.trigger.actorId"
         }
       },
@@ -42,16 +38,16 @@
       "outputs": [
         {
           "port": "next",
-          "target": "bulk-succeeded"
+          "target": "group-succeeded"
         }
       ]
     },
-    "bulk-succeeded": {
+    "group-succeeded": {
       "type": "condition",
-      "label": "Bulk Transition Succeeded?",
+      "label": "Group Succeeded?",
       "config": {
         "condition": "Core.FieldEquals",
-        "field": "$.nodes.bulk-transition.result.success",
+        "field": "$.nodes.group-recommendations.result.success",
         "value": true
       },
       "position": {
@@ -62,7 +58,7 @@
         {
           "port": "true",
           "target": "end-success",
-          "label": "Transitioned"
+          "label": "Grouped"
         },
         {
           "port": "false",
@@ -73,9 +69,9 @@
     },
     "end-success": {
       "type": "end",
-      "label": "Bulk Transition Complete",
+      "label": "Grouping Complete",
       "config": {
-        "result": "$.nodes.bulk-transition.result"
+        "result": "$.nodes.group-recommendations.result"
       },
       "position": {
         "x": 950,
@@ -85,9 +81,9 @@
     },
     "end-failed": {
       "type": "end",
-      "label": "Bulk Transition Failed",
+      "label": "Grouping Failed",
       "config": {
-        "result": "$.nodes.bulk-transition.result"
+        "result": "$.nodes.group-recommendations.result"
       },
       "position": {
         "x": 950,

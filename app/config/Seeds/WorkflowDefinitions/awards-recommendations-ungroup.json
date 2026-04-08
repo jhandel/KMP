@@ -2,13 +2,12 @@
   "nodes": {
     "trigger": {
       "type": "trigger",
-      "label": "Bulk Recommendation Transition Requested",
+      "label": "Recommendations Ungroup Requested",
       "config": {
-        "event": "Awards.RecommendationBulkTransitionRequested",
+        "event": "Awards.RecommendationsUngroupRequested",
+        "entityIdField": "recommendationId",
         "inputMapping": {
-          "recommendationIds": "$.event.recommendationIds",
-          "targetState": "$.event.targetState",
-          "data": "$.event.data",
+          "recommendationId": "$.event.recommendationId",
           "actorId": "$.event.actorId"
         }
       },
@@ -19,19 +18,17 @@
       "outputs": [
         {
           "port": "next",
-          "target": "bulk-transition"
+          "target": "ungroup-recommendations"
         }
       ]
     },
-    "bulk-transition": {
+    "ungroup-recommendations": {
       "type": "action",
-      "label": "Bulk Transition Recommendations",
+      "label": "Ungroup Recommendations",
       "config": {
-        "action": "Awards.BulkTransitionState",
+        "action": "Awards.UngroupRecommendations",
         "params": {
-          "recommendationIds": "$.trigger.recommendationIds",
-          "targetState": "$.trigger.targetState",
-          "data": "$.trigger.data",
+          "recommendationId": "$.trigger.recommendationId",
           "actorId": "$.trigger.actorId"
         }
       },
@@ -42,16 +39,16 @@
       "outputs": [
         {
           "port": "next",
-          "target": "bulk-succeeded"
+          "target": "ungroup-succeeded"
         }
       ]
     },
-    "bulk-succeeded": {
+    "ungroup-succeeded": {
       "type": "condition",
-      "label": "Bulk Transition Succeeded?",
+      "label": "Ungroup Succeeded?",
       "config": {
         "condition": "Core.FieldEquals",
-        "field": "$.nodes.bulk-transition.result.success",
+        "field": "$.nodes.ungroup-recommendations.result.success",
         "value": true
       },
       "position": {
@@ -62,7 +59,7 @@
         {
           "port": "true",
           "target": "end-success",
-          "label": "Transitioned"
+          "label": "Ungrouped"
         },
         {
           "port": "false",
@@ -73,9 +70,9 @@
     },
     "end-success": {
       "type": "end",
-      "label": "Bulk Transition Complete",
+      "label": "Ungroup Complete",
       "config": {
-        "result": "$.nodes.bulk-transition.result"
+        "result": "$.nodes.ungroup-recommendations.result"
       },
       "position": {
         "x": 950,
@@ -85,9 +82,9 @@
     },
     "end-failed": {
       "type": "end",
-      "label": "Bulk Transition Failed",
+      "label": "Ungroup Failed",
       "config": {
-        "result": "$.nodes.bulk-transition.result"
+        "result": "$.nodes.ungroup-recommendations.result"
       },
       "position": {
         "x": 950,

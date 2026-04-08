@@ -18,8 +18,12 @@ use App\Services\ViewCellRegistry;
 use Awards\Services\AwardsNavigationProvider;
 use Awards\Services\AwardsViewCellProvider;
 use Awards\Services\RecommendationFormService;
+use Awards\Services\RecommendationGroupingService;
 use Awards\Services\RecommendationQueryService;
-use Awards\Services\RecommendationStateService;
+use Awards\Services\RecommendationStateLogService;
+use Awards\Services\RecommendationSubmissionService;
+use Awards\Services\RecommendationTransitionService;
+use Awards\Services\RecommendationUpdateService;
 use App\KMP\StaticHelpers;
 
 /**
@@ -141,9 +145,13 @@ class AwardsPlugin extends BasePlugin implements KMPPluginInterface
      */
     public function services(ContainerInterface $container): void
     {
-        $container->add(RecommendationStateService::class);
         $container->add(RecommendationFormService::class);
         $container->add(RecommendationQueryService::class);
+        $container->add(RecommendationSubmissionService::class);
+        $container->add(RecommendationUpdateService::class);
+        $container->add(RecommendationTransitionService::class);
+        $container->add(RecommendationGroupingService::class);
+        $container->add(RecommendationStateLogService::class);
 
         // Register workflow actions and conditions for Awards plugin
         $container->add(\Awards\Services\AwardsWorkflowActions::class);

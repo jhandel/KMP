@@ -18,6 +18,8 @@ use Cake\ORM\TableRegistry;
  *
  * @property int $id
  * @property int|null $recommendation_group_id
+ * @property string|null $group_origin_state
+ * @property string|null $group_origin_status
  * @property int $requester_id
  * @property int|null $member_id
  * @property int|null $branch_id
@@ -72,6 +74,8 @@ class Recommendation extends BaseEntity
      */
     protected array $_accessible = [
         'recommendation_group_id' => true,
+        'group_origin_state' => true,
+        'group_origin_status' => true,
         'requester_id' => true,
         'stack_rank' => true,
         'member_id' => true,

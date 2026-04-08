@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Services\WorkflowEngine\Providers;
@@ -155,6 +154,48 @@ class AwardsWorkflowActionsTest extends BaseTestCase
         $this->assertNotNull($result['data']['recommendationId']);
     }
 
+    public function testCreateRecommendationSupportsAuthenticatedRequesterContext(): void
+    {
+        $this->skipIfPostgres();
+
+        $awardsTable = TableRegistry::getTableLocator()->get('Awards.Awards');
+        $membersTable = TableRegistry::getTableLocator()->get('Members');
+        $award = $awardsTable->find()->select(['id', 'name'])->first();
+        $requester = $membersTable->get(
+            self::ADMIN_MEMBER_ID,
+            select: ['id', 'sca_name', 'email_address', 'phone_number'],
+        );
+        $member = $membersTable->get(
+            self::TEST_MEMBER_AGATHA_ID,
+            select: ['id', 'sca_name', 'public_id'],
+        );
+        if (!$award) {
+            $this->markTestSkipped('No awards in test database');
+        }
+
+        $result = $this->actions->createRecommendation([], [
+            'data' => [
+                'award_id' => $award->id,
+                'member_public_id' => $member->public_id,
+                'member_sca_name' => $member->sca_name,
+                'reason' => 'Authenticated workflow submission',
+                'specialty' => 'No specialties available',
+            ],
+            'requesterContext' => [
+                'id' => $requester->id,
+                'sca_name' => $requester->sca_name,
+                'email_address' => $requester->email_address,
+                'phone_number' => $requester->phone_number,
+            ],
+            'submissionMode' => 'authenticated',
+        ]);
+
+        $this->assertTrue($result['success']);
+        $this->assertNotNull($result['data']['recommendationId']);
+        $this->assertSame(self::ADMIN_MEMBER_ID, $result['data']['eventPayload']['requesterId']);
+        $this->assertSame(self::TEST_MEMBER_AGATHA_ID, $result['data']['eventPayload']['memberId']);
+    }
+
     // ==========================================================
     // TransitionState Action Tests
     // ==========================================================
@@ -185,8 +226,8 @@ class AwardsWorkflowActionsTest extends BaseTestCase
         ]);
 
         $this->assertTrue($result['success']);
-        $this->assertEquals($currentState, $result['data']['previousState']);
-        $this->assertEquals($targetState, $result['data']['newState']);
+        $this->assertEquals($currentState, $result['data']['result']['previousState']);
+        $this->assertEquals($targetState, $result['data']['result']['newState']);
     }
 
     public function testTransitionStateInvalidTarget(): void
@@ -256,7 +297,92 @@ class AwardsWorkflowActionsTest extends BaseTestCase
         ]);
 
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('array', $result['error']);
+        $this->assertStringContainsString('At least one recommendation ID is required', $result['error']);
+    }
+
+    public function testUpdateRecommendationUsesSharedMutationService(): void
+    {
+        $this->skipIfPostgres();
+
+        $membersTable = TableRegistry::getTableLocator()->get('Members');
+        $member = $membersTable->get(
+            self::TEST_MEMBER_AGATHA_ID,
+            select: ['id', 'sca_name', 'public_id'],
+        );
+        $recommendation = $this->createTestRecommendation([
+            'member_id' => self::TEST_MEMBER_BRYCE_ID,
+            'member_sca_name' => 'Bryce Demoer',
+        ]);
+
+        $result = $this->actions->updateRecommendation([], [
+            'recommendationId' => $recommendation->id,
+            'data' => [
+                'member_public_id' => $member->public_id,
+                'member_sca_name' => $member->sca_name,
+                'given' => '2026-05-01',
+                'note' => 'Workflow update note',
+            ],
+            'actorId' => self::ADMIN_MEMBER_ID,
+        ]);
+
+        $this->assertTrue($result['success']);
+        $this->assertEquals($recommendation->id, $result['data']['recommendationId']);
+        $this->assertSame(self::TEST_MEMBER_AGATHA_ID, $result['data']['memberId']);
+        $this->assertNotNull($result['data']['noteId']);
+        $this->assertSame('2026-05-01', $result['data']['given']);
+    }
+
+    public function testGroupAndRemoveRecommendationActionsUseGroupingService(): void
+    {
+        $this->skipIfPostgres();
+
+        $head = $this->createTestRecommendation();
+        $child = $this->createTestRecommendation();
+
+        $groupResult = $this->actions->groupRecommendations([], [
+            'recommendationIds' => [$head->id, $child->id],
+            'actorId' => self::ADMIN_MEMBER_ID,
+        ]);
+
+        $this->assertTrue($groupResult['success']);
+        $this->assertSame((int)$head->id, (int)$groupResult['data']['headId']);
+        $this->assertSame(2, $groupResult['data']['groupedCount']);
+
+        $removeResult = $this->actions->removeRecommendationFromGroup([], [
+            'recommendationId' => $child->id,
+            'actorId' => self::ADMIN_MEMBER_ID,
+        ]);
+
+        $this->assertTrue($removeResult['success']);
+        $this->assertSame((int)$head->id, (int)$removeResult['data']['formerHeadId']);
+    }
+
+    public function testDeleteRecommendationActionRestoresGroupedChildren(): void
+    {
+        $this->skipIfPostgres();
+
+        $head = $this->createTestRecommendation();
+        $child = $this->createTestRecommendation();
+
+        $groupResult = $this->actions->groupRecommendations([], [
+            'recommendationIds' => [$head->id, $child->id],
+            'actorId' => self::ADMIN_MEMBER_ID,
+        ]);
+
+        $this->assertTrue($groupResult['success']);
+
+        $deleteResult = $this->actions->deleteRecommendation([], [
+            'recommendationId' => $head->id,
+            'actorId' => self::ADMIN_MEMBER_ID,
+        ]);
+
+        $this->assertTrue($deleteResult['success']);
+        $this->assertSame((int)$head->id, (int)$deleteResult['data']['recommendationId']);
+        $this->assertSame(1, $deleteResult['data']['restoredChildCount']);
+
+        $recommendations = TableRegistry::getTableLocator()->get('Awards.Recommendations');
+        $restoredChild = $recommendations->get($child->id);
+        $this->assertNull($restoredChild->recommendation_group_id);
     }
 
     // ==========================================================

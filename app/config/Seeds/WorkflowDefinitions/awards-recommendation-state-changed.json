@@ -1,1 +1,101 @@
-{"nodes":{"trigger":{"type":"trigger","label":"State Changed","config":{"event":"Awards.RecommendationStateChanged","entityIdField":"recommendationId","inputMapping":{"recommendationId":"$.event.recommendationId","previousState":"$.event.previousState","newState":"$.event.newState","previousStatus":"$.event.previousStatus","newStatus":"$.event.newStatus","actorId":"$.event.actorId"}},"position":{"x":50,"y":250},"outputs":[{"port":"next","target":"log-state-change"}]},"log-state-change":{"type":"action","label":"Log State Change","config":{"action":"Awards.CreateStateLog","params":{"recommendationId":"$.trigger.recommendationId","fromState":"$.trigger.previousState","toState":"$.trigger.newState","fromStatus":"$.trigger.previousStatus","toStatus":"$.trigger.newStatus","actorId":"$.trigger.actorId"}},"position":{"x":350,"y":250},"outputs":[{"port":"next","target":"apply-rules"}]},"apply-rules":{"type":"action","label":"Apply State Rules","config":{"action":"Awards.ApplyStateRules","params":{"recommendationId":"$.trigger.recommendationId","state":"$.trigger.newState"}},"position":{"x":650,"y":250},"outputs":[{"port":"next","target":"end"}]},"end":{"type":"end","label":"State Change Complete","config":{},"position":{"x":950,"y":250},"outputs":[]}},"startNode":"trigger"}
+{
+  "nodes": {
+    "trigger": {
+      "type": "trigger",
+      "label": "Recommendation Transition Requested",
+      "config": {
+        "event": "Awards.RecommendationTransitionRequested",
+        "entityIdField": "recommendationId",
+        "inputMapping": {
+          "recommendationId": "$.event.recommendationId",
+          "targetState": "$.event.targetState",
+          "data": "$.event.data",
+          "actorId": "$.event.actorId"
+        }
+      },
+      "position": {
+        "x": 50,
+        "y": 250
+      },
+      "outputs": [
+        {
+          "port": "next",
+          "target": "transition-recommendation"
+        }
+      ]
+    },
+    "transition-recommendation": {
+      "type": "action",
+      "label": "Transition Recommendation",
+      "config": {
+        "action": "Awards.TransitionState",
+        "params": {
+          "recommendationId": "$.trigger.recommendationId",
+          "targetState": "$.trigger.targetState",
+          "data": "$.trigger.data",
+          "actorId": "$.trigger.actorId"
+        }
+      },
+      "position": {
+        "x": 350,
+        "y": 250
+      },
+      "outputs": [
+        {
+          "port": "next",
+          "target": "transition-succeeded"
+        }
+      ]
+    },
+    "transition-succeeded": {
+      "type": "condition",
+      "label": "Transition Succeeded?",
+      "config": {
+        "condition": "Core.FieldEquals",
+        "field": "$.nodes.transition-recommendation.result.success",
+        "value": true
+      },
+      "position": {
+        "x": 650,
+        "y": 250
+      },
+      "outputs": [
+        {
+          "port": "true",
+          "target": "end-success",
+          "label": "Transitioned"
+        },
+        {
+          "port": "false",
+          "target": "end-failed",
+          "label": "Failed"
+        }
+      ]
+    },
+    "end-success": {
+      "type": "end",
+      "label": "Transition Complete",
+      "config": {
+        "result": "$.nodes.transition-recommendation.result"
+      },
+      "position": {
+        "x": 950,
+        "y": 225
+      },
+      "outputs": []
+    },
+    "end-failed": {
+      "type": "end",
+      "label": "Transition Failed",
+      "config": {
+        "result": "$.nodes.transition-recommendation.result"
+      },
+      "position": {
+        "x": 950,
+        "y": 375
+      },
+      "outputs": []
+    }
+  },
+  "startNode": "trigger"
+}

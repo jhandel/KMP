@@ -15,7 +15,7 @@ use Migrations\BaseSeed;
 class InitWorkflowDefinitionsSeed extends BaseSeed
 {
     /**
-     * @return array<array{name: string, slug: string, description: string, trigger_type: string, trigger_config: array, entity_type: string, json_file: string}>
+     * @return array<array{name: string, slug: string, description: string, trigger_type: string, trigger_config: array, entity_type: string, json_file: string, execution_mode?: string, is_active?: bool}>
      */
     public function getWorkflowMeta(): array
     {
@@ -23,7 +23,8 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             [
                 'name' => 'Authorization Request (Multi-level Approval)',
                 'slug' => 'activities-authorization-request',
-                'description' => 'Handles activity authorization requests with validation, approver resolution, and serial multi-level approval chain.',
+                'description' => 'Handles activity authorization requests with validation, approver resolution, ' .
+                    'and serial multi-level approval chain.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Activities.AuthorizationRequested'],
                 'entity_type' => 'Activities.Authorizations',
@@ -34,37 +35,100 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             [
                 'name' => 'Award Recommendation Submitted',
                 'slug' => 'awards-recommendation-submitted',
-                'description' => 'Handles new recommendation submissions: validates required fields, creates initial state log entry.',
+                'description' => 'Creates a recommendation from submitted form data and runs ' .
+                    'post-create workflow steps.',
                 'trigger_type' => 'event',
-                'trigger_config' => ['event' => 'Awards.RecommendationSubmitted'],
+                'trigger_config' => ['event' => 'Awards.RecommendationCreateRequested'],
                 'entity_type' => 'Awards',
                 'json_file' => 'awards-recommendation-submitted.json',
                 'execution_mode' => 'ephemeral',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Award Recommendation Updated',
+                'slug' => 'awards-recommendation-updated',
+                'description' => 'Updates an existing recommendation from edit form data using ' .
+                    'the shared mutation service.',
+                'trigger_type' => 'event',
+                'trigger_config' => ['event' => 'Awards.RecommendationUpdateRequested'],
+                'entity_type' => 'Awards',
+                'json_file' => 'awards-recommendation-updated.json',
+                'execution_mode' => 'ephemeral',
+                'is_active' => true,
             ],
             [
                 'name' => 'Award Recommendation State Changed',
                 'slug' => 'awards-recommendation-state-changed',
-                'description' => 'Handles individual recommendation state transitions: creates state log entry and applies field visibility rules.',
+                'description' => 'Transitions a single recommendation using the shared transition semantics.',
                 'trigger_type' => 'event',
-                'trigger_config' => ['event' => 'Awards.RecommendationStateChanged'],
+                'trigger_config' => ['event' => 'Awards.RecommendationTransitionRequested'],
                 'entity_type' => 'Awards',
                 'json_file' => 'awards-recommendation-state-changed.json',
                 'execution_mode' => 'ephemeral',
+                'is_active' => true,
             ],
             [
                 'name' => 'Award Recommendation Bulk Transition',
                 'slug' => 'awards-recommendation-bulk-transition',
-                'description' => 'Extension point for bulk state transitions. State logging is handled by the service layer; kingdoms can add notifications or custom logic.',
+                'description' => 'Applies a bulk recommendation transition using the shared transition semantics.',
                 'trigger_type' => 'event',
-                'trigger_config' => ['event' => 'Awards.BulkStateTransition'],
+                'trigger_config' => ['event' => 'Awards.RecommendationBulkTransitionRequested'],
                 'entity_type' => 'Awards',
                 'json_file' => 'awards-recommendation-bulk-transition.json',
                 'execution_mode' => 'ephemeral',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Award Recommendations Group',
+                'slug' => 'awards-recommendations-group',
+                'description' => 'Groups selected recommendations under a shared head recommendation.',
+                'trigger_type' => 'event',
+                'trigger_config' => ['event' => 'Awards.RecommendationsGroupRequested'],
+                'entity_type' => 'Awards',
+                'json_file' => 'awards-recommendations-group.json',
+                'execution_mode' => 'ephemeral',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Award Recommendations Ungroup',
+                'slug' => 'awards-recommendations-ungroup',
+                'description' => 'Restores all children from a grouped recommendation back to their origin states.',
+                'trigger_type' => 'event',
+                'trigger_config' => ['event' => 'Awards.RecommendationsUngroupRequested'],
+                'entity_type' => 'Awards',
+                'json_file' => 'awards-recommendations-ungroup.json',
+                'execution_mode' => 'ephemeral',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Award Recommendation Remove From Group',
+                'slug' => 'awards-recommendation-remove-from-group',
+                'description' => 'Restores a single grouped recommendation, auto-restoring the ' .
+                    'final child when needed.',
+                'trigger_type' => 'event',
+                'trigger_config' => ['event' => 'Awards.RecommendationRemoveFromGroupRequested'],
+                'entity_type' => 'Awards',
+                'json_file' => 'awards-recommendation-remove-from-group.json',
+                'execution_mode' => 'ephemeral',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Award Recommendation Deleted',
+                'slug' => 'awards-recommendation-deleted',
+                'description' => 'Soft deletes a recommendation and restores grouped children ' .
+                    'when deleting a group head.',
+                'trigger_type' => 'event',
+                'trigger_config' => ['event' => 'Awards.RecommendationDeleteRequested'],
+                'entity_type' => 'Awards',
+                'json_file' => 'awards-recommendation-deleted.json',
+                'execution_mode' => 'ephemeral',
+                'is_active' => true,
             ],
             [
                 'name' => 'Officer Hire',
                 'slug' => 'officer-hire',
-                'description' => 'Full officer hire process: conflict resolution, warrant validation, officer creation, reporting field calculation, and notification.',
+                'description' => 'Full officer hire process: conflict resolution, warrant validation, ' .
+                    'officer creation, reporting field calculation, and notification.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Officers.HireRequested'],
                 'entity_type' => 'Officers',
@@ -74,7 +138,8 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             [
                 'name' => 'Officer Release',
                 'slug' => 'officers-release',
-                'description' => 'Releases an officer, recalculates office assignments, and sends release notification.',
+                'description' => 'Releases an officer, recalculates office assignments, and sends ' .
+                    'release notification.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Officers.Released'],
                 'entity_type' => 'Officers',
@@ -84,7 +149,8 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             [
                 'name' => 'Warrant Roster Approval',
                 'slug' => 'warrants-roster-approval',
-                'description' => 'Batch approval workflow for warrant rosters: approval gate → activate warrants (forEach) → notify each holder, or decline.',
+                'description' => 'Batch approval workflow for warrant rosters: approval gate → ' .
+                    'activate warrants (forEach) → notify each holder, or decline.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Warrants.RosterCreated'],
                 'entity_type' => 'Warrants',
@@ -94,7 +160,8 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             [
                 'name' => 'Member Registration',
                 'slug' => 'member-registration',
-                'description' => 'New member registration: checks age (minor vs. adult), assigns appropriate role and status, sends welcome email.',
+                'description' => 'New member registration: checks age (minor vs. adult), assigns ' .
+                    'appropriate role and status, sends welcome email.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Members.Registered'],
                 'entity_type' => 'Members',
@@ -114,6 +181,11 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
         ];
     }
 
+    /**
+     * Seed workflow definitions and their initial published versions.
+     *
+     * @return void
+     */
     public function run(): void
     {
         $now = DateTime::now()->toDateTimeString();
@@ -124,7 +196,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
         foreach ($this->getWorkflowMeta() as $meta) {
             // Skip if already seeded
             $exists = $this->fetchRow(
-                "SELECT id FROM workflow_definitions WHERE slug = '{$meta['slug']}'"
+                "SELECT id FROM workflow_definitions WHERE slug = '{$meta['slug']}'",
             );
             if ($exists) {
                 continue;
@@ -133,14 +205,14 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             // Load JSON definition from file
             $jsonPath = $jsonDir . $meta['json_file'];
             if (!file_exists($jsonPath)) {
-                throw new \RuntimeException("Workflow definition file not found: {$jsonPath}");
+                throw new RuntimeException("Workflow definition file not found: {$jsonPath}");
             }
             $definitionJson = file_get_contents($jsonPath);
 
             // Validate JSON
             $decoded = json_decode($definitionJson, true);
             if ($decoded === null) {
-                throw new \RuntimeException("Invalid JSON in {$meta['json_file']}: " . json_last_error_msg());
+                throw new RuntimeException("Invalid JSON in {$meta['json_file']}: " . json_last_error_msg());
             }
 
             // Insert workflow definition
@@ -162,7 +234,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
 
             // Get the inserted definition ID
             $defRow = $this->fetchRow(
-                "SELECT id FROM workflow_definitions WHERE slug = '{$meta['slug']}'"
+                "SELECT id FROM workflow_definitions WHERE slug = '{$meta['slug']}'",
             );
             $defId = $defRow['id'];
 
@@ -183,10 +255,10 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
 
             // Get version ID and link back to definition
             $versionRow = $this->fetchRow(
-                "SELECT id FROM workflow_versions WHERE workflow_definition_id = {$defId} AND version_number = 1"
+                "SELECT id FROM workflow_versions WHERE workflow_definition_id = {$defId} AND version_number = 1",
             );
             $this->execute(
-                "UPDATE workflow_definitions SET current_version_id = {$versionRow['id']} WHERE id = {$defId}"
+                "UPDATE workflow_definitions SET current_version_id = {$versionRow['id']} WHERE id = {$defId}",
             );
         }
     }

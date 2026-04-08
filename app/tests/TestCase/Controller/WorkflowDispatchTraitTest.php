@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Controller;
@@ -7,8 +6,12 @@ namespace App\Test\TestCase\Controller;
 use App\Controller\WorkflowDispatchTrait;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Test\TestCase\BaseTestCase;
+use Authentication\IdentityInterface;
 use Cake\Http\ServerRequest;
+use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\ORM\TableRegistry;
+use RuntimeException;
+use stdClass;
 
 /**
  * Tests for WorkflowDispatchTrait dual-path dispatch logic.
@@ -28,7 +31,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
      */
     private function createSubjectWithBranch(?int $branchId, int $memberId = 42): object
     {
-        $identity = $this->createMock(\Authentication\IdentityInterface::class);
+        $identity = $this->createMock(IdentityInterface::class);
         $identity->method('getIdentifier')->willReturn($memberId);
         $identity->method('offsetGet')->willReturnCallback(function ($offset) use ($branchId) {
             return match ($offset) {
@@ -44,7 +47,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
         $request = $request->withAttribute('identity', $identity);
 
         return new class ($request) {
-            use \Cake\ORM\Locator\LocatorAwareTrait;
+            use LocatorAwareTrait;
             use WorkflowDispatchTrait {
                 dispatchOrLegacy as public;
                 dispatchWorkflowEvent as public;
@@ -52,7 +55,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
                 resolveKingdomIdFromBranch as public;
             }
 
-            public \Cake\Http\ServerRequest $request;
+            public ServerRequest $request;
 
             public function __construct(ServerRequest $request)
             {
@@ -69,14 +72,14 @@ class WorkflowDispatchTraitTest extends BaseTestCase
         $request = new ServerRequest(['url' => '/test']);
 
         return new class ($request) {
-            use \Cake\ORM\Locator\LocatorAwareTrait;
+            use LocatorAwareTrait;
             use WorkflowDispatchTrait {
                 dispatchOrLegacy as public;
                 dispatchWorkflowEvent as public;
                 resolveKingdomId as public;
             }
 
-            public \Cake\Http\ServerRequest $request;
+            public ServerRequest $request;
 
             public function __construct(ServerRequest $request)
             {
@@ -293,7 +296,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
             $slug,
             'Test.Identity',
             [],
-            fn () => null,
+            fn() => null,
         );
     }
 
@@ -317,7 +320,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
             $slug,
             'Test.NullId',
             [],
-            fn () => null,
+            fn() => null,
         );
     }
 
@@ -344,7 +347,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
             $slug,
             'Activities.AuthorizationRequested',
             $expectedCtx,
-            fn () => null,
+            fn() => null,
         );
     }
 
@@ -372,7 +375,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
     {
         $dispatcher = $this->createMock(TriggerDispatcher::class);
         $dispatcher->method('dispatch')
-            ->willThrowException(new \RuntimeException('Boom'));
+            ->willThrowException(new RuntimeException('Boom'));
 
         // Should not throw
         $this->subject->dispatchWorkflowEvent(
@@ -430,7 +433,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
         $dispatcher = $this->createMock(TriggerDispatcher::class);
         $dispatcher->expects($this->never())->method('dispatch');
 
-        $obj = new \stdClass();
+        $obj = new stdClass();
         $obj->success = true;
         $obj->reason = null;
 
@@ -439,7 +442,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
             $slug,
             'Test.Return',
             [],
-            fn () => $obj,
+            fn() => $obj,
         );
 
         $this->assertSame($obj, $result, 'Legacy return value should be passed through unchanged');
@@ -471,6 +474,31 @@ class WorkflowDispatchTraitTest extends BaseTestCase
     {
         $subject = $this->createAnonymousSubject();
         $this->assertNull($subject->resolveKingdomId());
+    }
+
+    public function testResolveKingdomIdUsesContextBranchForAnonymous(): void
+    {
+        $subject = $this->createAnonymousSubject();
+
+        $kingdomId = $subject->resolveKingdomId([
+            'data' => ['branch_id' => self::TEST_BRANCH_STARGATE_ID],
+        ]);
+
+        $this->assertSame(self::KINGDOM_BRANCH_ID, $kingdomId);
+    }
+
+    public function testResolveKingdomIdUsesMemberPublicIdForAnonymous(): void
+    {
+        $subject = $this->createAnonymousSubject();
+        $member = TableRegistry::getTableLocator()
+            ->get('Members')
+            ->get(self::TEST_MEMBER_AGATHA_ID, select: ['public_id']);
+
+        $kingdomId = $subject->resolveKingdomId([
+            'data' => ['member_public_id' => $member->public_id],
+        ]);
+
+        $this->assertSame(self::KINGDOM_BRANCH_ID, $kingdomId);
     }
 
     public function testResolveKingdomIdReturnsNullForNullBranch(): void
@@ -515,7 +543,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
             $slug,
             'Test.KingdomPref',
             [],
-            fn () => 'legacy',
+            fn() => 'legacy',
         );
 
         $this->assertSame(['kingdom-result'], $result);
@@ -543,7 +571,7 @@ class WorkflowDispatchTraitTest extends BaseTestCase
             $slug,
             'Test.GlobalFallback',
             [],
-            fn () => 'legacy',
+            fn() => 'legacy',
         );
 
         $this->assertSame(['global-result'], $result);
@@ -573,10 +601,39 @@ class WorkflowDispatchTraitTest extends BaseTestCase
             $slug,
             'Test.AnonGlobal',
             [],
-            fn () => 'legacy',
+            fn() => 'legacy',
         );
 
         $this->assertSame(['anon-result'], $result);
+    }
+
+    public function testDispatchOrLegacyUsesAnonymousContextBranchForKingdomScopedWorkflow(): void
+    {
+        $slug = 'anon-branch-' . uniqid();
+
+        $this->createActiveWorkflow($slug);
+        $this->createActiveWorkflow($slug, self::KINGDOM_BRANCH_ID);
+
+        $subject = $this->createAnonymousSubject();
+
+        $dispatcher = $this->createMock(TriggerDispatcher::class);
+        $dispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with('Test.AnonBranch', $this->callback(function ($ctx) {
+                return $ctx['kingdom_id'] === self::KINGDOM_BRANCH_ID
+                    && $ctx['data']['branch_id'] === self::TEST_BRANCH_STARGATE_ID;
+            }), null)
+            ->willReturn(['anon-branch-result']);
+
+        $result = $subject->dispatchOrLegacy(
+            $dispatcher,
+            $slug,
+            'Test.AnonBranch',
+            ['data' => ['branch_id' => self::TEST_BRANCH_STARGATE_ID]],
+            fn() => 'legacy',
+        );
+
+        $this->assertSame(['anon-branch-result'], $result);
     }
 
     public function testDispatchOrLegacyCallsLegacyWhenKingdomSpecificIsInactive(): void
@@ -681,6 +738,29 @@ class WorkflowDispatchTraitTest extends BaseTestCase
             $dispatcher,
             'Test.AnonContext',
             [],
+        );
+    }
+
+    public function testDispatchWorkflowEventUsesAnonymousContextBranch(): void
+    {
+        $subject = $this->createAnonymousSubject();
+
+        $dispatcher = $this->createMock(TriggerDispatcher::class);
+        $dispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with(
+                'Test.AnonBranchContext',
+                $this->callback(function ($ctx) {
+                    return $ctx['kingdom_id'] === self::KINGDOM_BRANCH_ID
+                        && $ctx['data']['branch_id'] === self::TEST_BRANCH_STARGATE_ID;
+                }),
+                null,
+            );
+
+        $subject->dispatchWorkflowEvent(
+            $dispatcher,
+            'Test.AnonBranchContext',
+            ['data' => ['branch_id' => self::TEST_BRANCH_STARGATE_ID]],
         );
     }
 }

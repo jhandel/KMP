@@ -12,6 +12,11 @@ use Migrations\AbstractMigration;
  */
 class SeedAllWorkflowDefinitions extends AbstractMigration
 {
+    /**
+     * Seed workflow definitions from the current metadata/JSON source.
+     *
+     * @return void
+     */
     public function up(): void
     {
         // Clean up legacy seed entries from 20260209170000_SeedWorkflowDefinitions
@@ -36,14 +41,14 @@ class SeedAllWorkflowDefinitions extends AbstractMigration
         }
 
         require_once dirname(__DIR__) . '/Seeds/InitWorkflowDefinitionsSeed.php';
-        $seed = new \InitWorkflowDefinitionsSeed();
+        $seed = new InitWorkflowDefinitionsSeed();
 
         $now = date('Y-m-d H:i:s');
 
         foreach ($seed->getWorkflowMeta() as $meta) {
             // Skip if already exists
             $exists = $this->fetchRow(
-                "SELECT id FROM workflow_definitions WHERE slug = '{$meta['slug']}'"
+                "SELECT id FROM workflow_definitions WHERE slug = '{$meta['slug']}'",
             );
             if ($exists) {
                 continue;
@@ -69,25 +74,42 @@ class SeedAllWorkflowDefinitions extends AbstractMigration
 
             $executionMode = addslashes($meta['execution_mode'] ?? 'durable');
 
+            $isActive = !empty($meta['is_active']) ? 1 : 0;
+
             $this->execute(
-                "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, execution_mode, current_version_id, created_by, modified_by, created, modified) " .
-                "VALUES ('{$name}', '{$slug}', '{$desc}', '{$meta['trigger_type']}', '{$triggerConfig}', '{$entityType}', 0, '{$executionMode}', NULL, 1, 1, '{$now}', '{$now}')"
+                'INSERT INTO workflow_definitions (' .
+                'name, slug, description, trigger_type, trigger_config, entity_type, ' .
+                'is_active, execution_mode, current_version_id, created_by, modified_by, created, modified' .
+                ') ' .
+                "VALUES ('{$name}', '{$slug}', '{$desc}', '{$meta['trigger_type']}', " .
+                "'{$triggerConfig}', '{$entityType}', {$isActive}, '{$executionMode}', NULL, 1, 1, " .
+                "'{$now}', '{$now}')",
             );
 
             $this->execute(
-                "INSERT INTO workflow_versions (workflow_definition_id, version_number, definition, canvas_layout, status, published_at, published_by, created_by, created, modified) " .
-                "VALUES ((SELECT id FROM workflow_definitions WHERE slug = '{$slug}'), 1, '{$defJson}', '{}', 'published', '{$now}', 1, 1, '{$now}', '{$now}')"
+                'INSERT INTO workflow_versions (' .
+                'workflow_definition_id, version_number, definition, canvas_layout, status, ' .
+                'published_at, published_by, created_by, created, modified' .
+                ') ' .
+                "VALUES ((SELECT id FROM workflow_definitions WHERE slug = '{$slug}'), 1, " .
+                "'{$defJson}', '{}', 'published', '{$now}', 1, 1, '{$now}', '{$now}')",
             );
 
             $this->execute(
-                "UPDATE workflow_definitions SET current_version_id = " .
-                "(SELECT wv.id FROM workflow_versions wv JOIN workflow_definitions wd ON wv.workflow_definition_id = wd.id " .
+                'UPDATE workflow_definitions SET current_version_id = ' .
+                '(SELECT wv.id FROM workflow_versions wv ' .
+                'JOIN workflow_definitions wd ON wv.workflow_definition_id = wd.id ' .
                 "WHERE wd.slug = '{$slug}' AND wv.version_number = 1) " .
-                "WHERE slug = '{$slug}'"
+                "WHERE slug = '{$slug}'",
             );
         }
     }
 
+    /**
+     * Leave seeded workflow definitions in place on rollback.
+     *
+     * @return void
+     */
     public function down(): void
     {
         // Workflow definitions are configuration data — leave them on rollback.

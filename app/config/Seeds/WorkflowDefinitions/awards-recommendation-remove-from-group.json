@@ -2,13 +2,12 @@
   "nodes": {
     "trigger": {
       "type": "trigger",
-      "label": "Bulk Recommendation Transition Requested",
+      "label": "Remove Recommendation From Group Requested",
       "config": {
-        "event": "Awards.RecommendationBulkTransitionRequested",
+        "event": "Awards.RecommendationRemoveFromGroupRequested",
+        "entityIdField": "recommendationId",
         "inputMapping": {
-          "recommendationIds": "$.event.recommendationIds",
-          "targetState": "$.event.targetState",
-          "data": "$.event.data",
+          "recommendationId": "$.event.recommendationId",
           "actorId": "$.event.actorId"
         }
       },
@@ -19,19 +18,17 @@
       "outputs": [
         {
           "port": "next",
-          "target": "bulk-transition"
+          "target": "remove-from-group"
         }
       ]
     },
-    "bulk-transition": {
+    "remove-from-group": {
       "type": "action",
-      "label": "Bulk Transition Recommendations",
+      "label": "Remove Recommendation From Group",
       "config": {
-        "action": "Awards.BulkTransitionState",
+        "action": "Awards.RemoveRecommendationFromGroup",
         "params": {
-          "recommendationIds": "$.trigger.recommendationIds",
-          "targetState": "$.trigger.targetState",
-          "data": "$.trigger.data",
+          "recommendationId": "$.trigger.recommendationId",
           "actorId": "$.trigger.actorId"
         }
       },
@@ -42,16 +39,16 @@
       "outputs": [
         {
           "port": "next",
-          "target": "bulk-succeeded"
+          "target": "remove-succeeded"
         }
       ]
     },
-    "bulk-succeeded": {
+    "remove-succeeded": {
       "type": "condition",
-      "label": "Bulk Transition Succeeded?",
+      "label": "Removal Succeeded?",
       "config": {
         "condition": "Core.FieldEquals",
-        "field": "$.nodes.bulk-transition.result.success",
+        "field": "$.nodes.remove-from-group.result.success",
         "value": true
       },
       "position": {
@@ -62,7 +59,7 @@
         {
           "port": "true",
           "target": "end-success",
-          "label": "Transitioned"
+          "label": "Removed"
         },
         {
           "port": "false",
@@ -73,9 +70,9 @@
     },
     "end-success": {
       "type": "end",
-      "label": "Bulk Transition Complete",
+      "label": "Removal Complete",
       "config": {
-        "result": "$.nodes.bulk-transition.result"
+        "result": "$.nodes.remove-from-group.result"
       },
       "position": {
         "x": 950,
@@ -85,9 +82,9 @@
     },
     "end-failed": {
       "type": "end",
-      "label": "Bulk Transition Failed",
+      "label": "Removal Failed",
       "config": {
-        "result": "$.nodes.bulk-transition.result"
+        "result": "$.nodes.remove-from-group.result"
       },
       "position": {
         "x": 950,

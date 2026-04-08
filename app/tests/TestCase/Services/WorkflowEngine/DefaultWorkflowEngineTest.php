@@ -134,6 +134,34 @@ class DefaultWorkflowEngineTest extends BaseTestCase
         $this->assertSame(1, $instance->context['triggeredBy']);
     }
 
+    public function testStartWorkflowReturnsEndNodeWorkflowResult(): void
+    {
+        $slug = 'end-result-' . uniqid();
+        $this->createWorkflow($slug, [
+            'nodes' => [
+                'trigger1' => ['type' => 'trigger', 'config' => [], 'outputs' => [['port' => 'default', 'target' => 'end1']]],
+                'end1' => [
+                    'type' => 'end',
+                    'config' => [
+                        'result' => [
+                            'recommendationId' => '$.trigger.recommendationId',
+                            'status' => 'created',
+                        ],
+                    ],
+                    'outputs' => [],
+                ],
+            ],
+        ]);
+
+        $result = $this->engine->startWorkflow($slug, ['recommendationId' => 42]);
+
+        $this->assertTrue($result->isSuccess());
+        $this->assertSame([
+            'recommendationId' => 42,
+            'status' => 'created',
+        ], $result->data['workflowResult']);
+    }
+
     public function testStartWorkflowNoNodes(): void
     {
         $slug = 'empty-' . uniqid();

@@ -205,6 +205,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
             return new ServiceResult(true, null, [
                 'instanceId' => $this->ephemeral ? null : $instance->id,
                 'ephemeral' => $this->ephemeral,
+                'workflowResult' => $instance->context['workflowResult'] ?? null,
             ]);
         }, 'startWorkflow');
     }
@@ -553,7 +554,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                         break;
 
                     case 'end':
-                        $this->executeEndNode($instance, $nodeId, $log);
+                        $this->executeEndNode($instance, $nodeId, $node, $log);
                         break;
 
                     case 'subworkflow':
@@ -1424,10 +1425,19 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     protected function executeEndNode(
         WorkflowInstance $instance,
         string $nodeId,
+        array $node,
         ?WorkflowExecutionLog $log,
     ): void {
+        $context = $instance->context ?? [];
+        $resultConfig = $node['config']['result'] ?? null;
+        if ($resultConfig !== null) {
+            $context['workflowResult'] = $this->resolveParamValue($resultConfig, $context, $resultConfig);
+            $instance->context = $context;
+        }
+
         if ($log) {
             $log->status = WorkflowExecutionLog::STATUS_COMPLETED;
+            $log->output_data = $context['workflowResult'] ?? null;
             $log->completed_at = DateTime::now();
             $this->saveLog($log);
         }
