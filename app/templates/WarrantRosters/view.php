@@ -3,6 +3,7 @@
 /**
  * @var \App\View\AppView $this
  * @var \App\Model\Entity\WarrantRoster $warrantRoster
+ * @var \App\Model\Entity\WorkflowApprovalResponse[] $approvalResponses
  */
 
 use App\Model\Entity\WarrantRoster;
@@ -11,8 +12,8 @@ use App\Model\Entity\Warrant;
 <?php $this->extend('/layout/TwitterBootstrap/view_record');
 
 $userApprovedAlready = false;
-foreach ($warrantRoster->warrant_roster_approvals as $approval) {
-    if ($approval->approver_id == $user->id) {
+foreach ($approvalResponses as $response) {
+    if ($response->member_id == $user->id) {
         $userApprovedAlready = true;
     }
 }
@@ -116,18 +117,22 @@ echo $this->KMP->startBlock("pageTitle") ?>
     <div class="related tab-pane fade m-3" id="nav-approvals" role="tabpanel" aria-labelledby="nav-approvals-tab"
         data-detail-tabs-target="tabContent">
 
-        <?php if (!empty($warrantRoster->warrant_roster_approvals)): ?>
+        <?php if (!empty($approvalResponses)): ?>
         <div class="table-responsive">
             <table class="table table-striped">
                 <tr>
                     <th scope="col"><?= __('Approver') ?></th>
+                    <th scope="col"><?= __('Decision') ?></th>
                     <th scope="col"><?= __('Responded On') ?></th>
+                    <th scope="col"><?= __('Comment') ?></th>
                 </tr>
-                <?php foreach ($warrantRoster->warrant_roster_approvals as $warrantRosterApprovals): ?>
+                <?php foreach ($approvalResponses as $response): ?>
                 <tr>
-                    <td><?= h($warrantRosterApprovals->member->sca_name) ?></td>
-                    <td><?= $this->Timezone->format($warrantRosterApprovals->approved_on, null, null, \IntlDateFormatter::SHORT) ?>
+                    <td><?= h($response->member->sca_name) ?></td>
+                    <td><?= h($response->decision) ?></td>
+                    <td><?= $this->Timezone->format($response->responded_at, null, null, \IntlDateFormatter::SHORT) ?>
                     </td>
+                    <td><?= h($response->comment ?? '') ?></td>
                 </tr>
                 <?php endforeach; ?>
             </table>

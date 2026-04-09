@@ -3,7 +3,6 @@
 /**
  * @var \App\View\AppView $this
  * @var \App\Model\Entity\WarrantRoster $warrantRoster
- * @var \App\Model\Entity\WarrantRosterApproval[]|\Cake\Collection\CollectionInterface $warrantRosterApprovals
  * @var \App\Model\Entity\Warrant[]|\Cake\Collection\CollectionInterface $warrants
  */
 ?>
@@ -12,8 +11,6 @@
 <?php $this->start('tb_actions'); ?>
 <li><?= $this->Form->postLink(__('Delete'), ['action' => 'delete', $warrantRoster->id], ['confirm' => __('Are you sure you want to delete # {0}?', $warrantRoster->id), 'class' => 'nav-link']) ?></li>
 <li><?= $this->Html->link(__('List Warrant Approval Sets'), ['action' => 'index'], ['class' => 'nav-link']) ?></li>
-<li><?= $this->Html->link(__('List Warrant Approvals'), ['controller' => 'WarrantRosterApprovals', 'action' => 'index'], ['class' => 'nav-link']) ?></li>
-<li><?= $this->Html->link(__('New Warrant Approval'), ['controller' => 'WarrantRosterApprovals', 'action' => 'add'], ['class' => 'nav-link']) ?></li>
 <li><?= $this->Html->link(__('List Warrants'), ['controller' => 'Warrants', 'action' => 'index'], ['class' => 'nav-link']) ?></li>
 <li><?= $this->Html->link(__('New Warrant'), ['controller' => 'Warrants', 'action' => 'add'], ['class' => 'nav-link']) ?></li>
 <?php $this->end(); ?>

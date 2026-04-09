@@ -23,7 +23,6 @@ use Cake\ORM\TableRegistry;
 class WarrantRosterSyncTest extends BaseTestCase
 {
     private $rosterTable;
-    private $rosterApprovalsTable;
     private $warrantTable;
     private $approvalsTable;
     private $responsesTable;
@@ -32,7 +31,6 @@ class WarrantRosterSyncTest extends BaseTestCase
     {
         parent::setUp();
         $this->rosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
-        $this->rosterApprovalsTable = TableRegistry::getTableLocator()->get('WarrantRosterApprovals');
         $this->warrantTable = TableRegistry::getTableLocator()->get('Warrants');
         $this->approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
         $this->responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
@@ -175,10 +173,9 @@ class WarrantRosterSyncTest extends BaseTestCase
 
         $this->assertTrue($result->isSuccess());
 
-        $record = $this->rosterApprovalsTable->find()
-            ->where(['warrant_roster_id' => $rosterId, 'approver_id' => self::ADMIN_MEMBER_ID])
-            ->first();
-        $this->assertNotNull($record, 'Approval record should be created');
+        // Should increment the denormalized counter on the roster
+        $roster = $this->rosterTable->get($rosterId);
+        $this->assertEquals(1, $roster->approval_count, 'Counter should be incremented');
     }
 
     public function testSyncIncrementsApprovalCount(): void
@@ -197,18 +194,14 @@ class WarrantRosterSyncTest extends BaseTestCase
         $wm = $this->createWarrantManager();
         [$rosterId] = $this->createPendingRoster(2);
 
+        // Dedup is now handled by the workflow engine's approval manager.
+        // syncWorkflowApprovalToRoster only increments the counter.
         $wm->syncWorkflowApprovalToRoster($rosterId, self::ADMIN_MEMBER_ID);
         $wm->syncWorkflowApprovalToRoster($rosterId, self::ADMIN_MEMBER_ID);
 
-        // Should still be 1 approval record
-        $count = $this->rosterApprovalsTable->find()
-            ->where(['warrant_roster_id' => $rosterId, 'approver_id' => self::ADMIN_MEMBER_ID])
-            ->count();
-        $this->assertEquals(1, $count);
-
-        // approval_count should still be 1 (not incremented on duplicate)
+        // Counter increments each call (callers are responsible for dedup)
         $roster = $this->rosterTable->get($rosterId);
-        $this->assertEquals(1, $roster->approval_count);
+        $this->assertEquals(2, $roster->approval_count);
     }
 
     public function testSyncReturnsTrueOnDuplicate(): void
@@ -231,10 +224,9 @@ class WarrantRosterSyncTest extends BaseTestCase
 
         $this->assertTrue($result->isSuccess());
 
-        $record = $this->rosterApprovalsTable->find()
-            ->where(['warrant_roster_id' => $rosterId])
-            ->first();
-        $this->assertNotNull($record->approved_on, 'approved_on should default to now');
+        // Should increment counter even with null optional params
+        $roster = $this->rosterTable->get($rosterId);
+        $this->assertEquals(1, $roster->approval_count);
     }
 
     // =====================================================
@@ -355,10 +347,9 @@ class WarrantRosterSyncTest extends BaseTestCase
 
         $actions->activateWarrants($context, $config);
 
-        $approvalRecords = $this->rosterApprovalsTable->find()
-            ->where(['warrant_roster_id' => $rosterId])
-            ->count();
-        $this->assertEquals(2, $approvalRecords, 'Both approval responses should sync to roster');
+        // Both approval responses should increment the roster counter
+        $roster = $this->rosterTable->get($rosterId);
+        $this->assertEquals(2, $roster->approval_count, 'Both approval responses should sync to roster counter');
     }
 
     public function testActivateWarrantsSetsRosterStatusApproved(): void
@@ -487,11 +478,9 @@ class WarrantRosterSyncTest extends BaseTestCase
 
         $actions->declineRoster($context, $config);
 
-        // The approve response should have been synced to roster
-        $approvalRecords = $this->rosterApprovalsTable->find()
-            ->where(['warrant_roster_id' => $rosterId])
-            ->count();
-        $this->assertEquals(1, $approvalRecords, 'Only approve responses should be synced before decline');
+        // The approve response should have incremented the roster counter
+        $roster = $this->rosterTable->get($rosterId);
+        $this->assertEquals(1, $roster->approval_count, 'Only approve responses should increment counter before decline');
     }
 
     // =====================================================
@@ -521,10 +510,9 @@ class WarrantRosterSyncTest extends BaseTestCase
         // Still activates warrants (approval gate already passed in workflow)
         $this->assertTrue($output['activated']);
 
-        $approvalRecords = $this->rosterApprovalsTable->find()
-            ->where(['warrant_roster_id' => $rosterId])
-            ->count();
-        $this->assertEquals(0, $approvalRecords);
+        // No responses, so roster counter should be 0
+        $roster = $this->rosterTable->get($rosterId);
+        $this->assertEquals(0, $roster->approval_count);
     }
 
     public function testMixedApproveRejectOnlySyncsApprovals(): void
@@ -549,10 +537,8 @@ class WarrantRosterSyncTest extends BaseTestCase
 
         $actions->activateWarrants($context, $config);
 
-        // Only the approve response should produce a roster approval
-        $approvalRecords = $this->rosterApprovalsTable->find()
-            ->where(['warrant_roster_id' => $rosterId])
-            ->count();
-        $this->assertEquals(1, $approvalRecords, 'Only approve decisions should sync to roster');
+        // Only the approve response should increment the roster counter
+        $roster = $this->rosterTable->get($rosterId);
+        $this->assertEquals(1, $roster->approval_count, 'Only approve decisions should increment counter');
     }
 }

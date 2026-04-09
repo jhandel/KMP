@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\WorkflowRegistry;
 
 use App\KMP\KMPWorkflowPluginInterface;
+use App\Services\ApprovalContext\ApprovalContextRendererRegistry;
+use App\Services\ApprovalContext\WarrantRosterApprovalContextRenderer;
 use App\Services\WorkflowEngine\Providers\MembersWorkflowProvider;
 use App\Services\WorkflowEngine\Providers\ScheduleWorkflowProvider;
 use App\Services\WorkflowEngine\Providers\WarrantWorkflowProvider;
@@ -83,6 +85,12 @@ class WorkflowPluginLoader
         self::loadCoreActions();
         self::loadCoreConditions();
         self::loadCoreEntities();
+
+        // Register core approval context renderers
+        ApprovalContextRendererRegistry::register(
+            'WarrantRosters',
+            new WarrantRosterApprovalContextRenderer()
+        );
 
         // Register plugin workflow providers
         OfficersWorkflowProvider::register();

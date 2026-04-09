@@ -72,17 +72,12 @@
             ]
         },
         "notify-each-warrant": {
-            "type": "forEach",
+            "type": "action",
             "label": "Notify Each Warrant Holder",
             "config": {
-                "collection": "$.trigger.warrantIds",
-                "itemVariable": "warrantId",
-                "action": {
-                    "action": "Warrants.NotifyWarrantIssued",
-                    "params": {
-                        "warrantId": "$.item.warrantId",
-                        "rosterId": "$.trigger.rosterId"
-                    }
+                "action": "Warrants.NotifyWarrantIssued",
+                "params": {
+                    "rosterId": "$.trigger.rosterId"
                 }
             },
             "position": {

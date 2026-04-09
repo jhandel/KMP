@@ -179,58 +179,13 @@ class DefaultWarrantManager implements WarrantManagerInterface
             return new ServiceResult(false, 'Warrant approval set is already approved');
         }
 
-        // Route through workflow if one is active for this roster
+        // All rosters now have workflow approvals (via RosterCreated trigger + backfill migration)
         $workflowApproval = $this->findWorkflowApprovalForRoster($warrant_roster_id);
-        if ($workflowApproval) {
-            return $this->approveViaWorkflow($workflowApproval, $approver_id);
+        if (!$workflowApproval) {
+            return new ServiceResult(false, 'No workflow approval found for roster. All rosters require a workflow approval instance.');
         }
 
-        // Direct path (no workflow configured)
-        $warrantRosterApprovalTable = TableRegistry::getTableLocator()->get('WarrantRosterApprovals');
-        $warrantRosterApproval = $warrantRosterApprovalTable->newEmptyEntity();
-        $warrantRosterApproval->warrant_roster_id = $warrant_roster_id;
-        $warrantRosterApproval->approver_id = $approver_id;
-        $warrantRosterApproval->approved_on = new DateTime();
-
-        //start a transaction
-        $warrantRosterTable->getConnection()->begin();
-
-        if (!$warrantRosterApprovalTable->save($warrantRosterApproval)) {
-            //rollback transaction
-            $warrantRosterTable->getConnection()->rollback();
-
-            return new ServiceResult(false, 'Failed to record warrant approval');
-        }
-        $warrantRoster->approval_count++;
-        if ($warrantRoster->hasRequiredApprovals()) {
-            $warrantRoster->status = WarrantRoster::STATUS_APPROVED;
-        }
-        if (!$warrantRosterTable->save($warrantRoster)) {
-            //rollback transaction
-            $warrantRosterTable->getConnection()->rollback();
-
-            return new ServiceResult(false, 'Failed to approve Roster');
-        }
-        //commit transaction
-        $warrantRosterTable->getConnection()->commit();
-
-        if ($warrantRoster->status === WarrantRoster::STATUS_APPROVED) {
-            // Activate warrants via extracted method
-            $activationResult = $this->activateApprovedRoster($warrant_roster_id, $approver_id);
-            if (!$activationResult->success) {
-                return $activationResult;
-            }
-
-            try {
-                $this->triggerDispatcher->dispatch('Warrants.Approved', [
-                    'rosterId' => $warrantRoster->id,
-                ]);
-            } catch (\Exception $e) {
-                \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.Approved: ' . $e->getMessage());
-            }
-        }
-
-        return new ServiceResult(true);
+        return $this->approveViaWorkflow($workflowApproval, $approver_id);
     }
 
     public function activateApprovedRoster(int $rosterId, int $approverId, bool $sendNotifications = true): ServiceResult
@@ -305,44 +260,15 @@ class DefaultWarrantManager implements WarrantManagerInterface
         ?string $notes = null,
         ?\DateTimeInterface $approvedOn = null,
     ): ServiceResult {
-        $warrantRosterApprovalTable = TableRegistry::getTableLocator()->get('WarrantRosterApprovals');
         $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
 
-        // Dedup guard: check for existing (roster_id, approver_id) pair
-        $existing = $warrantRosterApprovalTable->find()
-            ->where([
-                'warrant_roster_id' => $rosterId,
-                'approver_id' => $approverId,
-            ])
-            ->first();
-
-        if ($existing) {
-            return new ServiceResult(true, 'Approval already recorded');
-        }
-
-        $approval = $warrantRosterApprovalTable->newEmptyEntity();
-        $approval->warrant_roster_id = $rosterId;
-        $approval->approver_id = $approverId;
-        $approval->approved_on = $approvedOn !== null
-            ? new DateTime($approvedOn->format('Y-m-d H:i:s'))
-            : new DateTime();
-
-        $warrantRosterTable->getConnection()->begin();
-
-        if (!$warrantRosterApprovalTable->save($approval)) {
-            $warrantRosterTable->getConnection()->rollback();
-
-            return new ServiceResult(false, 'Failed to sync approval record');
-        }
-
-        // Increment approval_count atomically
+        // Update the denormalized counter on the roster.
+        // Dedup is handled by the workflow engine's approval manager.
         $warrantRosterTable->getConnection()->execute(
             'UPDATE warrant_rosters SET approval_count = COALESCE(approval_count, 0) + 1 WHERE id = ?',
             [$rosterId],
             ['integer'],
         );
-
-        $warrantRosterTable->getConnection()->commit();
 
         return new ServiceResult(true);
     }

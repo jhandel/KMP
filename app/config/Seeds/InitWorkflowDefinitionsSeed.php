@@ -156,6 +156,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'entity_type' => 'Warrants',
                 'json_file' => 'warrants-roster-approval.json',
                 'execution_mode' => 'durable',
+                'is_active' => true,
             ],
             [
                 'name' => 'Member Registration',

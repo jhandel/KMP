@@ -13,7 +13,6 @@ use Cake\Validation\Validator;
  * Manages warrant roster batches with multi-level approval workflow.
  * Tracks approval status and provides pending counts for dashboard integration.
  *
- * @property \App\Model\Table\WarrantRosterApprovalsTable&\Cake\ORM\Association\HasMany $WarrantRosterApprovals
  * @property \App\Model\Table\WarrantsTable&\Cake\ORM\Association\HasMany $Warrants
  * @method \App\Model\Entity\WarrantRoster newEmptyEntity()
  * @method \App\Model\Entity\WarrantRoster get(mixed $primaryKey, ...)
@@ -40,10 +39,6 @@ class WarrantRostersTable extends BaseTable
         // Audit trail behavior for automatic timestamp management
         $this->addBehavior('Timestamp');
 
-        // Association with approval tracking entities for multi-level approval workflow
-        $this->hasMany('WarrantRosterApprovals', [
-            'foreignKey' => 'warrant_roster_id',
-        ]);
         // Association with warrant entities created from this roster batch
         $this->hasMany('Warrants', [
             'foreignKey' => 'warrant_roster_id',

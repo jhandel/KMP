@@ -96,17 +96,17 @@ interface WarrantManagerInterface
     public function activateApprovedRoster(int $rosterId, int $approverId, bool $sendNotifications = true): ServiceResult;
 
     /**
-     * Sync a workflow approval response to the roster approval table.
+     * Sync a workflow approval response to the roster's denormalized counter.
      *
-     * Creates a warrant_roster_approval record with dedup guard.
-     * Increments approval_count atomically. Returns success if duplicate found (idempotent).
+     * Increments approval_count on the warrant_rosters table.
+     * Dedup is handled by the workflow engine's approval manager.
      * Does NOT change roster status or activate warrants.
      *
      * @param int $rosterId ID of the WarrantRoster
      * @param int $approverId ID of the approving member
-     * @param string|null $notes Optional approval notes
-     * @param \DateTimeInterface|null $approvedOn When approval occurred (defaults to now)
-     * @return ServiceResult Success if recorded or duplicate found
+     * @param string|null $notes Optional approval notes (unused, kept for interface compat)
+     * @param \DateTimeInterface|null $approvedOn When approval occurred (unused, kept for interface compat)
+     * @return ServiceResult Success after counter increment
      */
     public function syncWorkflowApprovalToRoster(int $rosterId, int $approverId, ?string $notes = null, ?\DateTimeInterface $approvedOn = null): ServiceResult;
 

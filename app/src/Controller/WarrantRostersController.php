@@ -6,7 +6,8 @@ namespace App\Controller;
 use App\KMP\GridColumns\WarrantRostersGridColumns;
 use App\Services\CsvExportService;
 use App\Services\WarrantManager\WarrantManagerInterface;
-use App\Services\WorkflowEngine\TriggerDispatcher;
+use App\Services\WarrantManager\WarrantRequest;
+use Cake\I18n\DateTime;
 use Cake\Http\Exception\NotFoundException;
 use Cake\ORM\TableRegistry;
 
@@ -14,15 +15,13 @@ use Cake\ORM\TableRegistry;
  * Manages warrant roster batches and multi-level approval workflows.
  *
  * Handles CRUD for roster batches, approval/decline processing, and individual
- * warrant management within rosters. Uses WarrantManager service for business logic
- * and WorkflowDispatchTrait for dual-path workflow integration.
+ * warrant management within rosters. Uses WarrantManager service for business logic.
  *
  * @property \App\Model\Table\WarrantRostersTable $WarrantRosters
  */
 class WarrantRostersController extends AppController
 {
     use DataverseGridTrait;
-    use WorkflowDispatchTrait;
 
     /**
      * Configure authorization for roster operations.
@@ -198,20 +197,12 @@ class WarrantRostersController extends AppController
         $warrantRoster = $this->WarrantRosters->find()
             ->where(['WarrantRosters.id' => $id])
             ->contain([
-                // Approval history ordered chronologically for timeline display
-                'WarrantRosterApprovals' => function ($q) {
-                    return $q->orderBy(['approved_on' => 'ASC']);
-                },
                 // Warrants ordered by creation date for consistent display
                 'Warrants' => function ($q) {
                     return $q->orderBy(['Warrants.created' => 'ASC']);
                 },
                 // Member information for warrant holders (minimal data for performance)
                 'Warrants.Members' => function ($q) {
-                    return $q->select(['id', 'sca_name']);
-                },
-                // Approver information for audit trail
-                'WarrantRosterApprovals.Members' => function ($q) {
                     return $q->select(['id', 'sca_name']);
                 },
                 // Creator information for accountability
@@ -224,15 +215,40 @@ class WarrantRostersController extends AppController
         // Authorize access to specific roster entity
         $this->Authorization->authorize($warrantRoster);
 
-        $this->set(compact('warrantRoster'));
+        // Load workflow approval responses for this roster
+        $workflowInstancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
+        $workflowInstance = $workflowInstancesTable->find()
+            ->where([
+                'entity_type' => 'WarrantRosters',
+                'entity_id' => $id,
+            ])
+            ->first();
+
+        $approvalResponses = [];
+        if ($workflowInstance) {
+            $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
+            $approvalResponses = $responsesTable->find()
+                ->contain(['Members' => function ($q) {
+                    return $q->select(['id', 'sca_name']);
+                }])
+                ->innerJoinWith('WorkflowApprovals', function ($q) use ($workflowInstance) {
+                    return $q->where(['WorkflowApprovals.workflow_instance_id' => $workflowInstance->id]);
+                })
+                ->orderBy(['WorkflowApprovalResponses.responded_at' => 'ASC'])
+                ->all()
+                ->toArray();
+        }
+
+        $this->set(compact('warrantRoster', 'approvalResponses'));
     }
 
     /**
-     * Create new warrant roster batch.
+     * Create new warrant roster batch via WarrantManager service.
      *
+     * @param \App\Services\WarrantManager\WarrantManagerInterface $wManager Warrant management service
      * @return \Cake\Http\Response|null|void Redirects on successful add, renders view otherwise.
      */
-    public function add(TriggerDispatcher $dispatcher)
+    public function add(WarrantManagerInterface $wManager)
     {
         // Create new empty entity for form binding
         $warrantRoster = $this->WarrantRosters->newEmptyEntity();
@@ -241,36 +257,44 @@ class WarrantRostersController extends AppController
         $this->Authorization->authorize($warrantRoster);
 
         if ($this->request->is('post')) {
-            // Process form submission with validation
-            $warrantRoster = $this->WarrantRosters->patchEntity($warrantRoster, $this->request->getData());
-
+            $data = $this->request->getData();
             $currentUserId = (int)$this->Authentication->getIdentity()->getIdentifier();
 
-            // Dual-path: workflow engine handles creation if configured, otherwise direct save
-            $result = $this->dispatchOrLegacy(
-                $dispatcher,
-                'warrants-roster-approval',
-                'Warrants.RosterCreated',
-                [
-                    'roster_id' => null,
-                    'warrant_requests' => $this->request->getData(),
-                    'created_by' => $currentUserId,
-                ],
-                function () use ($warrantRoster) {
-                    if ($this->WarrantRosters->save($warrantRoster)) {
-                        return $warrantRoster->id;
-                    }
+            // Build WarrantRequest objects from submitted warrant data
+            $warrantRequests = [];
+            $warrants = $data['warrants'] ?? [];
+            foreach ($warrants as $w) {
+                $startOn = !empty($w['start_on']) ? new DateTime($w['start_on']) : null;
+                $expiresOn = !empty($w['expires_on']) ? new DateTime($w['expires_on']) : null;
+                $memberRoleId = !empty($w['member_role_id']) ? (int)$w['member_role_id'] : null;
 
-                    return false;
-                },
+                $warrantRequests[] = new WarrantRequest(
+                    $w['name'] ?? ($data['name'] ?? ''),
+                    $w['entity_type'] ?? '',
+                    (int)($w['entity_id'] ?? 0),
+                    $currentUserId,
+                    (int)($w['member_id'] ?? 0),
+                    $startOn,
+                    $expiresOn,
+                    $memberRoleId,
+                );
+            }
+
+            $wmResult = $wManager->request(
+                $data['name'] ?? '',
+                $data['description'] ?? '',
+                $warrantRequests,
             );
 
-            if ($result !== false) {
+            if ($wmResult->success) {
                 $this->Flash->success(__('The warrant approval set has been saved.'));
 
                 return $this->redirect(['action' => 'index']);
             }
-            $this->Flash->error(__('The warrant approval set could not be saved. Please, try again.'));
+            $this->Flash->error(__($wmResult->reason));
+
+            // Re-patch entity so form redisplays submitted values
+            $warrantRoster = $this->WarrantRosters->patchEntity($warrantRoster, $data);
         }
 
         $this->set(compact('warrantRoster'));
@@ -314,7 +338,7 @@ class WarrantRostersController extends AppController
      * @return \Cake\Http\Response Redirect to roster view
      * @throws \Cake\Http\Exception\NotFoundException When roster not found
      */
-    public function approve(WarrantManagerInterface $wManager, TriggerDispatcher $dispatcher, $id = null)
+    public function approve(WarrantManagerInterface $wManager, ?string $id = null)
     {
         // Require POST request for security
         $this->request->allowMethod(['post']);
@@ -331,15 +355,11 @@ class WarrantRostersController extends AppController
         $currentUserId = (int)$this->Authentication->getIdentity()->getIdentifier();
 
         // Process approval through WarrantManager service
+        // WarrantManager handles workflow event dispatch internally for both legacy and workflow paths
         $wmResult = $wManager->approve($warrantRoster->id, $currentUserId);
 
         if ($wmResult->success) {
             $this->Flash->success(__('The approval has been been processed.'));
-
-            $this->dispatchWorkflowEvent($dispatcher, 'Warrants.Approved', [
-                'roster_id' => (int)$id,
-                'approved_by' => $currentUserId,
-            ]);
         } else {
             $this->Flash->error(__($wmResult->reason));
         }
@@ -354,8 +374,9 @@ class WarrantRostersController extends AppController
      * @param string|null $id Warrant roster ID to decline
      * @return \Cake\Http\Response Redirect to roster view
      * @throws \Cake\Http\Exception\NotFoundException When roster not found
+     
      */
-    public function decline(WarrantManagerInterface $wManager, TriggerDispatcher $dispatcher, ?string $id = null)
+    public function decline(WarrantManagerInterface $wManager, ?string $id = null)
     {
         // Require POST request for security
         $this->request->allowMethod(['post']);
@@ -373,6 +394,7 @@ class WarrantRostersController extends AppController
         $declineReason = 'Declined from Warrant Roster View';
 
         // Process decline through WarrantManager service with standard reason
+        // WarrantManager handles workflow event dispatch internally for both legacy and workflow paths
         $wmResult = $wManager->decline(
             $warrantRoster->id,
             $currentUserId,
@@ -381,12 +403,6 @@ class WarrantRostersController extends AppController
 
         if ($wmResult->success) {
             $this->Flash->success(__('The declination has been been processed.'));
-
-            $this->dispatchWorkflowEvent($dispatcher, 'Warrants.Declined', [
-                'roster_id' => (int)$id,
-                'declined_by' => $currentUserId,
-                'reason' => $declineReason,
-            ]);
         } else {
             $this->Flash->error(__($wmResult->reason));
         }
