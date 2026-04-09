@@ -372,9 +372,8 @@ class MembersControllerTest extends HttpIntegrationTestCase
     {
         $this->get('/members/profile');
 
-        $this->assertResponseOk();
-        // Profile internally calls view, so response contains member info
-        $this->assertResponseContains('members');
+        $this->assertRedirect();
+        $this->assertRedirectContains('/members/view/');
     }
 
     /**

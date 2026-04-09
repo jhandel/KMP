@@ -326,7 +326,6 @@ class MembersController extends AppController
         // Get system views configuration
         $systemViews = MemberRolesGridColumns::getSystemViews([]);
 
-        // Debug: Log the base query
         $baseQuery = $this->fetchTable('MemberRoles')
             ->find()
             ->where(['MemberRoles.member_id' => $memberId])
@@ -350,8 +349,6 @@ class MembersController extends AppController
             'showFilterPills' => false,
             'enableColumnPicker' => false,
         ]);
-
-        Log::debug('Member Roles Result Count: ' . count($result['data']));
 
         // Set view variables
         $this->set([
@@ -1518,12 +1515,13 @@ class MembersController extends AppController
      */
     public function profile()
     {
+        $this->Authorization->skipAuthorization();
         $user = $this->Authentication->getIdentity();
         if (!$user) {
             throw new NotFoundException(__('User not authenticated.'));
         }
 
-        return $this->view((string)$user->id);
+        return $this->redirect(['action' => 'view', $user->id]);
     }
 
     /**

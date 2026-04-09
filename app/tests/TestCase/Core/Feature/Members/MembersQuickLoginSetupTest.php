@@ -144,7 +144,8 @@ final class MembersQuickLoginSetupTest extends HttpIntegrationTestCase
         ]);
         $this->assertNotFalse($quickLoginDevices->save($device));
 
-        $this->get('/members/profile');
+        // Profile now redirects to view, so test the view endpoint directly
+        $this->get('/members/view/' . $member->id);
 
         $this->assertResponseOk();
         $this->assertResponseContains('Quick login devices');
