@@ -693,9 +693,10 @@ export default class WorkflowConfigPanel {
     }
 
     /**
-     * Render a dropdown for selecting a DB email template.
+     * Render a dropdown for selecting a workflow-native email template.
      * Options are loaded async from /email-templates/options.json.
-     * When a template is selected, its available_vars are shown as a hint.
+     * When a template is selected, its variable schema and placeholders are
+     * compared against available workflow context variables and surfaced below.
      */
     _renderEmailTemplateSelect(fieldName, fieldMeta, currentValue) {
         const label = fieldMeta.label || fieldName
@@ -707,10 +708,10 @@ export default class WorkflowConfigPanel {
             <select class="form-select form-select-sm" name="${escaped}"
                 data-action="change->workflow-designer#onEmailTemplateChange"
                 data-email-template-select="true">
-                <option value="">Loading templates...</option>
+                <option value="">Loading templates…</option>
                 ${currentId ? `<option value="${this._escapeAttr(currentId)}" selected>Template #${this._escapeAttr(currentId)}</option>` : ''}
             </select>
-            <div class="email-template-hint mt-1" data-template-hint="${escaped}"></div>
+            <div class="email-template-analysis mt-2" data-template-hint="${escaped}"></div>
         </div>`
     }
 

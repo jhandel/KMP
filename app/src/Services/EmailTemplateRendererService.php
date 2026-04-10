@@ -6,6 +6,7 @@ namespace App\Services;
 use App\Model\Entity\EmailTemplate;
 use Cake\Log\Log;
 use Parsedown;
+use RuntimeException;
 
 /**
  * Service for rendering email templates with variable substitution
@@ -425,6 +426,168 @@ class EmailTemplateRendererService
             'html' => $this->renderHtml($emailTemplate, $sampleVars),
             'text' => $this->renderText($emailTemplate, $sampleVars),
         ];
+    }
+
+    /**
+     * Validate a template against provided send-time variables.
+     *
+     * Performs a three-way comparison:
+     *  1. Placeholders extracted from subject + html + text vs $vars provided → errors for any
+     *     placeholder that has no value (it would render as a raw {{...}} token).
+     *  2. variables_schema required entries vs $vars → errors for any required schema var absent.
+     *  3. Placeholders used in template vs variables_schema declared names → warnings for any
+     *     placeholder not declared in the schema (undocumented variable drift).
+     *
+     * Returns ['errors' => string[], 'warnings' => string[]].
+     * Errors are blocking (use assertValidForSend to throw); warnings are advisory.
+     *
+     * @param \App\Model\Entity\EmailTemplate $template
+     * @param array $vars Variable name => value pairs to be used at send time
+     * @return array{errors: string[], warnings: string[]}
+     */
+    public function validateForSend(EmailTemplate $template, array $vars): array
+    {
+        $errors = [];
+        $warnings = [];
+        $providedKeys = array_keys($vars);
+
+        // Distinguish between rendered placeholders and conditional vars.
+        $renderedPlaceholders = $this->extractRenderedPlaceholders($template);
+        $allPlaceholders = $this->extractAllPlaceholders($template);
+
+        // 1. Rendered placeholders in template content but no value in $vars
+        $unresolved = array_diff($renderedPlaceholders, $providedKeys);
+        foreach ($unresolved as $placeholder) {
+            $errors[] = "Placeholder '{{{{$placeholder}}}}' is used in the template but no value was provided; it will render as a literal token.";
+        }
+
+        // 2. Schema required vars missing from $vars
+        $schema = $template->variables_schema;
+        $schemaDeclaredNames = [];
+        foreach ($schema as $entry) {
+            if (!isset($entry['name'])) {
+                continue;
+            }
+            $name = $entry['name'];
+            $schemaDeclaredNames[] = $name;
+            $required = isset($entry['required']) && $entry['required'] === true;
+            if ($required && !array_key_exists($name, $vars)) {
+                $errors[] = "Required variable '{$name}' declared in variables_schema was not provided.";
+            }
+        }
+
+        // 3. Template placeholders not declared in schema (advisory drift warning)
+        if (!empty($schemaDeclaredNames)) {
+            foreach ($allPlaceholders as $placeholder) {
+                if (!in_array($placeholder, $schemaDeclaredNames, true)) {
+                    $warnings[] = "Placeholder '{{{{$placeholder}}}}' is used in the template but not declared in variables_schema.";
+                }
+            }
+        }
+
+        return ['errors' => array_values($errors), 'warnings' => array_values($warnings)];
+    }
+
+    /**
+     * Like validateForSend() but throws a RuntimeException when there are any errors.
+     *
+     * @param \App\Model\Entity\EmailTemplate $template
+     * @param array $vars Variable name => value pairs
+     * @return void
+     * @throws \RuntimeException
+     */
+    public function assertValidForSend(EmailTemplate $template, array $vars): void
+    {
+        $result = $this->validateForSend($template, $vars);
+        if (!empty($result['errors'])) {
+            $slug = $template->slug ?? $template->display_name;
+            throw new RuntimeException(
+                "Email template '{$slug}' failed send-time validation: "
+                . implode(' | ', $result['errors']),
+            );
+        }
+    }
+
+    /**
+     * Extract all unique placeholder names from every content field of a template.
+     *
+     * Combines subject_template, html_template, and text_template so callers
+     * get a unified view of what the template actually needs.
+     *
+     * @param \App\Model\Entity\EmailTemplate $template
+     * @return string[] Unique placeholder names
+     */
+    public function extractAllPlaceholders(EmailTemplate $template): array
+    {
+        $all = [];
+        foreach (['subject_template', 'html_template', 'text_template'] as $field) {
+            if (!empty($template->$field)) {
+                $all = array_merge($all, $this->extractVariables($template->$field));
+            }
+        }
+
+        return array_values(array_unique($all));
+    }
+
+    /**
+     * Extract placeholders that render literal output tokens.
+     *
+     * Unlike extractAllPlaceholders(), this excludes variables referenced only
+     * inside conditional expressions because missing condition vars safely
+     * evaluate false and do not render literal tokens.
+     *
+     * @param \App\Model\Entity\EmailTemplate $template
+     * @return string[]
+     */
+    protected function extractRenderedPlaceholders(EmailTemplate $template): array
+    {
+        $all = [];
+        foreach (['subject_template', 'html_template', 'text_template'] as $field) {
+            if (empty($template->$field)) {
+                continue;
+            }
+
+            preg_match_all('/\{\{(?!#if\s|\/if\})([^}]+)\}\}/', $template->$field, $matches);
+            if (!empty($matches[1])) {
+                $all = array_merge($all, $matches[1]);
+            }
+
+            preg_match_all('/\$\{([^}]+)\}/', $template->$field, $matches);
+            if (!empty($matches[1])) {
+                $all = array_merge($all, $matches[1]);
+            }
+        }
+
+        return array_values(array_unique($all));
+    }
+
+    /**
+     * Validate that a template's variables_schema is consistent with its placeholders.
+     *
+     * A schema-consistency check for template authoring time (not send time).
+     * Returns ['errors' => [], 'warnings' => []] where:
+     *  - warnings include schema vars not referenced by any template placeholder.
+     *
+     * @param \App\Model\Entity\EmailTemplate $template
+     * @return array{errors: string[], warnings: string[]}
+     */
+    public function validateSchemaConsistency(EmailTemplate $template): array
+    {
+        $warnings = [];
+        $allPlaceholders = $this->extractAllPlaceholders($template);
+        $schema = $template->variables_schema;
+
+        foreach ($schema as $entry) {
+            if (!isset($entry['name'])) {
+                continue;
+            }
+            $name = $entry['name'];
+            if (!in_array($name, $allPlaceholders, true)) {
+                $warnings[] = "Schema variable '{$name}' is declared in variables_schema but not used in any template content.";
+            }
+        }
+
+        return ['errors' => [], 'warnings' => array_values($warnings)];
     }
 
     /**

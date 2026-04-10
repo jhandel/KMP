@@ -6,6 +6,7 @@ namespace Activities\Services;
 
 use Activities\Model\Entity\Authorization;
 use Activities\Services\AuthorizationManagerInterface;
+use App\KMP\StaticHelpers;
 use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WorkflowInstance;
 use App\Services\WorkflowEngine\TriggerDispatcher;
@@ -13,6 +14,8 @@ use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\Mailer\MailerAwareTrait;
 use Cake\ORM\TableRegistry;
+use Cake\Routing\Exception\MissingRouteException;
+use Cake\Routing\Router;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\ServiceResult;
 
@@ -332,14 +335,17 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
         } else {
             $nextApproverScaName = '';
         }
-        $this->getMailer("Activities.Activities")->send("notifyRequester", [
-            $member->email_address,
-            $status,
-            $member->sca_name,
-            $requesterId,
-            $approver->sca_name,
-            $nextApproverScaName,
-            $activity->name,
+        $memberCardUrl = $this->buildMemberCardUrl($requesterId);
+        $this->getMailer('KMP')->send('sendFromTemplate', [
+            'to' => $member->email_address,
+            '_templateId' => 'authorization-request-update',
+            'status' => $status,
+            'memberScaName' => $member->sca_name,
+            'memberCardUrl' => $memberCardUrl,
+            'approverScaName' => $approver->sca_name,
+            'nextApproverScaName' => $nextApproverScaName,
+            'activityName' => $activity->name,
+            'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
         ]);
 
         return true;
@@ -492,16 +498,33 @@ class DefaultAuthorizationManager implements AuthorizationManagerInterface
         $approver = $membersTable->get($approverId);
 
         try {
-            $this->getMailer("Activities.Activities")->send("notifyApproverOfRetraction", [
-                $approver->email_address,
-                $activity->name,
-                $approver->sca_name,
-                $requester->sca_name
+            $this->getMailer('KMP')->send('sendFromTemplate', [
+                'to' => $approver->email_address,
+                '_templateId' => 'authorization-request-retracted',
+                'activityName' => $activity->name,
+                'approverScaName' => $approver->sca_name,
+                'requesterScaName' => $requester->sca_name,
+                'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
             ]);
             return true;
         } catch (\Exception $e) {
             // Log but don't fail on notification errors
             return false;
+        }
+    }
+
+    private function buildMemberCardUrl(int $memberId): string
+    {
+        try {
+            return Router::url([
+                'controller' => 'Members',
+                'action' => 'viewCard',
+                'plugin' => null,
+                '_full' => true,
+                $memberId,
+            ]);
+        } catch (MissingRouteException) {
+            return rtrim(Router::fullBaseUrl(), '/') . '/members/view-card/' . $memberId;
         }
     }
 

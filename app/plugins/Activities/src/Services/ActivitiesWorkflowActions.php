@@ -6,11 +6,14 @@ namespace Activities\Services;
 
 use Activities\Model\Entity\Authorization;
 use Activities\Services\AuthorizationManagerInterface;
+use App\KMP\StaticHelpers;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
-use Cake\Core\App;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
+use Cake\Mailer\MailerAwareTrait;
 use Cake\ORM\TableRegistry;
+use Cake\Routing\Exception\MissingRouteException;
+use Cake\Routing\Router;
 
 /**
  * Workflow action implementations for activity authorization operations.
@@ -20,6 +23,7 @@ use Cake\ORM\TableRegistry;
  */
 class ActivitiesWorkflowActions
 {
+    use MailerAwareTrait;
     use WorkflowContextAwareTrait;
 
     private AuthorizationManagerInterface $authManager;
@@ -200,14 +204,29 @@ class ActivitiesWorkflowActions
                 return ['sent' => false];
             }
 
-            $mailerClass = App::className('Activities.Activities', 'Mailer', 'Mailer');
-            $mailer = new $mailerClass();
-            $mailer->send('notifyApprover', [
-                $approver->email_address,
-                $authorizationToken,
-                $member->sca_name,
-                $approver->sca_name,
-                $activity->name,
+            $authorizationResponseUrl = $authorizationToken
+                ? Router::url([
+                    'controller' => 'Approvals',
+                    'action' => 'respond',
+                    'plugin' => null,
+                    '_full' => true,
+                    $authorizationToken,
+                ])
+                : Router::url([
+                    'controller' => 'Approvals',
+                    'action' => 'approvals',
+                    'plugin' => null,
+                    '_full' => true,
+                ]);
+
+            $this->getMailer('KMP')->send('sendFromTemplate', [
+                'to' => $approver->email_address,
+                '_templateId' => 'authorization-approval-request',
+                'authorizationResponseUrl' => $authorizationResponseUrl,
+                'memberScaName' => $member->sca_name,
+                'approverScaName' => $approver->sca_name,
+                'activityName' => $activity->name,
+                'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
             ]);
 
             return ['sent' => true];
@@ -400,22 +419,38 @@ class ActivitiesWorkflowActions
                 $nextApproverScaName = $nextApprover ? $nextApprover->sca_name : '';
             }
 
-            $mailerClass = App::className('Activities.Activities', 'Mailer', 'Mailer');
-            $mailer = new $mailerClass();
-            $mailer->send('notifyRequester', [
-                $member->email_address,
-                $status,
-                $member->sca_name,
-                $requesterId,
-                $approver->sca_name,
-                $nextApproverScaName,
-                $activity->name,
+            $memberCardUrl = $this->buildMemberCardUrl($requesterId);
+
+            $this->getMailer('KMP')->send('sendFromTemplate', [
+                'to' => $member->email_address,
+                '_templateId' => 'authorization-request-update',
+                'status' => $status,
+                'memberScaName' => $member->sca_name,
+                'memberCardUrl' => $memberCardUrl,
+                'approverScaName' => $approver->sca_name,
+                'nextApproverScaName' => $nextApproverScaName,
+                'activityName' => $activity->name,
+                'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
             ]);
 
             return ['sent' => true];
         } catch (\Throwable $e) {
             Log::error('Workflow NotifyRequester failed: ' . $e->getMessage());
             return ['sent' => false];
+        }
+    }
+    private function buildMemberCardUrl(int $memberId): string
+    {
+        try {
+            return Router::url([
+                'controller' => 'Members',
+                'action' => 'viewCard',
+                'plugin' => null,
+                '_full' => true,
+                $memberId,
+            ]);
+        } catch (MissingRouteException) {
+            return rtrim(Router::fullBaseUrl(), '/') . '/members/view-card/' . $memberId;
         }
     }
 }

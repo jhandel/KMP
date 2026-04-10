@@ -3,7 +3,7 @@
 /**
  * @var \App\View\AppView $this
  * @var \App\Model\Entity\EmailTemplate $emailTemplate
- * @var array $allMailers
+ * @var array $kingdoms
  */
 
 $this->assign('title', $emailTemplate->isNew() ? __('Add Email Template') : __('Edit Email Template'));
@@ -15,57 +15,50 @@ echo $this->KMP->getAppSetting("KMP.ShortSiteTitle") . ': ' . ($emailTemplate->i
 $this->KMP->endBlock(); ?>
 
 <div class="emailTemplates form content">
-    <?= $this->Form->create($emailTemplate, [
-        'data-controller' => $emailTemplate->isNew() ? 'email-template-form' : '',
-        'data-email-template-form-mailers-value' => $emailTemplate->isNew() ? json_encode($allMailers) : '',
-    ]) ?>
+    <?= $this->Form->create($emailTemplate, ['data-controller' => 'email-template-form']) ?>
     <fieldset>
         <legend>
             <?= $this->element('backButton') ?>
             <?= $emailTemplate->isNew() ? __('Add Email Template') : __('Edit Email Template') ?>
         </legend>
 
+        <!-- ── Workflow-native identity (primary authoring fields) ── -->
         <div class="row">
-            <div class="col-md-6">
-                <?php if ($emailTemplate->isNew()): ?>
-                <?php
-                    // Build options array from allMailers
-                    $mailerOptions = [];
-                    foreach ($allMailers as $mailer) {
-                        $mailerOptions[$mailer['class']] = $mailer['shortName'];
-                    }
-                    ?>
-                <?= $this->Form->control('mailer_class', [
-                        'label' => 'Mailer Class',
-                        'id' => 'mailer-class-select',
-                        'options' => $mailerOptions,
-                        'data-email-template-form-target' => 'mailerSelect',
-                        'data-action' => 'email-template-form#mailerChanged',
-                    ]) ?>
-                <?php else: ?>
-                <div class="mb-3">
-                    <label class="form-label">Mailer Class</label>
-                    <div class="form-control-plaintext"><code><?= h($emailTemplate->mailer_class) ?></code></div>
-                    <?= $this->Form->hidden('mailer_class') ?>
-                </div>
-                <?php endif; ?>
+            <div class="col-md-4">
+                <?= $this->Form->control('name', [
+                    'label' => __('Name'),
+                    'placeholder' => __('Human-readable label, e.g. "Warrant Issued"'),
+                    'data-email-template-form-target' => 'nameField',
+                    'data-action' => 'input->email-template-form#nameChanged',
+                ]) ?>
             </div>
+            <div class="col-md-4">
+                <?= $this->Form->control('slug', [
+                    'label' => __('Slug'),
+                    'placeholder' => 'e.g. warrant-issued',
+                    'help' => __('Stable workflow key (lowercase, hyphens only). Auto-generated from Name if left blank.'),
+                    'data-email-template-form-target' => 'slugField',
+                ]) ?>
+            </div>
+            <div class="col-md-4">
+                <?= $this->Form->control('kingdom_id', [
+                    'label' => __('Kingdom Scope'),
+                    'type' => 'select',
+                    'options' => $kingdoms ?? [],
+                    'empty' => __('— Global (all kingdoms) —'),
+                    'help' => __('Leave blank for a global default; select a kingdom to override for that kingdom only.'),
+                ]) ?>
+            </div>
+        </div>
 
-            <div class="col-md-6">
-                <?php if ($emailTemplate->isNew()): ?>
-                <?= $this->Form->control('action_method', [
-                        'label' => 'Action Method',
-                        'id' => 'action-method-select',
-                        'data-email-template-form-target' => 'actionSelect',
-                        'data-action' => 'email-template-form#actionChanged',
-                    ]) ?>
-                <?php else: ?>
-                <div class="mb-3">
-                    <label class="form-label">Action Method</label>
-                    <div class="form-control-plaintext"><code><?= h($emailTemplate->action_method) ?></code></div>
-                    <?= $this->Form->hidden('action_method') ?>
-                </div>
-                <?php endif; ?>
+        <div class="row">
+            <div class="col-md-12">
+                <?= $this->Form->control('description', [
+                    'label' => __('Description'),
+                    'type' => 'textarea',
+                    'rows' => 2,
+                    'placeholder' => __('Brief description of when this email is sent and who receives it'),
+                ]) ?>
             </div>
         </div>
 
@@ -112,6 +105,10 @@ $this->KMP->endBlock(); ?>
                     role="tab" aria-controls="nav-text" aria-selected="false" data-detail-tabs-target='tabBtn'>
                     <i class="bi bi-file-text"></i> Text Template
                 </button>
+                <button class="nav-link" id="nav-vars-tab" data-bs-toggle="tab" data-bs-target="#nav-vars" type="button"
+                    role="tab" aria-controls="nav-vars" aria-selected="false" data-detail-tabs-target='tabBtn'>
+                    <i class="bi bi-braces"></i> Variables Contract
+                </button>
             </div>
         </nav>
 
@@ -135,6 +132,8 @@ $this->KMP->endBlock(); ?>
                             'label' => false,
                             'type' => 'textarea',
                             'data-email-template-editor-target' => 'editor',
+                            'data-email-template-form-target' => 'htmlTemplate',
+                            'data-action' => 'input->email-template-form#templateChanged',
                             'rows' => 15,
                         ]) ?>
 
@@ -181,6 +180,8 @@ $this->KMP->endBlock(); ?>
                         'rows' => 15,
                         'placeholder' => 'Enter the plain text email template (optional)...',
                         'data-variable-insert-target' => 'field',
+                        'data-email-template-form-target' => 'textTemplate',
+                        'data-action' => 'input->email-template-form#templateChanged',
                     ]) ?>
 
                     <?php if (!empty($emailTemplate->available_vars)): ?>
@@ -198,6 +199,44 @@ $this->KMP->endBlock(); ?>
                         </div>
                     </div>
                     <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- Variables Contract Tab -->
+            <div class="tab-pane fade" id="nav-vars" role="tabpanel" aria-labelledby="nav-vars-tab"
+                data-detail-tabs-target="tabContent">
+                <div class="m-3">
+                    <p class="text-muted">
+                        <i class="bi bi-info-circle"></i>
+                        The <strong>Variables Contract</strong> declares every placeholder this template can use.
+                        Workflow nodes use this to validate data before sending.
+                        Each entry: <code>{"name":"varName","description":"...","type":"string","required":true}</code>
+                    </p>
+
+                    <!-- Parsed placeholders helper -->
+                    <div id="parsed-placeholders-panel" class="mb-3" style="display:none;"
+                        data-email-template-form-target="parsedVarsPanel">
+                        <div class="card border-info">
+                            <div class="card-header bg-info bg-opacity-10 py-2">
+                                <small class="fw-semibold"><i class="bi bi-magic"></i> Placeholders detected in your templates</small>
+                            </div>
+                            <div class="card-body py-2">
+                                <p class="small text-muted mb-2">These <code>{{variable}}</code> names were found in your HTML/text templates. Copy them into the schema below to document the variable contract.</p>
+                                <div data-email-template-form-target="parsedVarsList" class="d-flex flex-wrap gap-1"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <?= $this->Form->control('variables_schema', [
+                        'label' => __('Variables Schema (JSON)'),
+                        'type' => 'textarea',
+                        'class' => 'font-monospace',
+                        'rows' => 10,
+                        'placeholder' => '[{"name":"recipientName","description":"Full name of the recipient","type":"string","required":true}]',
+                        'value' => !empty($emailTemplate->variables_schema)
+                            ? json_encode($emailTemplate->variables_schema, JSON_PRETTY_PRINT)
+                            : '',
+                    ]) ?>
                 </div>
             </div>
         </div>

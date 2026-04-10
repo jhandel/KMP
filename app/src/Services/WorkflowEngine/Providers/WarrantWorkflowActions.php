@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\WorkflowEngine\Providers;
 
+use App\KMP\StaticHelpers;
 use App\KMP\TimezoneHelper;
 use App\Mailer\QueuedMailerAwareTrait;
 use App\Model\Entity\Warrant;
@@ -162,7 +163,7 @@ class WarrantWorkflowActions
             }
 
             // Activate warrants via extracted method (no approval bookkeeping)
-            $result = $this->warrantManager->activateApprovedRoster($rosterId, $approverId, false);
+            $result = $this->warrantManager->activateApprovedRoster($rosterId, $approverId);
 
             if (!$result->success) {
                 Log::warning('Workflow ActivateWarrants: activation returned: ' . $result->reason);
@@ -514,10 +515,14 @@ class WarrantWorkflowActions
                     'warrantName' => $warrant->name,
                     'warrantStart' => TimezoneHelper::formatDate($warrant->start_on),
                     'warrantExpires' => TimezoneHelper::formatDate($warrant->expires_on),
+                    'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
                 ];
 
                 try {
-                    $this->queueMail('KMP', 'notifyOfWarrant', $warrant->member->email_address, $vars);
+                    $this->queueMail('KMP', 'sendFromTemplate', $warrant->member->email_address, [
+                        '_templateId' => 'warrant-issued',
+                        ...$vars,
+                    ]);
                     $sent++;
                 } catch (\Throwable $mailErr) {
                     Log::error('Workflow NotifyWarrantIssued mail send failed: ' . $mailErr->getMessage());

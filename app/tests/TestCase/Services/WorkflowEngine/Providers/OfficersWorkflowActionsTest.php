@@ -64,12 +64,14 @@ class OfficersWorkflowActionsTest extends BaseTestCase
 
         $this->assertContains('Officers.CreateOfficerRecord', $actionKeys);
         $this->assertContains('Officers.ReleaseOfficer', $actionKeys);
-        $this->assertContains('Officers.SendHireNotification', $actionKeys);
         $this->assertContains('Officers.RequestWarrantRoster', $actionKeys);
         $this->assertContains('Officers.CalculateReportingFields', $actionKeys);
         $this->assertContains('Officers.ReleaseConflictingOfficers', $actionKeys);
         $this->assertContains('Officers.RecalculateOfficersForOffice', $actionKeys);
-        $this->assertContains('Officers.SendReleaseNotification', $actionKeys);
+        $this->assertContains('Officers.PrepareHireNotificationVars', $actionKeys);
+        $this->assertContains('Officers.PrepareReleaseNotificationVars', $actionKeys);
+        $this->assertNotContains('Officers.SendHireNotification', $actionKeys);
+        $this->assertNotContains('Officers.SendReleaseNotification', $actionKeys);
     }
 
     public function testProviderRegistersAllConditions(): void
@@ -247,34 +249,142 @@ class OfficersWorkflowActionsTest extends BaseTestCase
     }
 
     // =====================================================
-    // SendReleaseNotification action
+    // ReleaseOfficer action
     // =====================================================
 
-    public function testSendReleaseNotificationReturnsResult(): void
+    public function testReleaseOfficerStopsActiveWindowAndCancelsWarrantWhenRequired(): void
     {
-        // Use officer 932 (Agatha, Current, office 14, branch 31)
-        $context = ['triggeredBy' => self::ADMIN_MEMBER_ID];
-        $config = [
-            'officerId' => 932,
-            'reason' => 'Term expired',
-        ];
+        $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(2); // requires_warrant = 1
 
-        $result = $this->actions->sendReleaseNotification($context, $config);
+        $officer = $officerTable->newEntity([
+            'member_id' => self::TEST_MEMBER_AGATHA_ID,
+            'office_id' => $office->id,
+            'branch_id' => self::KINGDOM_BRANCH_ID,
+            'status' => Officer::CURRENT_STATUS,
+            'start_on' => DateTime::now()->subMonths(1),
+            'expires_on' => DateTime::now()->addMonths(1),
+            'approver_id' => self::ADMIN_MEMBER_ID,
+            'approval_date' => DateTime::now(),
+        ]);
+        $officerTable->saveOrFail($officer);
 
-        $this->assertArrayHasKey('sent', $result);
+        $releaseDate = DateTime::now();
+        $matchesReleaseDate = $this->callback(fn ($value) => $value instanceof DateTime
+            && $value->format('Y-m-d H:i:s') === $releaseDate->format('Y-m-d H:i:s'));
+
+        $this->activeWindowManager->expects($this->once())
+            ->method('stop')
+            ->with(
+                'Officers.Officers',
+                $officer->id,
+                self::ADMIN_MEMBER_ID,
+                Officer::RELEASED_STATUS,
+                'Stepping down',
+                $matchesReleaseDate,
+            )
+            ->willReturn(new ServiceResult(true));
+
+        $this->warrantManager->expects($this->once())
+            ->method('cancelByEntity')
+            ->with(
+                'Officers.Officers',
+                $officer->id,
+                'Stepping down',
+                self::ADMIN_MEMBER_ID,
+                $matchesReleaseDate,
+            )
+            ->willReturn(new ServiceResult(true));
+
+        $result = $this->actions->releaseOfficer(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'officerId' => $officer->id,
+                'releasedById' => self::ADMIN_MEMBER_ID,
+                'reason' => 'Stepping down',
+                'expiresOn' => $releaseDate->format('Y-m-d H:i:s'),
+            ],
+        );
+
+        $this->assertTrue($result['released']);
+        $this->assertSame($officer->id, $result['officerId']);
     }
 
-    public function testSendReleaseNotificationWithInvalidOfficerReturnsFalse(): void
+    public function testReleaseOfficerSkipsWarrantCancellationWhenOfficeDoesNotRequireOne(): void
     {
-        $context = ['triggeredBy' => self::ADMIN_MEMBER_ID];
-        $config = [
-            'officerId' => 999999,
-            'reason' => 'Test',
-        ];
+        $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->find()
+            ->where(['requires_warrant' => false])
+            ->firstOrFail();
 
-        $result = $this->actions->sendReleaseNotification($context, $config);
+        $officer = $officerTable->newEntity([
+            'member_id' => self::TEST_MEMBER_BRYCE_ID,
+            'office_id' => $office->id,
+            'branch_id' => self::KINGDOM_BRANCH_ID,
+            'status' => Officer::CURRENT_STATUS,
+            'start_on' => DateTime::now()->subMonths(1),
+            'expires_on' => DateTime::now()->addMonths(1),
+            'approver_id' => self::ADMIN_MEMBER_ID,
+            'approval_date' => DateTime::now(),
+        ]);
+        $officerTable->saveOrFail($officer);
 
-        $this->assertFalse($result['sent']);
+        $this->activeWindowManager->expects($this->once())
+            ->method('stop')
+            ->willReturn(new ServiceResult(true));
+
+        $this->warrantManager->expects($this->never())
+            ->method('cancelByEntity');
+
+        $result = $this->actions->releaseOfficer(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'officerId' => $officer->id,
+                'releasedById' => self::ADMIN_MEMBER_ID,
+                'reason' => 'End of term',
+                'expiresOn' => DateTime::now()->format('Y-m-d H:i:s'),
+            ],
+        );
+
+        $this->assertTrue($result['released']);
+    }
+
+    public function testReleaseOfficerReturnsErrorWhenActiveWindowStopFails(): void
+    {
+        $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(2);
+
+        $officer = $officerTable->newEntity([
+            'member_id' => self::TEST_MEMBER_AGATHA_ID,
+            'office_id' => $office->id,
+            'branch_id' => self::KINGDOM_BRANCH_ID,
+            'status' => Officer::CURRENT_STATUS,
+            'start_on' => DateTime::now()->subMonths(1),
+            'expires_on' => DateTime::now()->addMonths(1),
+            'approver_id' => self::ADMIN_MEMBER_ID,
+            'approval_date' => DateTime::now(),
+        ]);
+        $officerTable->saveOrFail($officer);
+
+        $this->activeWindowManager->expects($this->once())
+            ->method('stop')
+            ->willReturn(new ServiceResult(false, 'Unable to stop active window'));
+
+        $this->warrantManager->expects($this->never())
+            ->method('cancelByEntity');
+
+        $result = $this->actions->releaseOfficer(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'officerId' => $officer->id,
+                'releasedById' => self::ADMIN_MEMBER_ID,
+                'reason' => 'End of term',
+                'expiresOn' => DateTime::now()->format('Y-m-d H:i:s'),
+            ],
+        );
+
+        $this->assertFalse($result['released']);
+        $this->assertSame('Unable to stop active window', $result['error']);
     }
 
     // =====================================================

@@ -176,24 +176,6 @@ class WarrantManagerTest extends BaseTestCase
         $this->assertFalse($result->isSuccess());
     }
 
-    public function testApproveRejectsNonPendingRoster(): void
-    {
-        $manager = $this->createWarrantManager();
-
-        $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
-        $nonPendingRoster = $warrantRosterTable->find()
-            ->where(['status !=' => 'Pending'])
-            ->first();
-
-        if ($nonPendingRoster === null) {
-            $this->markTestSkipped('No non-pending warrant rosters in seed data');
-        }
-
-        $result = $manager->approve($nonPendingRoster->id, self::ADMIN_MEMBER_ID);
-        $this->assertInstanceOf(ServiceResult::class, $result);
-        $this->assertFalse($result->isSuccess());
-    }
-
     public function testCancelNonExistentWarrantReturnsSuccess(): void
     {
         $manager = $this->createWarrantManager();

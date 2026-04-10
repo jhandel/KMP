@@ -37,7 +37,7 @@ class WarrantRosterSyncTest extends BaseTestCase
     }
 
     /**
-     * Build a DefaultWarrantManager with email sending stubbed out.
+     * Build a DefaultWarrantManager with workflow dependencies stubbed out.
      */
     private function createWarrantManager(): WarrantManagerInterface
     {
@@ -46,13 +46,7 @@ class WarrantRosterSyncTest extends BaseTestCase
         $am = $this->createMock(\App\Services\WorkflowEngine\WorkflowApprovalManagerInterface::class);
         $we = $this->createMock(\App\Services\WorkflowEngine\WorkflowEngineInterface::class);
 
-        $wm = $this->getMockBuilder(DefaultWarrantManager::class)
-            ->setConstructorArgs([$awm, $td, $am, $we])
-            ->onlyMethods(['queueMail'])
-            ->getMock();
-        $wm->method('queueMail')->willReturnCallback(function () {});
-
-        return $wm;
+        return new DefaultWarrantManager($awm, $td, $am, $we);
     }
 
     /**
@@ -297,6 +291,37 @@ class WarrantRosterSyncTest extends BaseTestCase
 
         $this->assertInstanceOf(ServiceResult::class, $result);
         $this->assertTrue($result->isSuccess());
+    }
+
+    public function testNotifyWarrantIssuedQueuesSluggedTemplate(): void
+    {
+        [$rosterId, $warrantId] = $this->createPendingRoster();
+
+        $warrant = $this->warrantTable->get($warrantId);
+        $warrant->status = Warrant::CURRENT_STATUS;
+        $this->warrantTable->saveOrFail($warrant);
+
+        $actions = $this->getMockBuilder(WarrantWorkflowActions::class)
+            ->setConstructorArgs([$this->createMock(WarrantManagerInterface::class)])
+            ->onlyMethods(['queueMail'])
+            ->getMock();
+
+        $actions->expects($this->once())
+            ->method('queueMail')
+            ->with(
+                'KMP',
+                'sendFromTemplate',
+                $this->isType('string'),
+                $this->callback(function (array $vars): bool {
+                    return ($vars['_templateId'] ?? null) === 'warrant-issued'
+                        && ($vars['warrantName'] ?? null) === 'Test Warrant'
+                        && array_key_exists('siteAdminSignature', $vars);
+                }),
+            );
+
+        $result = $actions->notifyWarrantIssued([], ['rosterId' => $rosterId]);
+
+        $this->assertSame(1, $result['emailsSent']);
     }
 
     // =====================================================

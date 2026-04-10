@@ -475,79 +475,48 @@ class MembersWorkflowActions
     }
 
     /**
-     * Send registration welcome email with password reset link to an adult member.
+     * Prepare all registration email variables for use by Core.SendEmail workflow nodes.
      *
-     * @param array $context Current workflow context
-     * @param array $config Config with memberId, email
-     * @return array Output with success
-     */
-    public function sendRegistrationEmail(array $context, array $config): array
-    {
-        try {
-            $memberId = (int)$this->resolveValue($config['memberId'], $context);
-            $email = (string)$this->resolveValue($config['email'], $context);
-
-            $membersTable = $this->fetchTable('Members');
-            $member = $membersTable->get($memberId);
-
-            $emailVars = $this->regService->buildAdultRegistrationEmailVars($member);
-            $this->queueMail('KMP', 'newRegistration', $email, $emailVars['registrationVars']);
-
-            return ['success' => true, 'data' => ['memberId' => $memberId, 'email' => $email]];
-        } catch (\Throwable $e) {
-            Log::error('Workflow SendRegistrationEmail failed: ' . $e->getMessage());
-
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    /**
-     * Notify the kingdom secretary of a new adult member registration.
+     * Loads the member, builds registration vars, and resolves the secretary email
+     * addresses from app settings. Outputs all vars needed by the three registration
+     * email templates (member-registration-welcome, member-registration-secretary,
+     * member-registration-secretary-minor) into workflow context.
      *
      * @param array $context Current workflow context
      * @param array $config Config with memberId
-     * @return array Output with success
+     * @return array Output with registration email vars and secretary addresses
      */
-    public function notifySecretaryOfNewMember(array $context, array $config): array
+    public function prepareRegistrationEmailVars(array $context, array $config): array
     {
         try {
             $memberId = (int)$this->resolveValue($config['memberId'], $context);
             $membersTable = $this->fetchTable('Members');
             $member = $membersTable->get($memberId);
 
-            $emailVars = $this->regService->buildAdultRegistrationEmailVars($member);
-            // Mailer overrides 'to' with Members.NewMemberSecretaryEmail from app settings
-            $this->queueMail('KMP', 'notifySecretaryOfNewMember', $member->email_address, $emailVars['secretaryVars']);
+            $adultVars = $this->regService->buildAdultRegistrationEmailVars($member);
+            $minorVars = $this->regService->buildMinorRegistrationEmailVars($member);
 
-            return ['success' => true, 'data' => ['memberId' => $memberId]];
+            $adultSecretaryEmail = StaticHelpers::getAppSetting('Members.NewMemberSecretaryEmail', '', null, true);
+            $minorSecretaryEmail = StaticHelpers::getAppSetting('Members.NewMinorSecretaryEmail', '', null, true);
+            $siteAdminSignature = StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true);
+            $portalName = StaticHelpers::getAppSetting('KMP.LongSiteTitle', '', null, true);
+
+            return [
+                'success' => true,
+                'data' => [
+                    'email' => $member->email_address,
+                    'passwordResetUrl' => $adultVars['registrationVars']['passwordResetUrl'],
+                    'memberScaName' => $member->sca_name,
+                    'memberViewUrl' => $adultVars['secretaryVars']['memberViewUrl'],
+                    'memberCardPresent' => $adultVars['secretaryVars']['memberCardPresent'],
+                    'adultSecretaryEmail' => $adultSecretaryEmail,
+                    'minorSecretaryEmail' => $minorSecretaryEmail,
+                    'siteAdminSignature' => $siteAdminSignature,
+                    'portalName' => $portalName,
+                ],
+            ];
         } catch (\Throwable $e) {
-            Log::error('Workflow NotifySecretaryOfNewMember failed: ' . $e->getMessage());
-
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    /**
-     * Notify the kingdom secretary of a new minor member registration.
-     *
-     * @param array $context Current workflow context
-     * @param array $config Config with memberId
-     * @return array Output with success
-     */
-    public function notifySecretaryOfNewMinorMember(array $context, array $config): array
-    {
-        try {
-            $memberId = (int)$this->resolveValue($config['memberId'], $context);
-            $membersTable = $this->fetchTable('Members');
-            $member = $membersTable->get($memberId);
-
-            $secretaryVars = $this->regService->buildMinorRegistrationEmailVars($member);
-            // Mailer overrides 'to' with Members.NewMemberSecretaryEmail from app settings
-            $this->queueMail('KMP', 'notifySecretaryOfNewMinorMember', $member->email_address, $secretaryVars);
-
-            return ['success' => true, 'data' => ['memberId' => $memberId]];
-        } catch (\Throwable $e) {
-            Log::error('Workflow NotifySecretaryOfNewMinorMember failed: ' . $e->getMessage());
+            Log::error('Workflow PrepareRegistrationEmailVars failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
         }
@@ -563,7 +532,12 @@ class MembersWorkflowActions
     private function queueResetEmail(string $email, string $resetUrl): void
     {
         try {
-            $this->queueMail('KMP', 'resetPassword', $email, ['url' => $resetUrl]);
+            $this->queueMail('KMP', 'sendFromTemplate', $email, [
+                '_templateId' => 'password-reset',
+                'email' => $email,
+                'passwordResetUrl' => $resetUrl,
+                'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
+            ]);
         } catch (\Throwable $e) {
             Log::warning('Workflow SendPasswordReset: email queuing failed: ' . $e->getMessage());
         }

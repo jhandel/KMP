@@ -9,7 +9,6 @@ use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\WarrantManager\WarrantManagerInterface;
 use App\Services\WarrantManager\WarrantRequest;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
-use Cake\Core\App;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
@@ -219,16 +218,24 @@ class OfficerWorkflowActions
     }
 
     /**
-     * Release an officer from their position by setting expires_on.
+     * Release an officer using the same lifecycle steps as the legacy manager path.
+     *
+     * This mirrors DefaultOfficerManager::release() without re-dispatching
+     * Officers.Released from inside the workflow.
      *
      * @param array $context Current workflow context
-     * @param array $config Action config with officerId, reason, expiresOn
+     * @param array $config Action config with officerId, releasedById, reason, expiresOn
      * @return array Output with released boolean
      */
     public function releaseOfficer(array $context, array $config): array
     {
         try {
             $officerId = (int)$this->resolveValue($config['officerId'], $context);
+            $releasedById = (int)($this->resolveValue(
+                $config['releasedById'] ?? ($context['triggeredBy'] ?? null),
+                $context,
+            ) ?? 0);
+            $reason = (string)$this->resolveValue($config['reason'] ?? 'Released via workflow', $context);
 
             $expiresOnRaw = $this->resolveValue($config['expiresOn'] ?? null, $context);
             $expiresOn = $expiresOnRaw instanceof DateTime
@@ -236,68 +243,42 @@ class OfficerWorkflowActions
                 : new DateTime($expiresOnRaw ?? 'now');
 
             $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
-            $officer = $officerTable->get($officerId);
+            $officer = $officerTable->get($officerId, contain: ['Offices']);
 
-            $officer->status = Officer::RELEASED_STATUS;
-            $officer->expires_on = $expiresOn;
-            $officer->revoked_reason = $this->resolveValue($config['reason'] ?? 'Released via workflow', $context);
+            $awResult = $this->activeWindowManager->stop(
+                'Officers.Officers',
+                $officerId,
+                $releasedById,
+                Officer::RELEASED_STATUS,
+                $reason,
+                $expiresOn,
+            );
+            if (!$awResult->success) {
+                Log::error('Workflow ReleaseOfficer: ActiveWindow stop failed: ' . $awResult->reason);
 
-            if (!$officerTable->save($officer)) {
-                Log::error('Workflow ReleaseOfficer: failed to save officer');
-
-                return ['released' => false];
+                return ['released' => false, 'error' => $awResult->reason];
             }
 
-            return ['released' => true];
+            if ($officer->office->requires_warrant) {
+                $wmResult = $this->warrantManager->cancelByEntity(
+                    'Officers.Officers',
+                    $officerId,
+                    $reason,
+                    $releasedById,
+                    $expiresOn,
+                );
+                if (!$wmResult->success) {
+                    Log::error('Workflow ReleaseOfficer: warrant cancellation failed: ' . $wmResult->reason);
+
+                    return ['released' => false, 'error' => $wmResult->reason];
+                }
+            }
+
+            return ['released' => true, 'officerId' => $officerId];
         } catch (\Throwable $e) {
             Log::error('Workflow ReleaseOfficer failed: ' . $e->getMessage());
 
-            return ['released' => false];
-        }
-    }
-
-    /**
-     * Queue a hire notification email for a newly assigned officer.
-     *
-     * @param array $context Current workflow context
-     * @param array $config Action config with officerId
-     * @return array Output with sent boolean
-     */
-    public function sendHireNotification(array $context, array $config): array
-    {
-        try {
-            $officerId = (int)$this->resolveValue($config['officerId'], $context);
-
-            $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
-            $officer = $officerTable->get($officerId, contain: ['Offices']);
-
-            $member = TableRegistry::getTableLocator()->get('Members')->get($officer->member_id);
-            $branch = TableRegistry::getTableLocator()->get('Branches')->get($officer->branch_id);
-
-            $mailerClass = App::className('Officers.Officers', 'Mailer', 'Mailer');
-            $vars = [
-                'to' => $member->email_address,
-                'memberScaName' => $member->sca_name,
-                'officeName' => $officer->office->name,
-                'branchName' => $branch->name,
-                'hireDate' => TimezoneHelper::formatDate($officer->start_on),
-                'endDate' => TimezoneHelper::formatDate($officer->expires_on),
-                'requiresWarrant' => $officer->office->requires_warrant,
-            ];
-
-            $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
-            $data = [
-                'class' => $mailerClass,
-                'action' => 'notifyOfHire',
-                'vars' => $vars,
-            ];
-            $queuedJobsTable->createJob('Queue.Mailer', $data);
-
-            return ['sent' => true];
-        } catch (\Throwable $e) {
-            Log::error('Workflow SendHireNotification failed: ' . $e->getMessage());
-
-            return ['sent' => false];
+            return ['released' => false, 'error' => $e->getMessage()];
         }
     }
 
@@ -487,13 +468,17 @@ class OfficerWorkflowActions
     }
 
     /**
-     * Queue a release notification email for a released officer.
+     * Prepare all hire-notification email variables for use by Core.SendEmail.
+     *
+     * Loads officer, member, and branch records; formats dates; and resolves
+     * the warrant-required notice text. Outputs vars for the
+     * officer-hire-notification DB template into workflow context.
      *
      * @param array $context Current workflow context
-     * @param array $config Action config with officerId, memberId, reason
-     * @return array Output with sent boolean
+     * @param array $config Action config with officerId
+     * @return array Output with hire notification vars
      */
-    public function sendReleaseNotification(array $context, array $config): array
+    public function prepareHireNotificationVars(array $context, array $config): array
     {
         try {
             $officerId = (int)$this->resolveValue($config['officerId'], $context);
@@ -504,32 +489,82 @@ class OfficerWorkflowActions
             $member = TableRegistry::getTableLocator()->get('Members')->get($officer->member_id);
             $branch = TableRegistry::getTableLocator()->get('Branches')->get($officer->branch_id);
 
-            $reason = $this->resolveValue($config['reason'] ?? 'Released via workflow', $context);
+            $requiresWarrantNotice = $officer->office->requires_warrant
+                ? 'Please note that this office requires a warrant. '
+                  . 'A request for that warrant has been forwarded to the Crown for approval.'
+                : '';
+
+            return [
+                'success' => true,
+                'data' => [
+                    'to' => $member->email_address,
+                    'memberScaName' => $member->sca_name,
+                    'officeName' => $officer->office->name,
+                    'branchName' => $branch->name,
+                    'hireDate' => TimezoneHelper::formatDate($officer->start_on),
+                    'endDate' => TimezoneHelper::formatDate($officer->expires_on),
+                    'requiresWarrantNotice' => $requiresWarrantNotice,
+                    'siteAdminSignature' => \App\KMP\StaticHelpers::getAppSetting(
+                        'Email.SiteAdminSignature',
+                        '',
+                        null,
+                        true,
+                    ),
+                ],
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Workflow PrepareHireNotificationVars failed: ' . $e->getMessage());
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Prepare all release-notification email variables for use by Core.SendEmail.
+     *
+     * Loads officer, member, and branch records; formats the release date;
+     * and resolves the reason. Outputs vars for the officer-release-notification
+     * DB template into workflow context.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Action config with officerId, reason
+     * @return array Output with release notification vars
+     */
+    public function prepareReleaseNotificationVars(array $context, array $config): array
+    {
+        try {
+            $officerId = (int)$this->resolveValue($config['officerId'], $context);
+
+            $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+            $officer = $officerTable->get($officerId, contain: ['Offices']);
+
+            $member = TableRegistry::getTableLocator()->get('Members')->get($officer->member_id);
+            $branch = TableRegistry::getTableLocator()->get('Branches')->get($officer->branch_id);
+
+            $reason = (string)$this->resolveValue($config['reason'] ?? 'Released via workflow', $context);
             $releaseDate = $officer->expires_on ?? DateTime::now();
 
-            $mailerClass = App::className('Officers.Officers', 'Mailer', 'Mailer');
-            $vars = [
-                'to' => $member->email_address,
-                'memberScaName' => $member->sca_name,
-                'officeName' => $officer->office->name,
-                'branchName' => $branch->name,
-                'reason' => $reason,
-                'releaseDate' => TimezoneHelper::formatDate($releaseDate),
+            return [
+                'success' => true,
+                'data' => [
+                    'to' => $member->email_address,
+                    'memberScaName' => $member->sca_name,
+                    'officeName' => $officer->office->name,
+                    'branchName' => $branch->name,
+                    'reason' => $reason,
+                    'releaseDate' => TimezoneHelper::formatDate($releaseDate),
+                    'siteAdminSignature' => \App\KMP\StaticHelpers::getAppSetting(
+                        'Email.SiteAdminSignature',
+                        '',
+                        null,
+                        true,
+                    ),
+                ],
             ];
-
-            $queuedJobsTable = TableRegistry::getTableLocator()->get('Queue.QueuedJobs');
-            $data = [
-                'class' => $mailerClass,
-                'action' => 'notifyOfRelease',
-                'vars' => $vars,
-            ];
-            $queuedJobsTable->createJob('Queue.Mailer', $data);
-
-            return ['sent' => true];
         } catch (\Throwable $e) {
-            Log::error('Workflow SendReleaseNotification failed: ' . $e->getMessage());
+            Log::error('Workflow PrepareReleaseNotificationVars failed: ' . $e->getMessage());
 
-            return ['sent' => false];
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 }

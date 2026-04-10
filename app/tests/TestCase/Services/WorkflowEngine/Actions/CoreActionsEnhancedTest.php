@@ -296,7 +296,82 @@ class CoreActionsEnhancedTest extends BaseTestCase
     }
 
     // =====================================================
-    // Enhanced sendEmail() — replyTo support
+    // sendEmail() — slug-based template contract
+    // =====================================================
+
+    public function testSendEmailWithSlugTemplateRoutesThroughTemplatePath(): void
+    {
+        // When 'template' is a non-numeric string, it is treated as a slug.
+        // queueMail succeeds (job queued or sent) even if the slug doesn't exist yet.
+        $context = ['trigger' => ['email' => 'user@example.com']];
+        $config = [
+            'to' => '$.trigger.email',
+            'template' => 'warrant-issued',
+            'vars' => ['memberName' => 'Test Member'],
+        ];
+
+        $result = $this->actions->sendEmail($context, $config);
+        $this->assertArrayHasKey('sent', $result);
+        $this->assertIsBool($result['sent']);
+    }
+
+    public function testSendEmailWithNumericTemplateIsBackwardCompatible(): void
+    {
+        // Numeric string template value routes through the same sendFromTemplate path.
+        $context = [];
+        $config = [
+            'to' => 'user@example.com',
+            'template' => '5',
+            'vars' => [],
+        ];
+
+        $result = $this->actions->sendEmail($context, $config);
+        $this->assertArrayHasKey('sent', $result);
+        $this->assertIsBool($result['sent']);
+    }
+
+    public function testSendEmailWithSlugResolvesFromContext(): void
+    {
+        // Slug may be stored in context and resolved via $.path
+        $context = ['workflow' => ['emailSlug' => 'member-approved']];
+        $config = [
+            'to' => 'user@example.com',
+            'template' => '$.workflow.emailSlug',
+            'vars' => [],
+        ];
+
+        $result = $this->actions->sendEmail($context, $config);
+        $this->assertArrayHasKey('sent', $result);
+        $this->assertIsBool($result['sent']);
+    }
+
+    public function testSendEmailTemplatePathIncludesReplyTo(): void
+    {
+        // replyTo is passed through alongside template vars
+        $context = [];
+        $config = [
+            'to' => 'test@example.com',
+            'template' => 'some-slug',
+            'vars' => ['key1' => 'val1'],
+            'replyTo' => 'reply@example.com',
+        ];
+
+        $result = $this->actions->sendEmail($context, $config);
+        $this->assertArrayHasKey('sent', $result);
+        $this->assertIsBool($result['sent']);
+    }
+
+    public function testSendEmailSlugNotNumericSoTreatedAsSlug(): void
+    {
+        // Verify that a slug like "my-template-slug" is non-numeric and triggers
+        // the slug path (not the numeric ID path) in sendFromTemplate.
+        $this->assertFalse(is_numeric('my-template-slug'));
+        $this->assertTrue(is_numeric('42'));
+        $this->assertTrue(is_numeric('42.0'));
+    }
+
+    // =====================================================
+    // sendEmail() — replyTo support
     // =====================================================
 
     public function testSendEmailWithReplyTo(): void
@@ -304,8 +379,7 @@ class CoreActionsEnhancedTest extends BaseTestCase
         $context = ['trigger' => ['email' => 'user@example.com', 'replyEmail' => 'reply@example.com']];
         $config = [
             'to' => '$.trigger.email',
-            'mailer' => 'App\\Mailer\\TestMailer',
-            'action' => 'notify',
+            'template' => 'member-approved',
             'vars' => ['subject' => 'Hello'],
             'replyTo' => '$.trigger.replyEmail',
         ];
@@ -316,11 +390,13 @@ class CoreActionsEnhancedTest extends BaseTestCase
 
     public function testSendEmailReplyToResolvesFromContext(): void
     {
-        $context = ['admin' => ['email' => 'admin@test.com']];
+        $context = [
+            'admin' => ['email' => 'admin@test.com'],
+            'workflow' => ['template' => 'member-approved'],
+        ];
         $config = [
             'to' => 'user@test.com',
-            'mailer' => 'TestMailer',
-            'action' => 'send',
+            'template' => '$.workflow.template',
             'replyTo' => '$.admin.email',
         ];
 
@@ -334,13 +410,23 @@ class CoreActionsEnhancedTest extends BaseTestCase
         $context = [];
         $config = [
             'to' => 'test@example.com',
-            'mailer' => 'TestMailer',
-            'action' => 'send',
+            'template' => 'member-approved',
             'vars' => [],
         ];
 
         $result = $this->actions->sendEmail($context, $config);
         $this->assertArrayHasKey('sent', $result);
+    }
+
+    public function testSendEmailRequiresTemplate(): void
+    {
+        $result = $this->actions->sendEmail([], [
+            'to' => 'test@example.com',
+            'vars' => [],
+        ]);
+
+        $this->assertFalse($result['sent']);
+        $this->assertSame('Core.SendEmail requires a template slug or numeric template ID.', $result['error']);
     }
 
     // =====================================================

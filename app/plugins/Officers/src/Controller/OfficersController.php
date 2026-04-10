@@ -132,9 +132,15 @@ class OfficersController extends AppController
             $revokerId = $this->Authentication->getIdentity()->getIdentifier();
 
             $context = [
+                'officerId' => $officer->id,
+                'memberId' => $officer->member_id,
+                'officeId' => $officer->office_id,
+                'releasedById' => $revokerId,
+                'reason' => $revokeReason,
+                'expiresOn' => $revokeDate->toDateTimeString(),
+                // Keep legacy-shaped keys during the migration window for older drafts/tests.
                 'officer_id' => $officer->id,
                 'released_by' => $revokerId,
-                'reason' => $revokeReason,
                 'revoked_on' => $revokeDate->toDateTimeString(),
             ];
 

@@ -1040,7 +1040,7 @@ class MembersController extends AppController
      *
      * @return \\Cake\\Http\\Response|null|void
      */
-    public function add(TriggerDispatcher $dispatcher)
+    public function add(TriggerDispatcher $dispatcher, MemberRegistrationService $regService)
     {
         $member = $this->Members->newEmptyEntity();
         $this->Authorization->authorize($member);
@@ -1089,15 +1089,26 @@ class MembersController extends AppController
                     'member' => $member->toArray(),
                     'form_data' => $this->request->getData(),
                 ],
-                function () use ($member) {
+                function () use ($member, $regService) {
                     if ($this->Members->save($member)) {
                         if ($member->age < 18) {
+                            $minorSecretaryEmail = StaticHelpers::getAppSetting(
+                                'Members.NewMinorSecretaryEmail',
+                                '',
+                                null,
+                                true,
+                            );
+                            if ($minorSecretaryEmail !== '') {
+                                $this->queueMail('KMP', 'sendFromTemplate', $minorSecretaryEmail, array_merge(
+                                    ['_templateId' => 'member-registration-secretary-minor'],
+                                    $regService->buildMinorRegistrationEmailVars($member),
+                                ));
+                            }
                             $this->Flash->success(__(
                                 'The Member has been saved and the minor '
                                 . 'registration email has been sent for '
                                 . 'verification.',
                             ));
-                            $this->getMailer('KMP')->send('notifySecretaryOfNewMinorMember', [$member]);
                         } else {
                             $this->Flash->success(__(
                                 'The Member has been saved. Please ask the '
@@ -1247,10 +1258,11 @@ class MembersController extends AppController
         }
         $this->Authorization->authorize($member);
         $url = $profileService->buildMobileCardUrl();
-        $vars = [
-            'url' => $url,
-        ];
-        $this->queueMail('KMP', 'mobileCard', $member->email_address, $vars);
+        $this->queueMail('KMP', 'sendFromTemplate', $member->email_address, [
+            '_templateId' => 'mobile-card-url',
+            'mobileCardUrl' => $url,
+            'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
+        ]);
         $this->Flash->success(__('The email has been sent.'));
 
         return $this->redirect(['action' => 'view', $member->id]);
@@ -1839,8 +1851,12 @@ class MembersController extends AppController
                 (string)$this->request->getData('email_address'),
             );
             if ($result['found']) {
-                $vars = ['url' => $result['resetUrl']];
-                $this->queueMail('KMP', 'resetPassword', $result['email'], $vars);
+                $this->queueMail('KMP', 'sendFromTemplate', $result['email'], [
+                    '_templateId' => 'password-reset',
+                    'email' => $result['email'],
+                    'passwordResetUrl' => $result['resetUrl'],
+                    'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
+                ]);
                 $this->Flash->success(
                     __(
                         'If your email is on file, a password reset link has been sent.',
@@ -2424,7 +2440,7 @@ class MembersController extends AppController
     /**
      * Register.
      */
-    public function register(MemberRegistrationService $regService)
+    public function register(MemberRegistrationService $regService, TriggerDispatcher $dispatcher)
     {
         $allowRegistration = StaticHelpers::getAppSetting(
             'KMP.EnablePublicRegistration',
@@ -2461,23 +2477,62 @@ class MembersController extends AppController
                 return $this->redirect(['action' => 'login']);
             }
             if ($regService->saveMember($member)) {
+                $this->dispatchOrLegacy(
+                    $dispatcher,
+                    'member-registration',
+                    'Members.Registered',
+                    [
+                        'memberId' => (int)$member->id,
+                        'memberPublicId' => (string)$member->public_id,
+                        'status' => (string)$member->status,
+                        'isMinor' => $member->age <= 17,
+                    ],
+                    function () use ($member, $regService): void {
+                        if ($member->age > 17) {
+                            $emailVars = $regService->buildAdultRegistrationEmailVars($member);
+                            $adultSecretaryEmail = StaticHelpers::getAppSetting(
+                                'Members.NewMemberSecretaryEmail',
+                                '',
+                                null,
+                                true,
+                            );
+                            $this->queueMail('KMP', 'sendFromTemplate', $member->email_address, array_merge(
+                                ['_templateId' => 'member-registration-welcome'],
+                                $emailVars['registrationVars'],
+                            ));
+                            if ($adultSecretaryEmail !== '') {
+                                $this->queueMail('KMP', 'sendFromTemplate', $adultSecretaryEmail, array_merge(
+                                    ['_templateId' => 'member-registration-secretary'],
+                                    $emailVars['secretaryVars'],
+                                ));
+                            }
+
+                            return;
+                        }
+
+                        $secretaryVars = $regService->buildMinorRegistrationEmailVars($member);
+                        $minorSecretaryEmail = StaticHelpers::getAppSetting(
+                            'Members.NewMinorSecretaryEmail',
+                            '',
+                            null,
+                            true,
+                        );
+                        if ($minorSecretaryEmail !== '') {
+                            $this->queueMail('KMP', 'sendFromTemplate', $minorSecretaryEmail, array_merge(
+                                ['_templateId' => 'member-registration-secretary-minor'],
+                                $secretaryVars,
+                            ));
+                        }
+                    },
+                );
+
                 if ($member->age > 17) {
-                    $emailVars = $regService->buildAdultRegistrationEmailVars($member);
-                    $this->queueMail('KMP', 'newRegistration', $member->email_address, $emailVars['registrationVars']);
-                    $this->queueMail(
-                        'KMP',
-                        'notifySecretaryOfNewMember',
-                        $member->email_address,
-                        $emailVars['secretaryVars'],
-                    );
                     $this->Flash->success(__(
                         'Your registration has been submitted. '
                         . 'Please check your email for a link '
                         . 'to set up your password.',
                     ));
                 } else {
-                    $secretaryVars = $regService->buildMinorRegistrationEmailVars($member);
-                    $this->queueMail('KMP', 'notifySecretaryOfNewMinorMember', $member->email_address, $secretaryVars);
                     $this->Flash->success(__(
                         'Your registration has been submitted. '
                         . 'The Kingdom Secretary will need to '

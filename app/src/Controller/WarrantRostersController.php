@@ -7,15 +7,15 @@ use App\KMP\GridColumns\WarrantRostersGridColumns;
 use App\Services\CsvExportService;
 use App\Services\WarrantManager\WarrantManagerInterface;
 use App\Services\WarrantManager\WarrantRequest;
-use Cake\I18n\DateTime;
 use Cake\Http\Exception\NotFoundException;
+use Cake\I18n\DateTime;
 use Cake\ORM\TableRegistry;
 
 /**
  * Manages warrant roster batches and multi-level approval workflows.
  *
- * Handles CRUD for roster batches, approval/decline processing, and individual
- * warrant management within rosters. Uses WarrantManager service for business logic.
+ * Handles CRUD for roster batches and individual warrant management within
+ * rosters. Workflow approvals are handled through the unified approvals queue.
  *
  * @property \App\Model\Table\WarrantRostersTable $WarrantRosters
  */
@@ -329,89 +329,6 @@ class WarrantRostersController extends AppController
         }
 
         $this->set(compact('warrantRoster'));
-    }
-
-    /**
-     * Process roster approval through WarrantManager service.
-     *
-     * @param \App\Services\WarrantManager\WarrantManagerInterface $wManager Warrant management service
-     * @param string|null $id Warrant roster ID to approve
-     * @return \Cake\Http\Response Redirect to roster view
-     * @throws \Cake\Http\Exception\NotFoundException When roster not found
-     */
-    public function approve(WarrantManagerInterface $wManager, ?string $id = null)
-    {
-        // Require POST request for security
-        $this->request->allowMethod(['post']);
-
-        // Load roster with warrants for validation
-        $warrantRoster = $this->WarrantRosters->get($id, ['contain' => ['Warrants']]);
-        if ($warrantRoster == null) {
-            throw new NotFoundException();
-        }
-
-        // Authorize approval operation on specific roster
-        $this->Authorization->authorize($warrantRoster);
-
-        $currentUserId = (int)$this->Authentication->getIdentity()->getIdentifier();
-        $comment = $this->request->getData('comment', '');
-
-        $wmResult = $wManager->approve($warrantRoster->id, $currentUserId, $comment ?: null);
-
-        if ($wmResult->success) {
-            $this->Flash->success(__('The approval has been been processed.'));
-        } else {
-            $this->Flash->error(__($wmResult->reason));
-        }
-
-        return $this->redirect(['action' => 'view', $id]);
-    }
-
-    /**
-     * Process roster decline through WarrantManager service.
-     *
-     * @param \App\Services\WarrantManager\WarrantManagerInterface $wManager Warrant management service
-     * @param string|null $id Warrant roster ID to decline
-     * @return \Cake\Http\Response Redirect to roster view
-     * @throws \Cake\Http\Exception\NotFoundException When roster not found
-     
-     */
-    public function decline(WarrantManagerInterface $wManager, ?string $id = null)
-    {
-        // Require POST request for security
-        $this->request->allowMethod(['post']);
-
-        // Load roster with warrants for processing
-        $warrantRoster = $this->WarrantRosters->get($id, ['contain' => ['Warrants']]);
-        if ($warrantRoster == null) {
-            throw new NotFoundException();
-        }
-
-        // Authorize decline operation on specific roster
-        $this->Authorization->authorize($warrantRoster);
-
-        $currentUserId = (int)$this->Authentication->getIdentity()->getIdentifier();
-        $comment = trim((string)$this->request->getData('comment', ''));
-
-        if (empty($comment)) {
-            $this->Flash->error(__('A reason is required when declining a roster.'));
-
-            return $this->redirect(['action' => 'view', $id]);
-        }
-
-        $wmResult = $wManager->decline(
-            $warrantRoster->id,
-            $currentUserId,
-            $comment,
-        );
-
-        if ($wmResult->success) {
-            $this->Flash->success(__('The declination has been been processed.'));
-        } else {
-            $this->Flash->error(__($wmResult->reason));
-        }
-
-        return $this->redirect(['action' => 'view', $id]);
     }
 
     /**

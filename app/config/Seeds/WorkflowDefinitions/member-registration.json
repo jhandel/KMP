@@ -34,6 +34,26 @@
             "outputs": [
                 {
                     "port": "next",
+                    "target": "prepare-registration-vars"
+                }
+            ]
+        },
+        "prepare-registration-vars": {
+            "type": "action",
+            "label": "Prepare Registration Email Vars",
+            "config": {
+                "action": "Members.PrepareRegistrationEmailVars",
+                "params": {
+                    "memberId": "$.trigger.memberId"
+                }
+            },
+            "position": {
+                "x": 650,
+                "y": 200
+            },
+            "outputs": [
+                {
+                    "port": "next",
                     "target": "check-is-minor"
                 }
             ]
@@ -46,7 +66,7 @@
                 "memberId": "$.trigger.memberId"
             },
             "position": {
-                "x": 650,
+                "x": 950,
                 "y": 200
             },
             "outputs": [
@@ -64,16 +84,22 @@
         },
         "send-registration-email": {
             "type": "action",
-            "label": "Send Registration Email with Reset Link",
+            "label": "Send Registration Welcome Email",
             "config": {
-                "action": "Members.SendRegistrationEmail",
+                "action": "Core.SendEmail",
                 "params": {
-                    "memberId": "$.trigger.memberId",
-                    "email": "$.trigger.email"
+                    "to": "$.nodes.prepare-registration-vars.result.data.email",
+                    "template": "member-registration-welcome",
+                    "vars": {
+                        "memberScaName": "$.nodes.prepare-registration-vars.result.data.memberScaName",
+                        "passwordResetUrl": "$.nodes.prepare-registration-vars.result.data.passwordResetUrl",
+                        "portalName": "$.nodes.prepare-registration-vars.result.data.portalName",
+                        "siteAdminSignature": "$.nodes.prepare-registration-vars.result.data.siteAdminSignature"
+                    }
                 }
             },
             "position": {
-                "x": 950,
+                "x": 1250,
                 "y": 300
             },
             "outputs": [
@@ -87,13 +113,20 @@
             "type": "action",
             "label": "Notify Secretary of New Member",
             "config": {
-                "action": "Members.NotifySecretaryOfNewMember",
+                "action": "Core.SendEmail",
                 "params": {
-                    "memberId": "$.trigger.memberId"
+                    "to": "$.nodes.prepare-registration-vars.result.data.adultSecretaryEmail",
+                    "template": "member-registration-secretary",
+                    "vars": {
+                        "memberScaName": "$.nodes.prepare-registration-vars.result.data.memberScaName",
+                        "memberViewUrl": "$.nodes.prepare-registration-vars.result.data.memberViewUrl",
+                        "memberCardPresent": "$.nodes.prepare-registration-vars.result.data.memberCardPresent",
+                        "siteAdminSignature": "$.nodes.prepare-registration-vars.result.data.siteAdminSignature"
+                    }
                 }
             },
             "position": {
-                "x": 1250,
+                "x": 1550,
                 "y": 300
             },
             "outputs": [
@@ -107,13 +140,20 @@
             "type": "action",
             "label": "Notify Secretary of New Minor",
             "config": {
-                "action": "Members.NotifySecretaryOfNewMinorMember",
+                "action": "Core.SendEmail",
                 "params": {
-                    "memberId": "$.trigger.memberId"
+                    "to": "$.nodes.prepare-registration-vars.result.data.minorSecretaryEmail",
+                    "template": "member-registration-secretary-minor",
+                    "vars": {
+                        "memberScaName": "$.nodes.prepare-registration-vars.result.data.memberScaName",
+                        "memberViewUrl": "$.nodes.prepare-registration-vars.result.data.memberViewUrl",
+                        "memberCardPresent": "$.nodes.prepare-registration-vars.result.data.memberCardPresent",
+                        "siteAdminSignature": "$.nodes.prepare-registration-vars.result.data.siteAdminSignature"
+                    }
                 }
             },
             "position": {
-                "x": 950,
+                "x": 1250,
                 "y": 100
             },
             "outputs": [
@@ -128,7 +168,7 @@
             "label": "Registration Complete",
             "config": {},
             "position": {
-                "x": 1550,
+                "x": 1850,
                 "y": 200
             },
             "outputs": []

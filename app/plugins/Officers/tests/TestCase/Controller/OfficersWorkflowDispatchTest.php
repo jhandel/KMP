@@ -351,8 +351,11 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
                 ->willReturnCallback(function (string $event, array $context) use (&$dispatched) {
                     $dispatched = true;
                     $this->assertSame('Officers.Released', $event);
-                    $this->assertArrayHasKey('officer_id', $context);
-                    $this->assertArrayHasKey('released_by', $context);
+                    $this->assertArrayHasKey('officerId', $context);
+                    $this->assertArrayHasKey('memberId', $context);
+                    $this->assertArrayHasKey('officeId', $context);
+                    $this->assertArrayHasKey('releasedById', $context);
+                    $this->assertArrayHasKey('expiresOn', $context);
                     $this->assertArrayHasKey('reason', $context);
 
                     return ['instance_id' => 888];

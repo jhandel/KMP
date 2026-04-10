@@ -138,8 +138,8 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             [
                 'name' => 'Officer Release',
                 'slug' => 'officers-release',
-                'description' => 'Releases an officer, recalculates office assignments, and sends ' .
-                    'release notification.',
+                'description' => 'Releases an officer through the same lifecycle as the legacy manager: ' .
+                    'stop active window, cancel warrants when required, and send release notification.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Officers.Released'],
                 'entity_type' => 'Officers',

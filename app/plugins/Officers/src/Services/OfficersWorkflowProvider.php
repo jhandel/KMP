@@ -58,7 +58,9 @@ class OfficersWorkflowProvider
                     'officerId' => ['type' => 'integer', 'label' => 'Officer ID'],
                     'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
                     'officeId' => ['type' => 'integer', 'label' => 'Office ID'],
+                    'releasedById' => ['type' => 'integer', 'label' => 'Released By Member ID'],
                     'reason' => ['type' => 'string', 'label' => 'Reason'],
+                    'expiresOn' => ['type' => 'datetime', 'label' => 'Release Date'],
                 ],
             ],
             [
@@ -106,6 +108,7 @@ class OfficersWorkflowProvider
                 'description' => 'Release an officer from their position',
                 'inputSchema' => [
                     'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true, 'description' => 'The officer record to release'],
+                    'releasedById' => ['type' => 'integer', 'label' => 'Released By Member ID'],
                     'reason' => ['type' => 'string', 'label' => 'Reason', 'default' => ''],
                     'expiresOn' => ['type' => 'datetime', 'label' => 'Release Date'],
                 ],
@@ -115,20 +118,6 @@ class OfficersWorkflowProvider
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'releaseOfficer',
                 'isAsync' => false,
-            ],
-            [
-                'action' => 'Officers.SendHireNotification',
-                'label' => 'Send Hire Notification',
-                'description' => 'Send email notification about officer hire',
-                'inputSchema' => [
-                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true, 'description' => 'The officer record to notify about'],
-                ],
-                'outputSchema' => [
-                    'sent' => ['type' => 'boolean'],
-                ],
-                'serviceClass' => $actionsClass,
-                'serviceMethod' => 'sendHireNotification',
-                'isAsync' => true,
             ],
             [
                 'action' => 'Officers.RequestWarrantRoster',
@@ -195,19 +184,46 @@ class OfficersWorkflowProvider
                 'isAsync' => false,
             ],
             [
-                'action' => 'Officers.SendReleaseNotification',
-                'label' => 'Send Release Notification',
-                'description' => 'Send email notification about officer release',
+                'action' => 'Officers.PrepareHireNotificationVars',
+                'label' => 'Prepare Hire Notification Vars',
+                'description' => 'Load officer, member, and branch data and format all variables needed by the officer-hire-notification email template',
                 'inputSchema' => [
-                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true, 'description' => 'The officer record to notify about'],
-                    'reason' => ['type' => 'string', 'label' => 'Reason', 'description' => 'Reason for release'],
+                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true],
                 ],
                 'outputSchema' => [
-                    'sent' => ['type' => 'boolean'],
+                    'to' => ['type' => 'string', 'label' => 'Recipient Email'],
+                    'memberScaName' => ['type' => 'string', 'label' => 'Member SCA Name'],
+                    'officeName' => ['type' => 'string', 'label' => 'Office Name'],
+                    'branchName' => ['type' => 'string', 'label' => 'Branch Name'],
+                    'hireDate' => ['type' => 'string', 'label' => 'Hire Date (formatted)'],
+                    'endDate' => ['type' => 'string', 'label' => 'End Date (formatted)'],
+                    'requiresWarrantNotice' => ['type' => 'string', 'label' => 'Warrant Notice (empty if not required)'],
+                    'siteAdminSignature' => ['type' => 'string', 'label' => 'Site Admin Signature'],
                 ],
                 'serviceClass' => $actionsClass,
-                'serviceMethod' => 'sendReleaseNotification',
-                'isAsync' => true,
+                'serviceMethod' => 'prepareHireNotificationVars',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Officers.PrepareReleaseNotificationVars',
+                'label' => 'Prepare Release Notification Vars',
+                'description' => 'Load officer, member, and branch data and format all variables needed by the officer-release-notification email template',
+                'inputSchema' => [
+                    'officerId' => ['type' => 'integer', 'label' => 'Officer ID', 'required' => true],
+                    'reason' => ['type' => 'string', 'label' => 'Release Reason'],
+                ],
+                'outputSchema' => [
+                    'to' => ['type' => 'string', 'label' => 'Recipient Email'],
+                    'memberScaName' => ['type' => 'string', 'label' => 'Member SCA Name'],
+                    'officeName' => ['type' => 'string', 'label' => 'Office Name'],
+                    'branchName' => ['type' => 'string', 'label' => 'Branch Name'],
+                    'reason' => ['type' => 'string', 'label' => 'Release Reason'],
+                    'releaseDate' => ['type' => 'string', 'label' => 'Release Date (formatted)'],
+                    'siteAdminSignature' => ['type' => 'string', 'label' => 'Site Admin Signature'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'prepareReleaseNotificationVars',
+                'isAsync' => false,
             ],
         ]);
     }

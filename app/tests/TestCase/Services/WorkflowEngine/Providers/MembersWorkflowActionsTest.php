@@ -162,6 +162,38 @@ class MembersWorkflowActionsTest extends BaseTestCase
         $this->assertNotEmpty($result['data']['resetUrl']);
     }
 
+    public function testSendPasswordResetQueuesSluggedTemplate(): void
+    {
+        $mockAuthService = $this->createMock(MemberAuthenticationService::class);
+        $mockAuthService->method('generatePasswordResetToken')
+            ->willReturn([
+                'found' => true,
+                'email' => 'bryce@ampdemo.com',
+                'resetUrl' => 'http://localhost/members/reset-password/test-token',
+            ]);
+
+        $actionsWithMock = $this->getMockBuilder(MembersWorkflowActions::class)
+            ->setConstructorArgs([$mockAuthService])
+            ->onlyMethods(['queueMail'])
+            ->getMock();
+
+        $actionsWithMock->expects($this->once())
+            ->method('queueMail')
+            ->with(
+                'KMP',
+                'sendFromTemplate',
+                'bryce@ampdemo.com',
+                $this->callback(function (array $vars): bool {
+                    return ($vars['_templateId'] ?? null) === 'password-reset'
+                        && ($vars['email'] ?? null) === 'bryce@ampdemo.com'
+                        && ($vars['passwordResetUrl'] ?? null) === 'http://localhost/members/reset-password/test-token'
+                        && array_key_exists('siteAdminSignature', $vars);
+                }),
+            );
+
+        $actionsWithMock->sendPasswordReset([], ['emailAddress' => 'bryce@ampdemo.com']);
+    }
+
     public function testSendPasswordResetFailsForUnknownEmail(): void
     {
         $mockAuthService = $this->createMock(MemberAuthenticationService::class);
@@ -221,6 +253,45 @@ class MembersWorkflowActionsTest extends BaseTestCase
         $this->assertTrue($result['data']['transitioned']);
         $this->assertEquals(Member::STATUS_ACTIVE, $result['data']['status']);
         $this->assertEquals(Member::STATUS_UNVERIFIED_MINOR, $result['data']['previousStatus']);
+    }
+
+    public function testAssignStatusAndTokensPreservesExistingAdultResetToken(): void
+    {
+        $this->skipIfPostgres();
+
+        $uid = substr(md5(uniqid('assign')), 0, 8);
+        $conn = $this->membersTable->getConnection();
+        $existingToken = 'keep-existing-token';
+        $futureExpiry = DateTime::now()->addDays(1)->format('Y-m-d H:i:s');
+        $conn->execute(
+            "INSERT INTO members (
+                public_id, sca_name, first_name, last_name, email_address, password,
+                password_token, password_token_expires_on, status, birth_month, birth_year, branch_id, created
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+            [
+                $uid,
+                'Preserve Token Adult',
+                'Preserve',
+                'Token',
+                'preserve_' . $uid . '@example.com',
+                password_hash('test12345', PASSWORD_DEFAULT),
+                $existingToken,
+                $futureExpiry,
+                Member::STATUS_DEACTIVATED,
+                1,
+                (int)date('Y') - 30,
+                self::KINGDOM_BRANCH_ID,
+            ],
+        );
+        $memberId = (int)$conn->execute('SELECT LAST_INSERT_ID() AS id')->fetchColumn(0);
+
+        $result = $this->actions->assignStatusAndTokens([], ['memberId' => $memberId]);
+
+        $this->assertTrue($result['success']);
+
+        $updated = $this->membersTable->get($memberId);
+        $this->assertSame($existingToken, $updated->password_token);
+        $this->assertEquals(Member::STATUS_ACTIVE, $updated->status);
     }
 
     public function testAgeUpMemberTransitionsVerifiedMinorToVerifiedMembership(): void

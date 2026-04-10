@@ -71,7 +71,7 @@
                 "action": "Core.SendEmail",
                 "params": {
                     "to": "crown@ansteorra.org",
-                    "template": "11",
+                    "template": "award-recommendation-submitted",
                     "vars": {
                         "memberScaName": "$.nodes.create-recommendation.result.data.eventPayload.memberScaName",
                         "awardName": "$.nodes.create-recommendation.result.data.eventPayload.awardName",

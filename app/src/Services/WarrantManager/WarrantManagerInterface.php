@@ -6,6 +6,7 @@ namespace App\Services\WarrantManager;
 use App\Model\Entity\WarrantPeriod;
 use App\Services\ServiceResult;
 use Cake\I18n\DateTime;
+use DateTimeInterface;
 
 /**
  * Warrant Manager Interface
@@ -29,16 +30,6 @@ interface WarrantManagerInterface
      * @return \App\Services\ServiceResult Success with roster ID, or failure with errors
      */
     public function request($request_name, $desc, $warrantRequests, ?int $requestedBy = null): ServiceResult;
-
-    /**
-     * Approve a warrant roster and activate all contained warrants.
-     *
-     * @param int $warrant_roster_id ID of the WarrantRoster to approve
-     * @param int $approver_id ID of the member providing approval
-     * @param string|null $comment Optional comment from the approver
-     * @return \App\Services\ServiceResult Success if approval recorded, failure with errors
-     */
-    public function approve($warrant_roster_id, $approver_id, ?string $comment = null): ServiceResult;
 
     /**
      * Decline an entire warrant roster and cancel all contained warrants.
@@ -87,15 +78,17 @@ interface WarrantManagerInterface
      * Activate warrants in an already-approved roster.
      *
      * Expects roster status=APPROVED and correct approval_count.
-     * Activates pending warrants, expires overlapping ones, sends notifications.
+     * Activates pending warrants and expires overlapping ones.
      * Idempotent: returns success if no pending warrants remain.
      *
      * @param int $rosterId ID of the approved WarrantRoster
      * @param int $approverId ID of the member who approved
-     * @param bool $sendNotifications Whether to send email notifications (false when workflow handles notifications)
-     * @return ServiceResult Success if warrants activated or already active
+     * @return \App\Services\ServiceResult Success if warrants activated or already active
      */
-    public function activateApprovedRoster(int $rosterId, int $approverId, bool $sendNotifications = true): ServiceResult;
+    public function activateApprovedRoster(
+        int $rosterId,
+        int $approverId,
+    ): ServiceResult;
 
     /**
      * Sync a workflow approval response to the roster's denormalized counter.
@@ -106,11 +99,18 @@ interface WarrantManagerInterface
      *
      * @param int $rosterId ID of the WarrantRoster
      * @param int $approverId ID of the approving member
-     * @param string|null $notes Optional approval notes (unused, kept for interface compat)
-     * @param \DateTimeInterface|null $approvedOn When approval occurred (unused, kept for interface compat)
-     * @return ServiceResult Success after counter increment
+     * @param string|null $notes
+     *   Optional approval notes (unused, kept for interface compat)
+     * @param \DateTimeInterface|null $approvedOn
+     *   When approval occurred (unused, kept for interface compat)
+     * @return \App\Services\ServiceResult Success after counter increment
      */
-    public function syncWorkflowApprovalToRoster(int $rosterId, int $approverId, ?string $notes = null, ?\DateTimeInterface $approvedOn = null): ServiceResult;
+    public function syncWorkflowApprovalToRoster(
+        int $rosterId,
+        int $approverId,
+        ?string $notes = null,
+        ?DateTimeInterface $approvedOn = null,
+    ): ServiceResult;
 
     /**
      * Find or create a warrant period covering the specified date range.

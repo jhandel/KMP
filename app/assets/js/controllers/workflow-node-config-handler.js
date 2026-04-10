@@ -40,7 +40,7 @@ export default class WorkflowNodeConfigHandler {
                 }
             })
             // Load email template dropdown options
-            this._loadEmailTemplateOptions(nodeConfig)
+            this._loadEmailTemplateOptions(nodeConfig, nodeId)
         }
     }
 
@@ -433,8 +433,10 @@ export default class WorkflowNodeConfigHandler {
     /**
      * Fetch active email templates from the API and populate any
      * email-template-select dropdowns in the config panel.
+     * @param {object} nodeConfig
+     * @param {string} nodeId
      */
-    _loadEmailTemplateOptions(nodeConfig) {
+    _loadEmailTemplateOptions(nodeConfig, nodeId) {
         const selects = this.nodeConfigTarget.querySelectorAll('[data-email-template-select]')
         if (selects.length === 0) return
 
@@ -450,64 +452,203 @@ export default class WorkflowNodeConfigHandler {
 
         this._emailTemplateOptionsPromise.then(options => {
             selects.forEach(select => {
-                select.innerHTML = '<option value="">Select a template...</option>'
+                select.innerHTML = '<option value="">Select a template…</option>'
                 options.forEach(opt => {
                     const sel = String(opt.value) === currentTemplateId ? 'selected' : ''
-                    const subj = opt.subjectPreview
-                        ? ` — ${opt.subjectPreview.substring(0, 50)}`
-                        : ''
-                    select.innerHTML += `<option value="${opt.value}" ${sel}
-                        data-available-vars='${JSON.stringify(opt.availableVars || [])}'
-                        data-subject="${(opt.subjectPreview || '').replace(/"/g, '&quot;')}"
-                        >${opt.label}${subj}</option>`
+                    // Build accessible option label: prefer name, show slug as secondary
+                    let optLabel = opt.label
+                    if (opt.slug && opt.label !== opt.slug) {
+                        optLabel = `${opt.label} [${opt.slug}]`
+                    } else if (!opt.slug && !opt.isWorkflowNative) {
+                        // Legacy mailer-backed: keep label as-is (already humanized)
+                    }
+                    const el = document.createElement('option')
+                    el.value = opt.value
+                    if (sel) el.selected = true
+                    el.textContent = optLabel
+                    el.dataset.availableVars = JSON.stringify(opt.availableVars || [])
+                    el.dataset.variablesSchema = JSON.stringify(opt.variablesSchema || [])
+                    el.dataset.parsedPlaceholders = JSON.stringify(opt.parsedPlaceholders || [])
+                    el.dataset.subject = opt.subjectPreview || ''
+                    el.dataset.slug = opt.slug || ''
+                    el.dataset.isWorkflowNative = opt.isWorkflowNative ? '1' : '0'
+                    select.appendChild(el)
                 })
-                // Show hint for the currently selected template
+                // Show analysis for the currently selected template
                 if (currentTemplateId) {
-                    this._showTemplateHint(select)
+                    this._renderTemplateAnalysis(select, nodeId)
                 }
             })
         })
     }
 
     /**
-     * Handle email template dropdown change: save to config and show vars hint.
+     * Handle email template dropdown change: save to config and show analysis.
      */
     onEmailTemplateChange(event) {
         const select = event.target
-        this._showTemplateHint(select)
+        const nodeId = event.target.closest('form')?.dataset.nodeId
+        this._renderTemplateAnalysis(select, nodeId)
         // Trigger normal config save
         this.updateNodeConfig(event)
     }
 
     /**
-     * Show available variables hint below the template dropdown.
+     * Render a rich variable-mapping analysis panel below the template dropdown.
+     *
+     * Shows:
+     *  - Template identity (name + slug badge, workflow-native indicator)
+     *  - Required vs optional variables from variables_schema
+     *  - Whether each is mapped/unmapped against available workflow context vars
+     *  - Parsed subject placeholders not covered by variables_schema
+     *
+     * @param {HTMLSelectElement} select
+     * @param {string|null} nodeId - current node id, used to resolve available vars
      */
-    _showTemplateHint(select) {
+    _renderTemplateAnalysis(select, nodeId) {
         const option = select.selectedOptions[0]
-        const hintEl = select.closest('.mb-3')?.querySelector('.email-template-hint')
-        if (!hintEl) return
+        const analysisEl = select.closest('.mb-3')?.querySelector('.email-template-analysis')
+        if (!analysisEl) return
 
         if (!option || !option.value) {
-            hintEl.innerHTML = ''
+            analysisEl.innerHTML = ''
             return
         }
 
+        // Parse metadata stored on the option
+        let variablesSchema = []
+        let parsedPlaceholders = []
         let availableVars = []
-        try {
-            availableVars = JSON.parse(option.dataset.availableVars || '[]')
-        } catch { /* ignore */ }
+        try { variablesSchema = JSON.parse(option.dataset.variablesSchema || '[]') } catch { /* ignore */ }
+        try { parsedPlaceholders = JSON.parse(option.dataset.parsedPlaceholders || '[]') } catch { /* ignore */ }
+        try { availableVars = JSON.parse(option.dataset.availableVars || '[]') } catch { /* ignore */ }
 
-        if (availableVars.length > 0) {
-            const varNames = availableVars.map(v => typeof v === 'object' ? v.name : v)
-            hintEl.innerHTML = `<small class="text-muted">
-                <i class="bi bi-info-circle"></i>
-                Available variables: <code>${varNames.join('</code>, <code>')}</code>
-            </small>`
-        } else {
-            hintEl.innerHTML = `<small class="text-muted">
-                <i class="bi bi-info-circle"></i> Subject: ${option.dataset.subject || 'N/A'}
-            </small>`
+        const slug = option.dataset.slug || ''
+        const isWorkflowNative = option.dataset.isWorkflowNative === '1'
+        const subjectPreview = option.dataset.subject || ''
+
+        // Build the set of available workflow variable names (short names from paths like $.entity.field → field)
+        const workflowVarPaths = new Set()
+        const workflowVarNames = new Set()
+        if (nodeId && this.variablePicker) {
+            const nodeData = this.editor.getNodeFromId(nodeId)
+            if (nodeData) {
+                const wfVars = this.variablePicker.buildVariableList(nodeId, this.editor)
+                wfVars.forEach(v => {
+                    workflowVarPaths.add(v.path)
+                    // Extract trailing name component ($.entity.someField → someField)
+                    const parts = v.path.split('.')
+                    workflowVarNames.add(parts[parts.length - 1])
+                    workflowVarNames.add(v.path) // also match full path
+                })
+            }
         }
+
+        let html = '<div class="border rounded p-2 bg-light">'
+
+        // Identity badge row
+        html += '<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">'
+        if (isWorkflowNative && slug) {
+            html += `<span class="badge bg-primary" title="Workflow-native template"><i class="bi bi-diagram-3 me-1"></i>${this._escHtml(slug)}</span>`
+        } else if (slug) {
+            html += `<span class="badge bg-secondary" title="Slug">${this._escHtml(slug)}</span>`
+        } else {
+            html += '<span class="badge bg-warning text-dark" title="Legacy mailer-backed template (no slug)"><i class="bi bi-exclamation-triangle me-1"></i>Legacy</span>'
+        }
+        if (subjectPreview) {
+            html += `<small class="text-muted text-truncate" style="max-width:220px;" title="${this._escHtml(subjectPreview)}">Subject: ${this._escHtml(subjectPreview.substring(0, 60))}${subjectPreview.length > 60 ? '…' : ''}</small>`
+        }
+        html += '</div>'
+
+        const schemaNames = new Set(variablesSchema.map(e => e.name).filter(Boolean))
+        const hasSchema = variablesSchema.length > 0
+        const hasPlaceholders = parsedPlaceholders.length > 0
+
+        if (hasSchema) {
+            const required = variablesSchema.filter(e => e.required)
+            const optional = variablesSchema.filter(e => !e.required)
+            let missingRequired = 0
+
+            const renderRow = (entry) => {
+                const name = entry.name || ''
+                const type = entry.type || 'string'
+                const desc = entry.description ? ` — ${entry.description}` : ''
+                const req = entry.required
+                const mapped = workflowVarNames.has(name) || workflowVarNames.size === 0
+                let statusIcon, statusClass
+                if (workflowVarNames.size === 0) {
+                    // No workflow context available — neutral display
+                    statusIcon = '<i class="bi bi-dash-circle text-secondary"></i>'
+                    statusClass = ''
+                } else if (mapped) {
+                    statusIcon = '<i class="bi bi-check-circle-fill text-success"></i>'
+                    statusClass = ''
+                } else {
+                    statusIcon = req
+                        ? '<i class="bi bi-x-circle-fill text-danger"></i>'
+                        : '<i class="bi bi-dash-circle text-warning"></i>'
+                    statusClass = req ? 'text-danger' : 'text-warning'
+                    if (req) missingRequired++
+                }
+                const reqBadge = req ? '<span class="badge bg-danger ms-1" style="font-size:0.65em;">required</span>' : '<span class="badge bg-secondary ms-1" style="font-size:0.65em;">optional</span>'
+                return `<li class="d-flex align-items-center gap-1 ${statusClass}" style="font-size:0.8em;">
+                    ${statusIcon}
+                    <code>${this._escHtml(name)}</code><span class="text-muted">(${this._escHtml(type)})</span>${reqBadge}${desc ? `<span class="text-muted ms-1">${this._escHtml(desc)}</span>` : ''}
+                </li>`
+            }
+
+            if (required.length > 0) {
+                html += '<div class="mb-1"><strong class="small">Required variables</strong>'
+                html += '<ul class="list-unstyled mb-0 mt-1">'
+                required.forEach(e => { html += renderRow(e) })
+                html += '</ul></div>'
+            }
+            if (optional.length > 0) {
+                html += '<div class="mb-1"><strong class="small">Optional variables</strong>'
+                html += '<ul class="list-unstyled mb-0 mt-1">'
+                optional.forEach(e => { html += renderRow(e) })
+                html += '</ul></div>'
+            }
+
+            // Summary warning if required vars are unmapped
+            if (missingRequired > 0) {
+                html += `<div class="alert alert-danger py-1 px-2 mb-0 mt-1" style="font-size:0.8em;" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    ${missingRequired} required variable${missingRequired > 1 ? 's are' : ' is'} not mapped from workflow context. Check your workflow variables.
+                </div>`
+            }
+
+            // Surface any subject placeholders not covered by schema
+            const uncoveredPlaceholders = parsedPlaceholders.filter(p => !schemaNames.has(p))
+            if (uncoveredPlaceholders.length > 0) {
+                html += `<div class="mt-1"><small class="text-muted"><i class="bi bi-info-circle me-1"></i>Subject also uses: ${uncoveredPlaceholders.map(p => `<code>${this._escHtml(p)}</code>`).join(', ')} (not in schema)</small></div>`
+            }
+        } else if (hasPlaceholders) {
+            // No schema, show placeholders from subject as a fallback hint
+            html += `<div><small class="text-muted"><i class="bi bi-info-circle me-1"></i>Subject placeholders: ${parsedPlaceholders.map(p => `<code>${this._escHtml(p)}</code>`).join(', ')}</small></div>`
+        } else if (availableVars.length > 0) {
+            const varNames = availableVars.map(v => typeof v === 'object' ? (v.name || v) : v)
+            html += `<small class="text-muted"><i class="bi bi-info-circle me-1"></i>Available vars: <code>${varNames.map(n => this._escHtml(n)).join('</code>, <code>')}</code></small>`
+        } else {
+            html += '<small class="text-muted"><i class="bi bi-info-circle me-1"></i>No variable schema defined for this template.</small>'
+        }
+
+        html += '</div>'
+        analysisEl.innerHTML = html
+    }
+
+    /**
+     * HTML-escape a string for safe inline rendering.
+     * @param {string} str
+     * @returns {string}
+     */
+    _escHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
     }
 
     // --- Key-Value Editor methods ---

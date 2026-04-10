@@ -181,42 +181,6 @@ parameters:
 			path: plugins/Activities/src/KMP/GridColumns/MemberAuthorizationsGridColumns.php
 
 		-
-			message: '#^Method Activities\\Mailer\\ActivitiesMailer\:\:render\(\) should return array but returns \$this\(Activities\\Mailer\\ActivitiesMailer\)\.$#'
-			identifier: return.type
-			count: 1
-			path: plugins/Activities/src/Mailer/ActivitiesMailer.php
-
-		-
-			message: '#^Offset ''function'' on array\{function\: string, line\?\: int, file\?\: string, class\: class\-string, type\?\: ''\-\>''\|''\:\:'', args\?\: array\<mixed\>, object\?\: object\} in isset\(\) always exists and is not nullable\.$#'
-			identifier: isset.offset
-			count: 1
-			path: plugins/Activities/src/Mailer/ActivitiesMailer.php
-
-		-
-			message: '#^Offset ''html'' on array\{html\: string, text\: string\} on left side of \?\? always exists and is not nullable\.$#'
-			identifier: nullCoalesce.offset
-			count: 2
-			path: plugins/Activities/src/Mailer/ActivitiesMailer.php
-
-		-
-			message: '#^Offset ''text'' on array\{html\: string, text\: string\} on left side of \?\? always exists and is not nullable\.$#'
-			identifier: nullCoalesce.offset
-			count: 1
-			path: plugins/Activities/src/Mailer/ActivitiesMailer.php
-
-		-
-			message: '#^PHPDoc tag @param references unknown parameter\: \$ApproverScaName$#'
-			identifier: parameter.notFound
-			count: 1
-			path: plugins/Activities/src/Mailer/ActivitiesMailer.php
-
-		-
-			message: '#^Return type \(array\) of method Activities\\Mailer\\ActivitiesMailer\:\:render\(\) should be compatible with return type \(\$this\(Cake\\Mailer\\Mailer\)\) of method Cake\\Mailer\\Mailer\:\:render\(\)$#'
-			identifier: method.childReturnType
-			count: 1
-			path: plugins/Activities/src/Mailer/ActivitiesMailer.php
-
-		-
 			message: '#^PHPDoc tag @property for property Activities\\Model\\Table\\ActivitiesTable\:\:\$ActivityGroups contains unresolvable type\.$#'
 			identifier: propertyTag.unresolvableType
 			count: 1
@@ -1487,36 +1451,6 @@ parameters:
 			identifier: closure.unusedUse
 			count: 1
 			path: plugins/Officers/src/Controller/RostersController.php
-
-		-
-			message: '#^Method Officers\\Mailer\\OfficersMailer\:\:render\(\) should return array but returns \$this\(Officers\\Mailer\\OfficersMailer\)\.$#'
-			identifier: return.type
-			count: 1
-			path: plugins/Officers/src/Mailer/OfficersMailer.php
-
-		-
-			message: '#^Offset ''function'' on array\{function\: string, line\?\: int, file\?\: string, class\: class\-string, type\?\: ''\-\>''\|''\:\:'', args\?\: array\<mixed\>, object\?\: object\} in isset\(\) always exists and is not nullable\.$#'
-			identifier: isset.offset
-			count: 1
-			path: plugins/Officers/src/Mailer/OfficersMailer.php
-
-		-
-			message: '#^Offset ''html'' on array\{html\: string, text\: string\} on left side of \?\? always exists and is not nullable\.$#'
-			identifier: nullCoalesce.offset
-			count: 2
-			path: plugins/Officers/src/Mailer/OfficersMailer.php
-
-		-
-			message: '#^Offset ''text'' on array\{html\: string, text\: string\} on left side of \?\? always exists and is not nullable\.$#'
-			identifier: nullCoalesce.offset
-			count: 1
-			path: plugins/Officers/src/Mailer/OfficersMailer.php
-
-		-
-			message: '#^Return type \(array\) of method Officers\\Mailer\\OfficersMailer\:\:render\(\) should be compatible with return type \(\$this\(Cake\\Mailer\\Mailer\)\) of method Cake\\Mailer\\Mailer\:\:render\(\)$#'
-			identifier: method.childReturnType
-			count: 1
-			path: plugins/Officers/src/Mailer/OfficersMailer.php
 
 		-
 			message: '#^Access to an undefined property Officers\\Model\\Entity\\Officer\:\:\$reports_to_office_id\.$#'
@@ -5693,12 +5627,6 @@ parameters:
 			identifier: variable.undefined
 			count: 1
 			path: src/Services/ImpersonationService.php
-
-		-
-			message: '#^Constant ROOT not found\.$#'
-			identifier: constant.notFound
-			count: 1
-			path: src/Services/MailerDiscoveryService.php
 
 		-
 			message: '#^Constant ROOT not found\.$#'

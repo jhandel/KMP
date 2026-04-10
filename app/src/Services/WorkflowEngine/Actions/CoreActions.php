@@ -41,13 +41,9 @@ class CoreActions
     /**
      * Send an email notification.
      *
-     * Two modes:
-     *  - Generic template: config has 'template' (DB template ID) — routes through
-     *    KMPMailer::sendFromTemplate() so no dedicated mailer method is needed.
-     *  - Legacy: config has 'mailer' + 'action' — calls the specific mailer method.
-     *
-     * Both paths go through QueuedMailerAwareTrait → TemplateAwareMailerTrait,
-     * so email queuing and DB template rendering work automatically.
+     * The action requires a 'template' value, which is normally a stable slug such as
+     * "warrant-issued". Numeric IDs are still accepted for migration compatibility and
+     * route through the same KMPMailer::sendFromTemplate path.
      *
      * @param array $context Current workflow context
      * @param array $config Action configuration
@@ -66,23 +62,16 @@ class CoreActions
                 ? $this->resolveValue($config['replyTo'], $context)
                 : null;
 
-            if (!empty($config['template'])) {
-                // Generic template path — look up email template by ID
-                $templateId = $this->resolveValue($config['template'], $context);
-                $mergedVars = array_merge(['_templateId' => $templateId], $vars);
-                if ($replyTo) {
-                    $mergedVars['_replyTo'] = $replyTo;
-                }
-                $this->queueMail('KMP', 'sendFromTemplate', $to, $mergedVars);
-            } else {
-                // Legacy mailer + action path
-                $mailerName = $config['mailer'] ?? 'KMP';
-                $action = $config['action'] ?? '';
-                if ($replyTo) {
-                    $vars['replyTo'] = $replyTo;
-                }
-                $this->queueMail($mailerName, $action, $to, $vars);
+            if (empty($config['template'])) {
+                throw new \RuntimeException('Core.SendEmail requires a template slug or numeric template ID.');
             }
+
+            $templateRef = (string)$this->resolveValue($config['template'], $context);
+            $mergedVars = array_merge(['_templateId' => $templateRef], $vars);
+            if ($replyTo) {
+                $mergedVars['_replyTo'] = $replyTo;
+            }
+            $this->queueMail('KMP', 'sendFromTemplate', $to, $mergedVars);
 
             return ['sent' => true];
         } catch (\Throwable $e) {

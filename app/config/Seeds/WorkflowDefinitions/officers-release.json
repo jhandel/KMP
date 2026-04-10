@@ -25,6 +25,7 @@
                 "action": "Officers.ReleaseOfficer",
                 "params": {
                     "officerId": "$.trigger.officerId",
+                    "releasedById": "$.trigger.releasedById",
                     "expiresOn": "$.trigger.expiresOn",
                     "reason": "$.trigger.reason"
                 }
@@ -36,18 +37,18 @@
             "outputs": [
                 {
                     "port": "next",
-                    "target": "recalculate-office"
+                    "target": "prepare-release-notification-vars"
                 }
             ]
         },
-        "recalculate-office": {
+        "prepare-release-notification-vars": {
             "type": "action",
-            "label": "Recalculate Officers for Office",
+            "label": "Prepare Release Notification Vars",
             "config": {
-                "action": "Officers.RecalculateOfficersForOffice",
+                "action": "Officers.PrepareReleaseNotificationVars",
                 "params": {
-                    "officeId": "$.trigger.officeId",
-                    "updaterId": "$.trigger.releasedById"
+                    "officerId": "$.trigger.officerId",
+                    "reason": "$.trigger.reason"
                 }
             },
             "position": {
@@ -65,10 +66,18 @@
             "type": "action",
             "label": "Send Release Notification",
             "config": {
-                "action": "Officers.SendReleaseNotification",
+                "action": "Core.SendEmail",
                 "params": {
-                    "officerId": "$.trigger.officerId",
-                    "reason": "$.trigger.reason"
+                    "to": "$.nodes.prepare-release-notification-vars.result.data.to",
+                    "template": "officer-release-notification",
+                    "vars": {
+                        "memberScaName": "$.nodes.prepare-release-notification-vars.result.data.memberScaName",
+                        "officeName": "$.nodes.prepare-release-notification-vars.result.data.officeName",
+                        "branchName": "$.nodes.prepare-release-notification-vars.result.data.branchName",
+                        "reason": "$.nodes.prepare-release-notification-vars.result.data.reason",
+                        "releaseDate": "$.nodes.prepare-release-notification-vars.result.data.releaseDate",
+                        "siteAdminSignature": "$.nodes.prepare-release-notification-vars.result.data.siteAdminSignature"
+                    }
                 }
             },
             "position": {

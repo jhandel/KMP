@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Officers\Services;
 
+use App\KMP\StaticHelpers;
 use App\KMP\TimezoneHelper;
 use App\Model\Entity\Warrant;
 use Cake\I18n\DateTime;
@@ -205,9 +206,16 @@ class DefaultOfficerManager implements OfficerManagerInterface
             "branchName" => $branch->name,
             "hireDate" => TimezoneHelper::formatDate($newOfficer->start_on),
             "endDate" => TimezoneHelper::formatDate($newOfficer->expires_on),
-            "requiresWarrant" => $office->requires_warrant
+            "requiresWarrantNotice" => $office->requires_warrant
+                ? 'Please note that this office requires a warrant. '
+                    . 'A request for that warrant has been forwarded to the Crown for approval.'
+                : '',
+            "siteAdminSignature" => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
         ];
-        $this->queueMail("Officers.Officers", "notifyOfHire", $member->email_address, $vars);
+        $this->queueMail('KMP', 'sendFromTemplate', $member->email_address, array_merge(
+            ['_templateId' => 'officer-hire-notification'],
+            $vars,
+        ));
 
         return new ServiceResult(true);
     }
@@ -604,8 +612,12 @@ class DefaultOfficerManager implements OfficerManagerInterface
             "branchName" => $branch->name,
             "reason" => $revokedReason,
             "releaseDate" => TimezoneHelper::formatDate($revokedOn),
+            "siteAdminSignature" => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
         ];
-        $this->queueMail("Officers.Officers", "notifyOfRelease", $member->email_address, $vars);
+        $this->queueMail('KMP', 'sendFromTemplate', $member->email_address, array_merge(
+            ['_templateId' => 'officer-release-notification'],
+            $vars,
+        ));
 
         try {
             $this->triggerDispatcher->dispatch('Officers.Released', [

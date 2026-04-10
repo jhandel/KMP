@@ -17,13 +17,6 @@ foreach ($approvalResponses as $response) {
     }
 }
 
-$canApprove = $warrantRoster->status == Warrant::PENDING_STATUS
-    && $user->checkCan("approve", $warrantRoster)
-    && !$userApprovedAlready;
-$canDecline = $warrantRoster->status == Warrant::PENDING_STATUS
-    && $user->checkCan("decline", $warrantRoster)
-    && !$userApprovedAlready;
-
 echo $this->KMP->startBlock("title");
 echo $this->KMP->getAppSetting("KMP.ShortSiteTitle") . ': View Warrant Approval Set - ' . $warrantRoster->name;
 $this->KMP->endBlock();
@@ -32,60 +25,12 @@ echo $this->KMP->startBlock("pageTitle") ?>
 <?= h($warrantRoster->name) ?>
 <?php $this->KMP->endBlock() ?>
 <?= $this->KMP->startBlock("recordActions") ?>
-<?php if ($canApprove || $canDecline): ?>
-<div data-controller="roster-approval"
-     data-roster-approval-approve-url-value="<?= $this->Url->build(['controller' => 'WarrantRosters', 'action' => 'approve', $warrantRoster->id]) ?>"
-     data-roster-approval-decline-url-value="<?= $this->Url->build(['controller' => 'WarrantRosters', 'action' => 'decline', $warrantRoster->id]) ?>"
-     style="display: inline;">
-    <?php if ($canApprove): ?>
-    <button type="button" class="btn btn-primary"
-        data-action="click->roster-approval#openApprove">
-        <i class="bi bi-check-circle me-1"></i><?= __('Approve') ?>
-    </button>
-    <?php endif ?>
-    <?php if ($canDecline): ?>
-    <button type="button" class="btn btn-danger"
-        data-action="click->roster-approval#openDecline">
-        <i class="bi bi-x-circle me-1"></i><?= __('Decline') ?>
-    </button>
-    <?php endif ?>
-
-    <!-- Approval Response Modal -->
-    <div class="modal fade" data-roster-approval-target="modal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i data-roster-approval-target="titleIcon" class="bi bi-check2-square me-2"></i>
-                        <span data-roster-approval-target="titleText"><?= __('Respond to Roster') ?></span>
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <?= $this->Form->create(null, [
-                    'url' => ['controller' => 'WarrantRosters', 'action' => 'approve', $warrantRoster->id],
-                    'data-roster-approval-target' => 'form',
-                ]) ?>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label" for="rosterApprovalComment"><?= __('Comment') ?>
-                            <span class="text-danger" data-roster-approval-target="commentHint" hidden><?= __('(required for declines)') ?></span>
-                        </label>
-                        <textarea class="form-control" id="rosterApprovalComment" name="comment" rows="3"
-                            data-roster-approval-target="comment"
-                            placeholder="<?= __('Optional comment...') ?>"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= __('Cancel') ?></button>
-                    <button type="submit" class="btn btn-primary" data-roster-approval-target="submitBtn">
-                        <?= __('Submit') ?>
-                    </button>
-                </div>
-                <?= $this->Form->end() ?>
-            </div>
-        </div>
-    </div>
-</div>
+<?php if ($warrantRoster->status === WarrantRoster::STATUS_PENDING): ?>
+<?= $this->Html->link(
+    __('Open My Approvals'),
+    ['controller' => 'Approvals', 'action' => 'approvals'],
+    ['class' => 'btn btn-primary']
+) ?>
 <?php endif ?>
 <?php $this->KMP->endBlock() ?>
 <?php $this->KMP->startBlock("recordDetails") ?>

@@ -140,7 +140,7 @@ class WorkflowPluginLoader
                 'inputSchema' => [
                     'to' => ['type' => 'string', 'label' => 'Recipient Email', 'required' => true],
                     'template' => ['type' => 'emailTemplate', 'label' => 'Email Template', 'required' => true,
-                        'description' => 'Select a database email template to use'],
+                        'description' => 'Template slug (e.g. "warrant-issued") or legacy numeric ID'],
                     'vars' => ['type' => 'object', 'label' => 'Template Variables'],
                     'replyTo' => ['type' => 'string', 'label' => 'Reply-To Email'],
                 ],

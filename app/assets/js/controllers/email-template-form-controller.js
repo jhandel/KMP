@@ -2,93 +2,115 @@ import { Controller } from "@hotwired/stimulus"
 
 /**
  * Email Template Form Controller
- * 
- * Manages the dynamic behavior of the email template form:
- * - Populates action methods based on selected mailer class
- * - Updates available variables when action is selected
- * - Updates default subject when action is selected
- * 
- * Usage:
- * <div data-controller="email-template-form"
- *      data-email-template-form-mailers-value='[...]'>
- *   <select data-email-template-form-target="mailerSelect"
- *           data-action="email-template-form#mailerChanged"></select>
- *   <select data-email-template-form-target="actionSelect"
- *           data-action="email-template-form#actionChanged"></select>
- *   <input data-email-template-form-target="availableVars">
- *   <input data-email-template-form-target="subjectTemplate">
- * </div>
+ *
+ * Manages the dynamic behaviour of the email template form:
+ * - Auto-generates slug from Name if slug is empty
+ * - Parses {{variable}} placeholders from template content and surfaces them
+ *   in the Variables Contract tab as an authoring aid
  */
 class EmailTemplateFormController extends Controller {
-    static targets = ["mailerSelect", "actionSelect", "availableVars", "subjectTemplate"]
-    
-    static values = {
-        mailers: { type: Array, default: [] }
+    static targets = [
+        "availableVars", "subjectTemplate",
+        "nameField", "slugField",
+        "htmlTemplate", "textTemplate",
+        "parsedVarsPanel", "parsedVarsList",
+    ]
+
+    connect() {
+        // Parse placeholders from existing template content on connect
+        this._refreshParsedPlaceholders()
+    }
+
+    // ── Slug auto-generation ────────────────────────────────────────────────
+
+    /**
+     * Called on name field input. Auto-fills slug if slug is currently empty.
+     */
+    nameChanged() {
+        if (!this.hasSlugFieldTarget || !this.hasNameFieldTarget) return
+
+        const slug = this.slugFieldTarget.value.trim()
+        if (slug !== '') return  // Don't overwrite a manually-entered slug
+
+        this.slugFieldTarget.value = this._slugify(this.nameFieldTarget.value)
     }
 
     /**
-     * Handle mailer class selection change
-     * Populates the action method dropdown with methods from the selected mailer
+     * Convert an arbitrary string to a valid slug (lowercase, hyphens).
+     * @param {string} text
+     * @returns {string}
      */
-    mailerChanged(event) {
-        const selectedClass = this.mailerSelectTarget.value
-        
-        // Clear action select
-        this.actionSelectTarget.innerHTML = '<option value="">-- Select Action --</option>'
-        
-        if (!selectedClass) {
+    _slugify(text) {
+        return text
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9\s-]/g, '')   // strip non-alphanum
+            .replace(/[\s_-]+/g, '-')         // spaces/underscores → hyphen
+            .replace(/^-+|-+$/g, '')          // trim leading/trailing hyphens
+    }
+
+    // ── Template placeholder parsing ────────────────────────────────────────
+
+    /**
+     * Called when html_template or text_template content changes.
+     * Refreshes the parsed-placeholders helper in the Variables Contract tab.
+     */
+    templateChanged() {
+        this._refreshParsedPlaceholders()
+    }
+
+    /**
+     * Parse {{varName}} placeholders from the HTML and text template fields
+     * and display them as a helper in the Variables Contract tab.
+     */
+    _refreshParsedPlaceholders() {
+        if (!this.hasParsedVarsPanelTarget || !this.hasParsedVarsListTarget) return
+
+        const htmlContent = this.hasHtmlTemplateTarget ? this.htmlTemplateTarget.value : ''
+        const textContent = this.hasTextTemplateTarget ? this.textTemplateTarget.value : ''
+        const combined = htmlContent + ' ' + textContent
+
+        const names = this._extractPlaceholders(combined)
+
+        if (names.length === 0) {
+            this.parsedVarsPanelTarget.style.display = 'none'
             return
         }
-        
-        // Find the selected mailer
-        const mailer = this.mailersValue.find(m => m.class === selectedClass)
-        
-        if (!mailer || !mailer.methods) {
-            return
-        }
-        
-        // Populate action methods
-        mailer.methods.forEach(method => {
-            const option = document.createElement('option')
-            option.value = method.name
-            option.textContent = method.name
-            option.dataset.vars = JSON.stringify(method.availableVars || [])
-            option.dataset.subject = method.defaultSubject || ''
-            this.actionSelectTarget.appendChild(option)
+
+        this.parsedVarsPanelTarget.style.display = ''
+        this.parsedVarsListTarget.innerHTML = ''
+
+        names.forEach(name => {
+            const badge = document.createElement('code')
+            badge.className = 'badge bg-secondary me-1 mb-1'
+            badge.style.fontSize = '0.85em'
+            badge.textContent = '{{' + name + '}}'
+            this.parsedVarsListTarget.appendChild(badge)
         })
-        
-        console.log(`Populated ${mailer.methods.length} methods for mailer: ${mailer.shortName}`)
     }
 
     /**
-     * Handle action method selection change
-     * Updates available variables and default subject
+     * Extract unique placeholder names from a template string.
+     * Matches {{varName}} and {{#if varName}} / {{/if}} / {{else}} patterns.
+     * Returns names sorted alphabetically, excluding control keywords.
+     *
+     * @param {string} content
+     * @returns {string[]}
      */
-    actionChanged(event) {
-        const selectedOption = this.actionSelectTarget.selectedOptions[0]
-        
-        // If no option selected, clear everything and return
-        if (!selectedOption) {
-            return
-        }
-        
-        // Always update available vars (clear if dataset.vars is missing)
-        if (this.hasAvailableVarsTarget) {
-            const varsValue = selectedOption.dataset.vars || ''
-            this.availableVarsTarget.value = varsValue
-            if (varsValue) {
-                console.log('Updated available vars:', varsValue)
+    _extractPlaceholders(content) {
+        const CONTROL_KEYWORDS = new Set(['if', 'else', '/if', '#if'])
+        const pattern = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}/g
+        const seen = new Set()
+        let match
+
+        while ((match = pattern.exec(content)) !== null) {
+            const name = match[1].trim()
+            if (!CONTROL_KEYWORDS.has(name)) {
+                seen.add(name)
             }
         }
-        
-        // Always update subject template (clear if dataset.subject is missing)
-        if (this.hasSubjectTemplateTarget) {
-            const subjectValue = selectedOption.dataset.subject || ''
-            this.subjectTemplateTarget.value = subjectValue
-            if (subjectValue) {
-                console.log('Updated subject template:', subjectValue)
-            }
-        }
+
+        return Array.from(seen).sort()
     }
 }
 

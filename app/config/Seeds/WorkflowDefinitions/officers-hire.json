@@ -180,6 +180,26 @@
             "outputs": [
                 {
                     "port": "next",
+                    "target": "prepare-hire-notification-vars"
+                }
+            ]
+        },
+        "prepare-hire-notification-vars": {
+            "type": "action",
+            "label": "Prepare Hire Notification Vars",
+            "config": {
+                "action": "Officers.PrepareHireNotificationVars",
+                "params": {
+                    "officerId": "$.nodes.create-officer.result.officerId"
+                }
+            },
+            "position": {
+                "x": 2150,
+                "y": 250
+            },
+            "outputs": [
+                {
+                    "port": "next",
                     "target": "send-hire-notification"
                 }
             ]
@@ -188,13 +208,23 @@
             "type": "action",
             "label": "Send Hire Notification",
             "config": {
-                "action": "Officers.SendHireNotification",
+                "action": "Core.SendEmail",
                 "params": {
-                    "officerId": "$.nodes.create-officer.result.officerId"
+                    "to": "$.nodes.prepare-hire-notification-vars.result.data.to",
+                    "template": "officer-hire-notification",
+                    "vars": {
+                        "memberScaName": "$.nodes.prepare-hire-notification-vars.result.data.memberScaName",
+                        "officeName": "$.nodes.prepare-hire-notification-vars.result.data.officeName",
+                        "branchName": "$.nodes.prepare-hire-notification-vars.result.data.branchName",
+                        "hireDate": "$.nodes.prepare-hire-notification-vars.result.data.hireDate",
+                        "endDate": "$.nodes.prepare-hire-notification-vars.result.data.endDate",
+                        "requiresWarrantNotice": "$.nodes.prepare-hire-notification-vars.result.data.requiresWarrantNotice",
+                        "siteAdminSignature": "$.nodes.prepare-hire-notification-vars.result.data.siteAdminSignature"
+                    }
                 }
             },
             "position": {
-                "x": 2150,
+                "x": 2450,
                 "y": 250
             },
             "outputs": [
@@ -209,7 +239,7 @@
             "label": "Hire Complete",
             "config": {},
             "position": {
-                "x": 2450,
+                "x": 2750,
                 "y": 250
             },
             "outputs": []
