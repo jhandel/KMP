@@ -165,7 +165,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
      * @param mixed $approver_id
      * @return \App\Services\ServiceResult
      */
-    public function approve($warrant_roster_id, $approver_id): ServiceResult
+    public function approve($warrant_roster_id, $approver_id, ?string $comment = null): ServiceResult
     {
         $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
         $warrantRoster = $warrantRosterTable->get($warrant_roster_id);
@@ -185,7 +185,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
             return new ServiceResult(false, 'No workflow approval found for roster. All rosters require a workflow approval instance.');
         }
 
-        return $this->approveViaWorkflow($workflowApproval, $approver_id);
+        return $this->approveViaWorkflow($workflowApproval, $approver_id, $comment);
     }
 
     public function activateApprovedRoster(int $rosterId, int $approverId, bool $sendNotifications = true): ServiceResult
@@ -556,13 +556,14 @@ class DefaultWarrantManager implements WarrantManagerInterface
     /**
      * Record an approval response through the workflow engine.
      */
-    protected function approveViaWorkflow(WorkflowApproval $approval, int $approverId): ServiceResult
+    protected function approveViaWorkflow(WorkflowApproval $approval, int $approverId, ?string $comment = null): ServiceResult
     {
+        $commentText = $comment ?: 'Approved via warrant roster';
         $result = $this->approvalManager->recordResponse(
             $approval->id,
             $approverId,
             'approve',
-            'Approved via warrant roster',
+            $commentText,
         );
 
         if (!$result->isSuccess()) {
@@ -579,7 +580,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
                     'approval' => $data,
                     'approverId' => $approverId,
                     'decision' => 'approve',
-                    'comment' => 'Approved via warrant roster',
+                    'comment' => $commentText,
                 ],
             );
         }

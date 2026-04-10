@@ -353,10 +353,9 @@ class WarrantRostersController extends AppController
         $this->Authorization->authorize($warrantRoster);
 
         $currentUserId = (int)$this->Authentication->getIdentity()->getIdentifier();
+        $comment = $this->request->getData('comment', '');
 
-        // Process approval through WarrantManager service
-        // WarrantManager handles workflow event dispatch internally for both legacy and workflow paths
-        $wmResult = $wManager->approve($warrantRoster->id, $currentUserId);
+        $wmResult = $wManager->approve($warrantRoster->id, $currentUserId, $comment ?: null);
 
         if ($wmResult->success) {
             $this->Flash->success(__('The approval has been been processed.'));
@@ -391,14 +390,18 @@ class WarrantRostersController extends AppController
         $this->Authorization->authorize($warrantRoster);
 
         $currentUserId = (int)$this->Authentication->getIdentity()->getIdentifier();
-        $declineReason = 'Declined from Warrant Roster View';
+        $comment = trim((string)$this->request->getData('comment', ''));
 
-        // Process decline through WarrantManager service with standard reason
-        // WarrantManager handles workflow event dispatch internally for both legacy and workflow paths
+        if (empty($comment)) {
+            $this->Flash->error(__('A reason is required when declining a roster.'));
+
+            return $this->redirect(['action' => 'view', $id]);
+        }
+
         $wmResult = $wManager->decline(
             $warrantRoster->id,
             $currentUserId,
-            $declineReason,
+            $comment,
         );
 
         if ($wmResult->success) {

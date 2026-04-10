@@ -34,9 +34,10 @@ interface WarrantManagerInterface
      *
      * @param int $warrant_roster_id ID of the WarrantRoster to approve
      * @param int $approver_id ID of the member providing approval
+     * @param string|null $comment Optional comment from the approver
      * @return \App\Services\ServiceResult Success if approval recorded, failure with errors
      */
-    public function approve($warrant_roster_id, $approver_id): ServiceResult;
+    public function approve($warrant_roster_id, $approver_id, ?string $comment = null): ServiceResult;
 
     /**
      * Decline an entire warrant roster and cancel all contained warrants.
