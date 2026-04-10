@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Controller;
@@ -126,7 +127,7 @@ class MembersController extends AppController
         if ($impersonationService->isActive($session)) {
             throw new BadRequestException(__(
                 'You are already impersonating another member. '
-                . 'Stop impersonating before starting a new session.',
+                    . 'Stop impersonating before starting a new session.',
             ));
         }
 
@@ -2426,8 +2427,8 @@ class MembersController extends AppController
                 if ($this->Members->save($member)) {
                     $this->Flash->success(__(
                         'Membership information has been submitted, '
-                        . 'please allow several days for our team to '
-                        . 'review and update the profile.',
+                            . 'please allow several days for our team to '
+                            . 'review and update the profile.',
                     ));
                 } else {
                     $this->Flash->error('There was an error please try again.');
@@ -2529,15 +2530,15 @@ class MembersController extends AppController
                 if ($member->age > 17) {
                     $this->Flash->success(__(
                         'Your registration has been submitted. '
-                        . 'Please check your email for a link '
-                        . 'to set up your password.',
+                            . 'Please check your email for a link '
+                            . 'to set up your password.',
                     ));
                 } else {
                     $this->Flash->success(__(
                         'Your registration has been submitted. '
-                        . 'The Kingdom Secretary will need to '
-                        . 'verify your account with your parent '
-                        . 'or guardian',
+                            . 'The Kingdom Secretary will need to '
+                            . 'verify your account with your parent '
+                            . 'or guardian',
                     ));
                 }
 

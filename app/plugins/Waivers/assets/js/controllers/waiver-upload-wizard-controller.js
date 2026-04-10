@@ -4,8 +4,7 @@ let _pdfjsLib = null;
 
 async function loadPdfjsLib() {
     if (!_pdfjsLib) {
-        _pdfjsLib = await import('pdfjs-dist');
-        _pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/pdf.worker.min.mjs';
+        _pdfjsLib = await import('pdfjs-dist/webpack.mjs');
     }
     return _pdfjsLib;
 }
