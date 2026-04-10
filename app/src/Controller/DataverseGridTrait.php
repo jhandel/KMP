@@ -5,6 +5,7 @@ namespace App\Controller;
 
 use App\KMP\GridViewConfig;
 use App\KMP\StaticHelpers;
+use App\KMP\TimezoneHelper as TzHelper;
 use App\Model\Entity\Member;
 use App\Services\GridViewService;
 use Cake\Http\Response;
@@ -465,35 +466,35 @@ trait DataverseGridTrait
 
                     if ($startDate !== null && $startDate !== '') {
                         if (!in_array($columnKey, $skipFilterColumns, true)) {
+                            // Convert date-only strings from kingdom timezone to UTC
+                            // so SQL comparisons work correctly against UTC-stored datetimes.
+                            $effectiveStartDate = $this->convertDateBoundaryToUtc($startDate, true);
+
                             // For lower bound (start >= value), check nullMeansActive flag
                             // If true, NULL means "never expires" so include it in results
                             if ($nullMeansActive) {
-                                $baseQuery->where(function ($exp) use ($qualifiedField, $startDate) {
+                                $baseQuery->where(function ($exp) use ($qualifiedField, $effectiveStartDate) {
                                     return $exp->or([
-                                        $qualifiedField . ' >=' => $startDate,
+                                        $qualifiedField . ' >=' => $effectiveStartDate,
                                         $qualifiedField . ' IS' => null,
                                     ]);
                                 });
                             } else {
-                                $baseQuery->where([$qualifiedField . ' >=' => $startDate]);
+                                $baseQuery->where([$qualifiedField . ' >=' => $effectiveStartDate]);
                             }
                         }
-                        // Add to current filters for display as pill
+                        // Add to current filters for display as pill (original kingdom-tz value)
                         $currentFilters[$startParam] = $startDate;
                     }
                     if ($endDate !== null && $endDate !== '') {
                         if (!in_array($columnKey, $skipFilterColumns, true)) {
-                            // When end date is date-only (no time), extend to end of day
-                            // so DATETIME columns include all records from that day.
-                            // Without this, '2026-03-25' becomes '2026-03-25 00:00:00'
-                            // excluding any records with a time after midnight.
-                            $effectiveEndDate = $endDate;
-                            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
-                                $effectiveEndDate = $endDate . ' 23:59:59';
-                            }
+                            // Convert date-only strings from kingdom timezone to UTC
+                            // so SQL comparisons work correctly against UTC-stored datetimes.
+                            $effectiveEndDate = $this->convertDateBoundaryToUtc($endDate, false);
+
                             $baseQuery->where([$qualifiedField . ' <=' => $effectiveEndDate]);
                         }
-                        // Add to current filters for display as pill
+                        // Add to current filters for display as pill (original kingdom-tz value)
                         $currentFilters[$endParam] = $endDate;
                     }
                 }
@@ -1165,6 +1166,43 @@ trait DataverseGridTrait
             array_keys($results),
             $results,
         );
+    }
+
+    /**
+     * Convert a date boundary string from kingdom timezone to UTC for SQL comparison.
+     *
+     * The database stores datetimes in UTC. Date-range filters use kingdom-timezone dates
+     * (e.g., "today" = 2026-04-09 in US/Eastern). Without conversion, a SQL comparison
+     * like `start_on <= '2026-04-09 23:59:59'` would miss records stored as
+     * '2026-04-10 03:00:00' UTC (which is still April 9 in Eastern).
+     *
+     * @param string $dateValue Date string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+     * @param bool $isStart True for start-of-day boundary (00:00:00), false for end-of-day (23:59:59)
+     * @return string UTC datetime string for SQL comparison
+     */
+    protected function convertDateBoundaryToUtc(string $dateValue, bool $isStart): string
+    {
+        // Only convert date-only strings; full datetime strings pass through as-is
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateValue)) {
+            return $dateValue;
+        }
+
+        $kingdomTz = TzHelper::getAppTimezone() ?? 'UTC';
+
+        // If kingdom timezone is UTC, use the simple approach (no conversion needed)
+        if ($kingdomTz === 'UTC') {
+            return $isStart ? $dateValue : $dateValue . ' 23:59:59';
+        }
+
+        // Build the boundary datetime in the kingdom timezone, then convert to UTC
+        $boundaryTime = $isStart ? '00:00:00' : '23:59:59';
+        $kingdomDatetime = new \DateTime(
+            $dateValue . ' ' . $boundaryTime,
+            new \DateTimeZone($kingdomTz),
+        );
+        $kingdomDatetime->setTimezone(new \DateTimeZone('UTC'));
+
+        return $kingdomDatetime->format('Y-m-d H:i:s');
     }
 
     /**
