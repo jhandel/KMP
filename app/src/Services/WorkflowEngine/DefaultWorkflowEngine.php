@@ -677,6 +677,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         }
         $service = $this->container->get($serviceClass);
         $context = $instance->context ?? [];
+        $context['instanceId'] = $instance->id;
 
         // Resolve and merge config.params into top-level config so actions can read params directly
         $nodeConfig = $node['config'] ?? [];
@@ -718,6 +719,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
     ): void {
         $conditionName = $node['config']['condition'] ?? $node['config']['evaluator'] ?? null;
         $context = $instance->context ?? [];
+        $context['instanceId'] = $instance->id;
         $result = false;
 
         if ($conditionName) {
@@ -1252,6 +1254,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
         array $definition,
     ): void {
         $context = $instance->context ?? [];
+        $context['instanceId'] = $instance->id;
         $config = $node['config'] ?? [];
 
         $collectionPath = $config['collection'] ?? '';
