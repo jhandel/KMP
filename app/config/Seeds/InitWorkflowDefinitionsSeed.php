@@ -153,7 +153,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                     'activate warrants (forEach) → notify each holder, or decline.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Warrants.RosterCreated'],
-                'entity_type' => 'Warrants',
+                'entity_type' => 'WarrantRosters',
                 'json_file' => 'warrants-roster-approval.json',
                 'execution_mode' => 'durable',
                 'is_active' => true,
