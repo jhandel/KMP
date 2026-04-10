@@ -299,25 +299,12 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
     // ---------------------------------------------------------------
 
     /**
-     * Test release() uses legacy OfficerManager when no workflow is active.
+     * Test release() shows an error when the workflow is unavailable.
      */
-    public function testReleaseUsesLegacyWhenNoWorkflow(): void
+    public function testReleaseFlashesErrorWhenWorkflowUnavailable(): void
     {
         $this->deactivateWorkflows(['officers-release']);
         $officer = $this->createTestOfficer();
-        $called = false;
-
-        $this->mockServiceClean(OfficerManagerInterface::class, function () use (&$called) {
-            $mock = $this->createMock(OfficerManagerInterface::class);
-            $mock->method('release')
-                ->willReturnCallback(function () use (&$called) {
-                    $called = true;
-
-                    return new ServiceResult(true);
-                });
-
-            return $mock;
-        });
 
         $this->mockServiceClean(TriggerDispatcher::class, function () {
             $mock = $this->createMock(TriggerDispatcher::class);
@@ -333,7 +320,7 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
         ]);
 
         $this->assertRedirect();
-        $this->assertTrue($called, 'Legacy OfficerManager::release should have been called');
+        $this->assertFlashMessage('The officer release workflow is not currently available.', 'flash');
     }
 
     /**
@@ -364,13 +351,6 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
             return $mock;
         });
 
-        $this->mockServiceClean(OfficerManagerInterface::class, function () {
-            $mock = $this->createMock(OfficerManagerInterface::class);
-            $mock->expects($this->never())->method('release');
-
-            return $mock;
-        });
-
         $this->post('/officers/officers/release', [
             'id' => $officer->id,
             'revoked_reason' => 'Stepping down',
@@ -379,39 +359,6 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
 
         $this->assertRedirect();
         $this->assertTrue($dispatched, 'TriggerDispatcher::dispatch should have been called');
-    }
-
-    /**
-     * Test release() legacy path sets flash error on failure.
-     */
-    public function testReleaseLegacyFlashesErrorOnFailure(): void
-    {
-        $this->deactivateWorkflows(['officers-release']);
-        $officer = $this->createTestOfficer();
-
-        $this->mockServiceClean(OfficerManagerInterface::class, function () {
-            $mock = $this->createMock(OfficerManagerInterface::class);
-            $mock->method('release')
-                ->willReturn(new ServiceResult(false, 'Cannot release'));
-
-            return $mock;
-        });
-
-        $this->mockServiceClean(TriggerDispatcher::class, function () {
-            $mock = $this->createMock(TriggerDispatcher::class);
-            $mock->expects($this->never())->method('dispatch');
-
-            return $mock;
-        });
-
-        $this->post('/officers/officers/release', [
-            'id' => $officer->id,
-            'revoked_reason' => 'Test reason',
-            'revoked_on' => DateTime::now()->toDateString(),
-        ]);
-
-        $this->assertRedirect();
-        $this->assertFlashMessage('The officer could not be released. Please, try again.', 'flash');
     }
 
     // ---------------------------------------------------------------

@@ -145,6 +145,7 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
                 'entity_type' => 'Officers',
                 'json_file' => 'officers-release.json',
                 'execution_mode' => 'ephemeral',
+                'is_active' => true,
             ],
             [
                 'name' => 'Warrant Roster Approval',

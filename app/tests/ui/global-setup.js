@@ -4,7 +4,7 @@ const { execSync } = require('child_process');
 
 async function globalSetup() {
   console.log('🚀 Starting global setup for UI tests...');
-  const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'https://127.0.0.1:8080';
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8080';
 
   // Start browser for authentication and other global setup
   const browser = await chromium.launch();

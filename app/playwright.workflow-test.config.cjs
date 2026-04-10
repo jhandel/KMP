@@ -1,5 +1,5 @@
 // Workflow test-specific config — uses HTTP for devcontainer testing
-const base = require('./playwright.config.js');
+const base = require('./playwright.config.cjs');
 const { defineBddConfig } = require('playwright-bdd');
 
 const testDir = defineBddConfig({

@@ -114,12 +114,11 @@ class OfficersController extends AppController
     /**
      * Release an officer from their assignment.
      *
-     * @param \Officers\Services\OfficerManagerInterface $oManager Officer business logic service
      * @param \App\Services\WorkflowEngine\TriggerDispatcher $dispatcher Workflow trigger dispatcher
      * @return \Cake\Http\Response|null|void Redirects on completion or error
      * @throws \Cake\Http\Exception\NotFoundException When officer not found
      */
-    public function release(OfficerManagerInterface $oManager, TriggerDispatcher $dispatcher)
+    public function release(TriggerDispatcher $dispatcher)
     {
         $officer = $this->Officers->get($this->request->getData('id'));
         if (!$officer) {
@@ -144,25 +143,15 @@ class OfficersController extends AppController
                 'revoked_on' => $revokeDate->toDateTimeString(),
             ];
 
-            $result = $this->dispatchOrLegacy($dispatcher, 'officers-release', 'Officers.Released', $context, function () use ($oManager, $officer, $revokerId, $revokeDate, $revokeReason) {
-                $this->Officers->getConnection()->begin();
-                $omResult = $oManager->release($officer->id, $revokerId, $revokeDate, $revokeReason);
-                if (!$omResult->success) {
-                    $this->Officers->getConnection()->rollback();
-                    $this->Flash->error(__('The officer could not be released. Please, try again.'));
-
-                    return $omResult;
-                }
-                $this->Officers->getConnection()->commit();
-                $this->Flash->success(__('The officer has been released.'));
-
-                return $omResult;
-            });
-
-            if (is_array($result)) {
+            try {
+                $this->dispatchWorkflowOrFail($dispatcher, 'officers-release', 'Officers.Released', $context);
                 $this->Flash->success(__('The officer release workflow has been initiated.'));
+            } catch (\Throwable $e) {
+                \Cake\Log\Log::error('Officer release workflow dispatch failed: ' . $e->getMessage());
+                $this->Flash->error(__('The officer release workflow is not currently available.'));
             }
-            $this->redirect($this->referer());
+
+            return $this->redirect($this->referer());
         }
     }
 
