@@ -223,8 +223,8 @@ class OfficersController extends AppController
                 'requested_by' => $userid,
             ];
 
-            $result = $this->dispatchOrLegacy($dispatcher, 'warrants-roster-approval', 'Warrants.RosterCreated', $context, function () use ($wManager, $warrantRequest, $officeName, $memberName) {
-                $wmResult = $wManager->request("$officeName : $memberName", "", [$warrantRequest]);
+            $result = $this->dispatchOrLegacy($dispatcher, 'warrants-roster-approval', 'Warrants.RosterCreated', $context, function () use ($wManager, $warrantRequest, $officeName, $memberName, $userid) {
+                $wmResult = $wManager->request("$officeName : $memberName", "", [$warrantRequest], (int)$userid);
                 if (!$wmResult->success) {
                     $this->Flash->error("Could not request Warrant: " . __($wmResult->reason));
 

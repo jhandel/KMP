@@ -194,7 +194,7 @@ class DefaultOfficerManager implements OfficerManagerInterface
             }
             $warrantRequest = new WarrantRequest("Hiring Warrant: $branch->name - $officeName", 'Officers.Officers', $newOfficer->id, $approverId, $memberId, $startOn, $endOn, $newOfficer->granted_member_role_id);
 
-            $wmResult = $this->warrantManager->request("$office->name : $member->sca_name", "", [$warrantRequest]);
+            $wmResult = $this->warrantManager->request("$office->name : $member->sca_name", "", [$warrantRequest], $approverId);
             if (!$wmResult->success) {
                 return new ServiceResult(false, $wmResult->reason);
             }

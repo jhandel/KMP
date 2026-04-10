@@ -25,9 +25,10 @@ interface WarrantManagerInterface
      * @param string $request_name Name for the warrant roster
      * @param string $desc Description of the warrant requests
      * @param array<\App\Services\WarrantManager\WarrantRequest> $warrantRequests Array of warrant request objects
+     * @param int|null $requestedBy Member ID of the user who initiated the request
      * @return \App\Services\ServiceResult Success with roster ID, or failure with errors
      */
-    public function request($request_name, $desc, $warrantRequests): ServiceResult;
+    public function request($request_name, $desc, $warrantRequests, ?int $requestedBy = null): ServiceResult;
 
     /**
      * Approve a warrant roster and activate all contained warrants.

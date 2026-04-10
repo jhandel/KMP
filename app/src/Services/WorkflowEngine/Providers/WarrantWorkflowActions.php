@@ -62,18 +62,20 @@ class WarrantWorkflowActions
 
             $memberRoleId = $this->resolveValue($config['memberRoleId'] ?? null, $context);
 
+            $requestedBy = $context['triggeredBy'] ?? null;
+
             $warrantRequest = new WarrantRequest(
                 $name,
                 $entityType,
                 $entityId,
-                $context['triggeredBy'] ?? 0,
+                $requestedBy ?? 0,
                 $memberId,
                 $startOn,
                 $expiresOn,
                 $memberRoleId ? (int)$memberRoleId : null,
             );
 
-            $result = $this->warrantManager->request($name, (string)$desc, [$warrantRequest]);
+            $result = $this->warrantManager->request($name, (string)$desc, [$warrantRequest], $requestedBy);
 
             return ['rosterId' => $result->success ? $result->data : null];
         } catch (\Throwable $e) {

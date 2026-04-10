@@ -211,7 +211,7 @@ class RostersController extends AppController
                 $officer->granted_member_role_id
             );
         }
-        $wmResult = $warrantManager->request("$department->name roster for " . $warrantPeriod->name, "", $warrants);
+        $wmResult = $warrantManager->request("$department->name roster for " . $warrantPeriod->name, "", $warrants, $user->id);
         if (!$wmResult->success) {
             $this->Flash->error($wmResult->reason);
             return $this->redirect->referer();

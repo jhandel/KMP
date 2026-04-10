@@ -327,11 +327,13 @@ class OfficerWorkflowActions
                 $officeName .= ' (' . $officer->deputy_description . ')';
             }
 
+            $requestedBy = $context['triggeredBy'] ?? null;
+
             $warrantRequest = new WarrantRequest(
                 "Hiring Warrant: {$branch->name} - {$officeName}",
                 'Officers.Officers',
                 $officer->id,
-                $context['triggeredBy'] ?? 0,
+                $requestedBy ?? 0,
                 $officer->member_id,
                 $officer->start_on,
                 $officer->expires_on,
@@ -342,6 +344,7 @@ class OfficerWorkflowActions
                 "{$office->name} : {$member->sca_name}",
                 '',
                 [$warrantRequest],
+                $requestedBy,
             );
 
             if (!$result->success) {

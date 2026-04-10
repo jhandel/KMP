@@ -284,6 +284,7 @@ class WarrantRostersController extends AppController
                 $data['name'] ?? '',
                 $data['description'] ?? '',
                 $warrantRequests,
+                $currentUserId,
             );
 
             if ($wmResult->success) {

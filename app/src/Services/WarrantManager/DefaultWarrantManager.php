@@ -75,7 +75,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
      * @param mixed $warrantRequests
      * @return \App\Services\ServiceResult
      */
-    public function request($request_name, $desc, $warrantRequests): ServiceResult
+    public function request($request_name, $desc, $warrantRequests, ?int $requestedBy = null): ServiceResult
     {
         //Create a warrant approval set
         $warrantRosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
@@ -85,6 +85,7 @@ class DefaultWarrantManager implements WarrantManagerInterface
         $warrantRoster->name = $request_name;
         $warrantRoster->description = $desc;
         $warrantRoster->approvals_required = StaticHelpers::getAppSetting('Warrant.RosterApprovalsRequired', '2');
+        $warrantRoster->created_by = $requestedBy;
 
         //start a transaction
         $warrantRosterTable->getConnection()->begin();
@@ -150,7 +151,8 @@ class DefaultWarrantManager implements WarrantManagerInterface
                 'rosterId' => $warrantRoster->id,
                 'rosterName' => $warrantRoster->name,
                 'approvalsRequired' => $warrantRoster->approvals_required,
-            ]);
+                'requesterId' => $requestedBy,
+            ], $requestedBy);
         } catch (\Exception $e) {
             \Cake\Log\Log::warning('Workflow trigger dispatch failed for Warrants.RosterCreated: ' . $e->getMessage());
         }
