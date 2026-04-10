@@ -6,6 +6,8 @@
 # [Choice] Debian version: bullseye, buster, stretch
 FROM mcr.microsoft.com/devcontainers/base:bookworm
 
+ARG NODE_VERSION=22.12.0
+
 # Install system packages and PHP repository
 RUN apt-get update && \
     apt-get install -y socat lsb-release apt-transport-https ca-certificates && \
@@ -20,10 +22,24 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive && \
     php8.3 php8.3-bcmath php8.3-bz2 php8.3-intl php8.3-gd php8.3-mbstring \
     php8.3-mysql php8.3-pgsql php8.3-zip php8.3-dom php8.3-yaml php8.3-curl php8.3-sqlite \
     php8.3-apcu php8.3-xdebug \
-    mariadb-server apache2 nodejs npm \
+    mariadb-server apache2 \
     patch python3-pip ruby-full build-essential zlib1g-dev \
-    default-jdk libnet-ssleay-perl perl-modules libwhisker2-perl git && \
+    default-jdk libnet-ssleay-perl perl-modules libwhisker2-perl git \
+    xz-utils && \
     rm -rf /var/lib/apt/lists/*
+
+# Install Node.js from the official distribution to pin the exact version used by Vite.
+RUN ARCH=$(dpkg --print-architecture) && \
+    case "$ARCH" in \
+    amd64) NODE_ARCH="x64" ;; \
+    arm64) NODE_ARCH="arm64" ;; \
+    *) echo "Unsupported architecture for Node.js: $ARCH"; exit 1 ;; \
+    esac && \
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    tar -xJf "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -C /usr/local --strip-components=1 --no-same-owner && \
+    rm "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    node --version && \
+    npm --version
 
 # Configure Java
 RUN export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:/bin/java::") && \

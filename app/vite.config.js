@@ -70,13 +70,19 @@ export default defineConfig({
                     }
                     return 'assets/[name]-[hash].[ext]';
                 },
-                manualChunks: {
-                    core: [
-                        'bootstrap',
-                        'popper.js',
-                        '@hotwired/turbo',
-                        '@hotwired/stimulus',
-                    ],
+                manualChunks(id) {
+                    const corePackages = [
+                        '/node_modules/bootstrap/',
+                        '/node_modules/popper.js/',
+                        '/node_modules/@hotwired/turbo/',
+                        '/node_modules/@hotwired/stimulus/',
+                    ];
+
+                    if (corePackages.some((segment) => id.includes(segment))) {
+                        return 'core';
+                    }
+
+                    return undefined;
                 },
             },
         },

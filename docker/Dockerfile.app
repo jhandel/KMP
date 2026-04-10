@@ -8,6 +8,8 @@
 
 FROM php:8.3-apache-bookworm
 
+ARG NODE_VERSION=22.12.0
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # PHP build dependencies
@@ -24,12 +26,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     unzip \
-    nodejs \
-    npm \
+    xz-utils \
     default-mysql-client \
     cron \
     # Cleanup
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js from the official distribution to pin the exact version used by Vite.
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "$ARCH" in \
+        amd64) NODE_ARCH='x64' ;; \
+        arm64) NODE_ARCH='arm64' ;; \
+        *) echo "Unsupported architecture for Node.js: $ARCH"; exit 1 ;; \
+    esac && \
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    tar -xJf "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -C /usr/local --strip-components=1 --no-same-owner && \
+    rm "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    node --version && \
+    npm --version
 
 # Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
