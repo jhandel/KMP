@@ -121,10 +121,6 @@ if [ ! -f /etc/apache2/ssl/dev.crt ] || [ ! -f /etc/apache2/ssl/dev.key ]; then
 fi
 
 #sudo chown -R vscode:vscode /workspaces/KMP
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
-
 # Start Apache
 echo "Starting Apache..."
 sudo apachectl restart
-

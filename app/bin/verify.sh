@@ -2,7 +2,7 @@
 # verify.sh — Run all verification checks for the KMP application.
 # Usage: cd /workspaces/KMP/app && bash bin/verify.sh
 #
-# Runs: PHPUnit, Jest, Webpack build, PHPCS, PHPStan
+# Runs: PHPUnit, Jest, Vite build, PHPCS, PHPStan
 # Returns exit code 0 if all checks pass, 1 if any fail.
 
 set -o pipefail
@@ -43,8 +43,8 @@ run_check "PHPUnit Tests" 'composer test 2>&1 | tail -20; test "${PIPESTATUS[0]}
 # 2. Jest
 run_check "Jest Tests" 'npm run test:js 2>&1; test "${PIPESTATUS[0]}" -eq 0'
 
-# 3. Webpack Build
-run_check "Webpack Build" 'npm run dev 2>&1 | tail -10; test "${PIPESTATUS[0]}" -eq 0'
+# 3. Vite Build
+run_check "Vite Build" 'npm run dev 2>&1 | tail -10; test "${PIPESTATUS[0]}" -eq 0'
 
 # 4. PHPCS (pre-existing violations are baselined — only check files we've changed)
 run_check "PHPCS Code Style" '

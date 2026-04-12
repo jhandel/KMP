@@ -23,7 +23,6 @@ uat_dump.sql
 prod_dump.sql
 /test-results/
 /.playwright-cli/
-.beads/
 installer/kmp
 installers/bin
 installer/bin/

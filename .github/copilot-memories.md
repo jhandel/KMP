@@ -4,7 +4,7 @@ Verified facts about the KMP codebase for AI agent reference. Each entry include
 
 ## Build & Testing
 
-- **Full verification**: `cd app && bash bin/verify.sh` runs PHPUnit (1018 tests), Jest (27 tests), Webpack, PHPCS (changed files only), PHPStan (level 5, 1 known error). All pass.
+- **Full verification**: `cd app && bash bin/verify.sh` runs PHPUnit (1018 tests), Jest (27 tests), Vite build, PHPCS (changed files only), PHPStan (level 5, 1 known error). All pass.
   _Source: app/bin/verify.sh; verified 2026-03-24_
 
 - **Backend tests**: `cd app && composer test` runs all 1018 PHPUnit tests. Do NOT use `--testsuite all` — it only runs 509/1018 tests due to incomplete suite definition.
