@@ -2,12 +2,14 @@
 const { defineConfig, devices } = require('@playwright/test');
 // Playwright-BDD configuration  
 const { defineBddConfig } = require('playwright-bdd');
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8080';
-const webServerCommand = process.env.PLAYWRIGHT_WEB_SERVER_COMMAND || 'bash ../dev-up.sh';
+const { getUiTestEnvironment } = require('./tests/ui/support/test-environment.cjs');
+
+const { baseUrl: baseURL, webServerCommand } = getUiTestEnvironment();
 
 const testDir = defineBddConfig({
   featuresRoot: './tests/ui/bdd',
   outputDir: 'tests/ui/gen',
+  steps: ['tests/ui/bdd/**/*.js'],
 });
 
 /**

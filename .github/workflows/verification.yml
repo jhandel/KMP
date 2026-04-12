@@ -1,199 +1,26 @@
-name: Quality Gates
+name: Nightly / UAT Verification
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA to verify for nightly/UAT promotion
+        required: false
+        default: main
 
 concurrency:
-  group: quality-gates-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: nightly-uat-verification-${{ github.event.inputs.ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  checks: write
 
 jobs:
-  phpunit:
-    name: PHPUnit (${{ matrix.database.type }})
+  verify-bundle:
+    name: Verification bundle
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.database.type == 'postgres' }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        database:
-          - type: mysql
-            image: mariadb:10
-            port: 3306
-            driver: Cake\Database\Driver\Mysql
-            php_extensions: mbstring, intl, pdo_mysql, gd, apcu, yaml
-            health_cmd: healthcheck.sh --connect --innodb_initialized
-            env:
-              MARIADB_ROOT_PASSWORD: root
-              MARIADB_DATABASE: kmp_test
-          - type: postgres
-            image: postgres:16
-            port: 5432
-            driver: Cake\Database\Driver\Postgres
-            php_extensions: mbstring, intl, pdo_pgsql, gd, apcu, yaml
-            health_cmd: pg_isready -U root -d kmp_test
-            env:
-              POSTGRES_USER: root
-              POSTGRES_PASSWORD: root
-              POSTGRES_DB: kmp_test
-
-    services:
-      database:
-        image: ${{ matrix.database.image }}
-        env: ${{ matrix.database.env }}
-        ports:
-          - ${{ matrix.database.port }}:${{ matrix.database.port }}
-        options: >-
-          --health-cmd="${{ matrix.database.health_cmd }}"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup PHP 8.3
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          extensions: ${{ matrix.database.php_extensions }}
-          ini-values: apc.enable_cli=1
-          coverage: none
-
-      - name: Create test .env
-        run: |
-          printf "%s\n" \
-            "export MYSQL_USERNAME='root'" \
-            "export MYSQL_PASSWORD='root'" \
-            "export MYSQL_DB_NAME='kmp'" \
-            "export EMAIL_SMTP_HOST='localhost'" \
-            "export EMAIL_SMTP_PORT='1025'" \
-            "export EMAIL_SMTP_USERNAME=''" \
-            "export EMAIL_SMTP_PASSWORD=''" \
-            > app/config/.env
-
-      - name: Create app_local.php
-        run: |
-          cat > app/config/app_local.php << 'APPLOCAL'
-          <?php
-          // CI database driver is selected via matrix: mysql or postgres
-          return [
-              'debug' => true,
-              'Security' => [
-                  'salt' => env('SECURITY_SALT', 'ci-test-salt-not-for-production-use-only-for-ci'),
-              ],
-              'Datasources' => [
-                  'default' => [
-                      'driver' => \${{ matrix.database.driver }}::class,
-                      'host' => '127.0.0.1',
-                      'port' => '${{ matrix.database.port }}',
-                      'username' => env('MYSQL_USERNAME'),
-                      'password' => env('MYSQL_PASSWORD'),
-                      'database' => env('MYSQL_DB_NAME'),
-                      'url' => env('DATABASE_URL', null),
-                  ],
-                  'test' => [
-                      'driver' => \${{ matrix.database.driver }}::class,
-                      'host' => '127.0.0.1',
-                      'port' => '${{ matrix.database.port }}',
-                      'username' => env('MYSQL_USERNAME'),
-                      'password' => env('MYSQL_PASSWORD'),
-                      'database' => env('MYSQL_DB_NAME') . '_test',
-                      'url' => env('DATABASE_URL', null),
-                  ],
-              ],
-              'EmailTransport' => [
-                  'default' => [
-                      'host' => 'localhost',
-                      'port' => 1025,
-                      'username' => null,
-                      'password' => null,
-                      'client' => null,
-                      'url' => env('EMAIL_TRANSPORT_DEFAULT_URL', null),
-                  ],
-              ],
-          ];
-          APPLOCAL
-
-      - name: Install Composer dependencies
-        run: cd app && composer install --no-interaction --prefer-dist
-
-      - name: Import seed data (MySQL)
-        if: matrix.database.type == 'mysql'
-        run: mysql -h 127.0.0.1 -u root -proot kmp_test < dev_seed_clean.sql
-
-      - name: Create default database (Postgres)
-        if: matrix.database.type == 'postgres'
-        run: PGPASSWORD=root psql -h 127.0.0.1 -U root -d kmp_test -c "CREATE DATABASE kmp;"
-
-      - name: Run PHPUnit tests
-        run: |
-          cd app
-          if [ "${{ matrix.database.type }}" = "postgres" ]; then
-            # Postgres job validates cross-DB compatibility for core app logic.
-            # Full suite currently depends on MySQL dev seed data.
-            vendor/bin/phpunit --testsuite core-unit --no-coverage --log-junit ../test-results/junit.xml
-          else
-            vendor/bin/phpunit --testsuite all --no-coverage --log-junit ../test-results/junit.xml
-          fi
-
-      - name: Upload test results
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phpunit-results-${{ matrix.database.type }}
-          path: test-results/junit.xml
-
-      - name: Report test results
-        if: success() || failure()
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: test-results/junit.xml
-          check_name: PHPUnit Test Results (${{ matrix.database.type }})
-
-  jest:
-    name: Jest
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Node dependencies
-        run: cd app && npm install --no-audit --no-fund
-
-      - name: Run Jest tests
-        run: |
-          mkdir -p test-results
-          cd app
-          npm run test:js -- --ci --runInBand --json --outputFile=../test-results/jest-results.json
-
-      - name: Upload Jest results
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jest-results
-          path: test-results/jest-results.json
-
-  playwright-smoke:
-    name: Playwright smoke
-    runs-on: ubuntu-latest
-    env:
-      PLAYWRIGHT_BASE_URL: http://127.0.0.1:8080
-      PLAYWRIGHT_MAILPIT_URL: http://127.0.0.1:8025
-      PLAYWRIGHT_WEB_SERVER_COMMAND: php -S 127.0.0.1:8080 -t webroot webroot/index.php
 
     services:
       database:
@@ -208,18 +35,12 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
-      mailpit:
-        image: axllent/mailpit:latest
-        ports:
-          - 1025:1025
-          - 8025:8025
-        env:
-          MP_SMTP_AUTH_ACCEPT_ANY: "true"
-          MP_SMTP_AUTH_ALLOW_INSECURE: "true"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Setup PHP 8.3
         uses: shivammathur/setup-php@v2
@@ -254,7 +75,135 @@ jobs:
           return [
               'debug' => true,
               'Security' => [
-                  'salt' => env('SECURITY_SALT', 'ci-playwright-smoke-salt'),
+                  'salt' => env('SECURITY_SALT', 'ci-verification-bundle-salt'),
+              ],
+              'Datasources' => [
+                  'default' => [
+                      'driver' => \Cake\Database\Driver\Mysql::class,
+                      'host' => env('MYSQL_HOST', '127.0.0.1'),
+                      'port' => '3306',
+                      'username' => env('MYSQL_USERNAME'),
+                      'password' => env('MYSQL_PASSWORD'),
+                      'database' => env('MYSQL_DB_NAME'),
+                      'url' => env('DATABASE_URL', null),
+                  ],
+                  'test' => [
+                      'driver' => \Cake\Database\Driver\Mysql::class,
+                      'host' => env('MYSQL_HOST', '127.0.0.1'),
+                      'port' => '3306',
+                      'username' => env('MYSQL_USERNAME'),
+                      'password' => env('MYSQL_PASSWORD'),
+                      'database' => env('MYSQL_DB_NAME') . '_test',
+                      'url' => env('DATABASE_URL', null),
+                  ],
+              ],
+              'EmailTransport' => [
+                  'default' => [
+                      'host' => 'localhost',
+                      'port' => 1025,
+                      'username' => null,
+                      'password' => null,
+                      'client' => null,
+                      'url' => env('EMAIL_TRANSPORT_DEFAULT_URL', null),
+                  ],
+              ],
+          ];
+          APPLOCAL
+
+      - name: Install Composer dependencies
+        run: cd app && composer install --no-interaction --prefer-dist
+
+      - name: Install Node dependencies
+        run: cd app && npm install --no-audit --no-fund
+
+      - name: Ensure databases exist
+        run: mysql -h 127.0.0.1 -u root -proot -e "CREATE DATABASE IF NOT EXISTS kmp; CREATE DATABASE IF NOT EXISTS kmp_test;"
+
+      - name: Run verification bundle
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          cd app
+          bash bin/verify.sh | tee ../test-results/verify.log
+
+      - name: Upload verification logs
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-bundle-logs
+          path: test-results/verify.log
+
+  playwright-uat:
+    name: Playwright UAT regression
+    needs: verify-bundle
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:8080
+      PLAYWRIGHT_MAILPIT_URL: http://127.0.0.1:8025
+      PLAYWRIGHT_WEB_SERVER_COMMAND: php -S 127.0.0.1:8080 -t webroot webroot/index.php
+
+    services:
+      database:
+        image: mariadb:10
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: kmp_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
+        env:
+          MP_SMTP_AUTH_ACCEPT_ANY: "true"
+          MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_mysql, gd, apcu, yaml
+          ini-values: apc.enable_cli=1
+          coverage: none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create test .env
+        run: |
+          printf "%s\n" \
+            "export MYSQL_HOST='127.0.0.1'" \
+            "export MYSQL_USERNAME='root'" \
+            "export MYSQL_PASSWORD='root'" \
+            "export MYSQL_DB_NAME='kmp'" \
+            "export EMAIL_SMTP_HOST='localhost'" \
+            "export EMAIL_SMTP_PORT='1025'" \
+            "export EMAIL_SMTP_USERNAME=''" \
+            "export EMAIL_SMTP_PASSWORD=''" \
+            > app/config/.env
+
+      - name: Create app_local.php
+        run: |
+          cat > app/config/app_local.php << 'APPLOCAL'
+          <?php
+          return [
+              'debug' => true,
+              'Security' => [
+                  'salt' => env('SECURITY_SALT', 'ci-uat-playwright-salt'),
               ],
               'Datasources' => [
                   'default' => [
@@ -312,14 +261,14 @@ jobs:
       - name: Install Playwright browser
         run: cd app && npx playwright install --with-deps chromium
 
-      - name: Run Playwright smoke tests
-        run: cd app && npm run test:ui:smoke
+      - name: Run Playwright UAT regression
+        run: cd app && npm run test:ui:uat
 
-      - name: Upload Playwright smoke artifacts
+      - name: Upload Playwright UAT artifacts
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-smoke-artifacts
+          name: playwright-uat-artifacts
           path: |
             app/tests/ui-reports
             app/tests/ui-results

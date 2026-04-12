@@ -10,8 +10,9 @@ module.exports = {
     '!assets/js/index.js',
     '!**/node_modules/**'
   ],
+  coverageProvider: 'v8',
   coverageDirectory: 'tests/js-coverage',
-  coverageReporters: ['text', 'lcov', 'html'],
+  coverageReporters: ['text', 'text-summary', 'lcov', 'clover', 'html'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/assets/js/$1',
     '^@hotwired/stimulus$': '<rootDir>/tests/js/__mocks__/stimulus.js'

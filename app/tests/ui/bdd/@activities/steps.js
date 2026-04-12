@@ -1,47 +1,107 @@
 const { createBdd } = require('playwright-bdd');
 const { expect } = require('@playwright/test');
+const {
+    clickTabAndWait,
+    runAndWaitForNetworkIdle,
+    waitForGridRows,
+} = require('../../support/ui-helpers.cjs');
 
 const { Given, When, Then } = createBdd();
 
+const authorizationSection = (page) => page.locator('#nav-member-authorizations');
+
+const selectComboBoxOption = async (page, inputSelector, optionText) => {
+    const comboBox = page.locator('[data-controller="ac"]').filter({ has: page.locator(inputSelector) }).first();
+
+    await expect.poll(async () => comboBox.evaluate((element, label) => {
+        const controller = window.Stimulus?.getControllerForElementAndIdentifier(element, 'ac');
+        const options = Array.isArray(controller?.options)
+            ? controller.options
+            : JSON.parse(element.querySelector('[data-ac-target="dataList"]')?.textContent ?? '[]');
+
+        return options.some((option) => option.text === label && option.enabled !== false);
+    }, optionText), {
+        timeout: 15000,
+    }).toBe(true);
+
+    await comboBox.evaluate((element, label) => {
+        const controller = window.Stimulus?.getControllerForElementAndIdentifier(element, 'ac');
+        const options = Array.isArray(controller?.options)
+            ? controller.options
+            : JSON.parse(element.querySelector('[data-ac-target="dataList"]')?.textContent ?? '[]');
+        const match = options.find((option) => option.text === label && option.enabled !== false);
+
+        if (!controller || !match) {
+            throw new Error(`Unable to find combo-box option "${label}".`);
+        }
+
+        const selected = document.createElement('li');
+        selected.setAttribute('data-ac-value', String(match.value));
+        selected.textContent = match.text;
+        controller.commit(selected);
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+    }, optionText);
+};
+
+const openMemberAuthorizationView = async (page, viewName) => {
+    const section = authorizationSection(page);
+    const authTab = page.locator('[data-detail-tabs-target="tabBtn"]').filter({ hasText: /Authorizations/i }).first();
+
+    if (await authTab.count() > 0) {
+        await clickTabAndWait(authTab, section);
+    }
+
+    const viewTabs = section.locator('[data-view-tabs-container] [role="tab"]');
+    await expect(viewTabs.first()).toBeVisible({ timeout: 15000 });
+
+    const viewTab = viewTabs.filter({ hasText: new RegExp(`^${viewName}`, 'i') }).first();
+    await expect(viewTab).toBeVisible({ timeout: 15000 });
+
+    if ((await viewTab.getAttribute('aria-selected')) !== 'true') {
+        await viewTab.click();
+    }
+
+    await expect(viewTab).toHaveAttribute('aria-selected', 'true', { timeout: 15000 });
+    await expect
+        .poll(async () => {
+            const stateScript = section.locator('turbo-frame#member-auth-grid-table script[type="application/json"]').first();
+            if (await stateScript.count() === 0) {
+                return null;
+            }
+
+            try {
+                const state = JSON.parse(await stateScript.textContent() ?? '{}');
+                return state?.view?.currentId ?? null;
+            } catch {
+                return null;
+            }
+        }, {
+            timeout: 15000,
+        })
+        .toBe(viewName.toLowerCase());
+
+    return section;
+};
+
 
 Given("I select the activity {string}", async ({ page }, activityName) => {
-    const activityInput = page.locator('#request-auth-activity_name-disp');
-    await activityInput.click();
-    await activityInput.fill(activityName);
-    await page.waitForTimeout(1000);
-    const option = page.getByRole('option', { name: activityName, exact: true });
-    await option.click();
-    await page.waitForTimeout(3000); // Wait for approvers to load via AJAX
+    const approverInput = page.locator('#request-auth-approver_name-disp');
+    await selectComboBoxOption(page, '#request-auth-activity_name-disp', activityName);
+    await expect(approverInput).toBeEnabled({ timeout: 15000 });
 });
 
 Given("I select the approver {string}", async ({ page }, approverName) => {
-    const approverInput = page.locator('#request-auth-approver_name-disp');
-    await approverInput.click();
-    const searchTerm = approverName.includes(': ') ? approverName.split(': ').pop() : approverName;
-    await approverInput.fill(searchTerm);
-    await page.waitForTimeout(1000);
-    const option = page.locator('[role="option"]').filter({ hasText: approverName });
-    await option.first().click();
-    await page.waitForTimeout(1000);
+    const submitButton = page.getByRole('button', { name: 'Submit', exact: true });
+    await selectComboBoxOption(page, '#request-auth-approver_name-disp', approverName);
+    await expect(submitButton).toBeEnabled({ timeout: 15000 });
 });
 
 Given("I submit the authorization request", async ({ page }) => {
-    await page.getByRole('button', { name: 'Submit', exact: true }).click();
+    await runAndWaitForNetworkIdle(page, () => page.getByRole('button', { name: 'Submit', exact: true }).click());
 });
 
 Then("I should have 1 pending authorization request", async ({ page }) => {
-    // Click on the Authorizations tab to make it visible
-    const authTab = page.locator('[data-detail-tabs-target="tabBtn"]').filter({ hasText: /Authorizations/i });
-    await authTab.click();
-    await page.waitForTimeout(2000);
-
-    // Click the "Pending" system view tab
-    const authSection = page.locator('#nav-member-authorizations');
-    const pendingTab = authSection.locator('[role="tab"]').filter({ hasText: /^Pending/i });
-    if (await pendingTab.count() > 0) {
-        await pendingTab.click();
-        await page.waitForTimeout(3000);
-    }
+    const authSection = await openMemberAuthorizationView(page, 'Pending');
 
     // Verify at least one row exists in the grid
     const rows = authSection.locator('table tbody tr');
@@ -61,22 +121,27 @@ When('I click on the {string} button for the authorization request', async ({ pa
         row = page.locator('table tbody tr').first();
     }
 
-    if (buttonText.toLowerCase() === 'approve') {
-        const approveButton = row.locator('button:has-text("Approve"), a:has-text("Approve")').first();
+    await runAndWaitForNetworkIdle(page, async () => {
+        if (buttonText.toLowerCase() === 'approve') {
+            const approveButton = row.locator('button:has-text("Approve"), a:has-text("Approve")').first();
 
-        page.once('dialog', async dialog => {
-            await dialog.accept();
-        });
+            page.once('dialog', async dialog => {
+                await dialog.accept();
+            });
 
-        await approveButton.click({ force: true });
-    } else if (buttonText.toLowerCase() === 'deny') {
-        const denyButton = row.locator('button:has-text("Deny"), a:has-text("Deny")').first();
-        await denyButton.click({ force: true });
-    } else {
+            await approveButton.click({ force: true });
+            return;
+        }
+
+        if (buttonText.toLowerCase() === 'deny') {
+            const denyButton = row.locator('button:has-text("Deny"), a:has-text("Deny")').first();
+            await denyButton.click({ force: true });
+            return;
+        }
+
         const button = row.locator(`a:has-text("${buttonText}"), button:has-text("${buttonText}")`).first();
         await button.click({ force: true });
-    }
-    await page.waitForTimeout(1000);
+    });
 });
 
 Then('My Queue shows {int} pending authorization request(s)', async ({ page }, count) => {
@@ -88,7 +153,7 @@ Then('My Queue shows {int} pending authorization request(s)', async ({ page }, c
 
 Then('I see one authorization request for {string} from {string}', async ({ page }, activityName, requesterName) => {
     // Wait for grid to load after search
-    await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 30000 });
+    await waitForGridRows(page);
     // Use exact cell text matching to avoid "Armored" matching "Armored Field Marshal"
     const getRows = () => page.locator('table tbody tr')
         .filter({ has: page.locator(`td:text-is("${activityName}")`) })
@@ -102,9 +167,8 @@ Then('I see one authorization request for {string} from {string}', async ({ page
         if (!url.searchParams.has('search')) {
             url.searchParams.set('search', requesterName);
         }
-        await page.goto(url.toString(), { waitUntil: 'networkidle' });
-        await page.waitForTimeout(3000);
-        await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 15000 });
+        await page.goto(url.toString(), { waitUntil: 'domcontentloaded' });
+        await waitForGridRows(page);
     }
 
     await expect(getRows().first()).toBeVisible();
@@ -116,7 +180,7 @@ Then('I see one authorization request for {string} from {string}', async ({ page
 
 Then('I see one approval request for {string} from {string}', async ({ page }, activityName, requesterName) => {
     // Wait for DataverseGrid to load after search
-    await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 30000 });
+    await waitForGridRows(page);
 
     const getRows = () => page.locator('table tbody tr')
         .filter({ hasText: activityName })
@@ -152,7 +216,7 @@ When('I select the {string} decision in the approval modal', async ({ page }, de
     } else {
         await modal.locator('#decisionReject').click();
     }
-    await page.waitForTimeout(500);
+    await expect(modal.locator('button[type="submit"]')).toBeEnabled({ timeout: 15000 });
 });
 
 When('I enter the approval comment {string}', async ({ page }, comment) => {
@@ -163,28 +227,13 @@ When('I enter the approval comment {string}', async ({ page }, comment) => {
 When('I submit the approval response', async ({ page }) => {
     const modal = page.locator('#approvalResponseModal');
     const submitBtn = modal.locator('button[type="submit"]');
-    await submitBtn.click();
-    // Wait for form submission and redirect
-    await page.waitForLoadState('networkidle', { timeout: 15000 });
+    await runAndWaitForNetworkIdle(page, () => submitBtn.click(), 15000);
 });
 
 // ── Authorization Profile Verification Steps ────────────────────────
 
 Then('I should see the approved authorization for {string}', async ({ page }, activityName) => {
-    // Click the Authorizations tab
-    const authTab = page.locator('[data-detail-tabs-target="tabBtn"]').filter({ hasText: /Authorizations/i });
-    if (await authTab.count() > 0) {
-        await authTab.click();
-        await page.waitForTimeout(2000);
-    }
-
-    // Click the "Active" system view tab
-    const authSection = page.locator('#nav-member-authorizations');
-    const activeTab = authSection.locator('[role="tab"]').filter({ hasText: /^Active/i });
-    if (await activeTab.count() > 0) {
-        await activeTab.click();
-        await page.waitForTimeout(3000);
-    }
+    const authSection = await openMemberAuthorizationView(page, 'Active');
 
     // Wait for grid to load and look for the activity
     await authSection.locator('table tbody tr').first().waitFor({ state: 'visible', timeout: 30000 });
@@ -194,25 +243,14 @@ Then('I should see the approved authorization for {string}', async ({ page }, ac
 
 
 Then("I should see the denied authorization for {string} with a reason {string}", async ({ page }, activityName, reason) => {
-    // Click the Authorizations tab
-    const authTab = page.locator('[data-detail-tabs-target="tabBtn"]').filter({ hasText: /Authorizations/i });
-    if (await authTab.count() > 0) {
-        await authTab.click();
-        await page.waitForTimeout(2000);
-    }
+    const authSection = await openMemberAuthorizationView(page, 'Previous');
 
-    // Click the "Previous" system view tab
-    const authSection = page.locator('#nav-member-authorizations');
-    const previousTab = authSection.locator('[role="tab"]').filter({ hasText: /^Previous/i });
-    if (await previousTab.count() > 0) {
-        await previousTab.click();
-        await page.waitForTimeout(3000);
-    }
-
-    // Wait for grid to load
-    await authSection.locator('table').first().waitFor({ state: 'visible', timeout: 30000 });
-
-    // Look for the denied authorization with the activity name
-    const authRow = authSection.locator('table tbody tr').filter({ hasText: activityName });
-    await expect(authRow.first()).toBeVisible({ timeout: 10000 });
+    await expect.poll(async () => authSection.locator('table tbody tr').evaluateAll(
+        (rows, expected) => rows.some((row) => row.offsetParent !== null
+            && row.innerText.includes(expected.activityName)
+            && row.innerText.includes(expected.reason)),
+        { activityName, reason },
+    ), {
+        timeout: 60000,
+    }).toBe(true);
 });

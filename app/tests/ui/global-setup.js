@@ -1,29 +1,60 @@
 // Global setup for Playwright tests
-const { chromium, expect } = require('@playwright/test');
-const { execSync } = require('child_process');
+const { execFileSync } = require('node:child_process');
+
+const { request } = require('@playwright/test');
+
+const { getUiTestEnvironment } = require('./support/test-environment.cjs');
+const { clearMailpitMessages, waitForAppReady } = require('./support/ui-helpers.cjs');
+
+const escapeSqlString = (value) => value.replace(/'/g, "''");
+
+const buildMysqlArgs = (environment) => {
+  const mysqlArgs = [
+    '-h',
+    environment.mysql.host,
+    '-P',
+    String(environment.mysql.port),
+    '-u',
+    environment.mysql.user,
+  ];
+
+  if (environment.mysql.password) {
+    mysqlArgs.push(`-p${environment.mysql.password}`);
+  }
+
+  mysqlArgs.push(
+    environment.mysql.database,
+    '-e',
+    [
+      'DELETE aa FROM activities_authorization_approvals aa',
+      'JOIN activities_authorizations az ON aa.authorization_id = az.id',
+      'JOIN members m ON az.member_id = m.id',
+      'JOIN activities_activities act ON az.activity_id = act.id',
+      `WHERE m.email_address = '${escapeSqlString(environment.cleanupMemberEmail)}'`,
+      `AND act.name = '${escapeSqlString(environment.cleanupActivityName)}';`,
+      'DELETE az FROM activities_authorizations az',
+      'JOIN members m ON az.member_id = m.id',
+      'JOIN activities_activities act ON az.activity_id = act.id',
+      `WHERE m.email_address = '${escapeSqlString(environment.cleanupMemberEmail)}'`,
+      `AND act.name = '${escapeSqlString(environment.cleanupActivityName)}';`,
+    ].join(' '),
+  );
+
+  return mysqlArgs;
+};
 
 async function globalSetup() {
   console.log('🚀 Starting global setup for UI tests...');
-  const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:8080';
-
-  // Start browser for authentication and other global setup
-  const browser = await chromium.launch();
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
-  const page = await context.newPage();
+  const environment = getUiTestEnvironment();
+  const apiContext = await request.newContext({
+    baseURL: environment.baseUrl,
+    ignoreHTTPSErrors: true,
+  });
 
   // empty the test mail server inbox
-  console.log('🧹 Emptying test mail server inbox...')
+  console.log('🧹 Emptying test mail server inbox...');
   try {
-    await page.goto('http://localhost:8025/');
-    var btn = await page.getByRole('button', { name: ' Delete all' });
-    //if the button is enabled, click it
-    if (await btn.isDisabled()) {
-      console.log('❗️ Delete all button is disabled, skipping emptying inbox');
-    } else {
-      await btn.click();
-      await page.getByRole('button', { name: 'Delete', exact: true }).click();
-
-    }
+    await clearMailpitMessages(apiContext);
     console.log('✅ Test mail server inbox emptied');
   } catch (error) {
     console.error('❌ Failed to empty test mail server inbox:', error);
@@ -32,7 +63,7 @@ async function globalSetup() {
   // Clean up authorization requests for test activities to avoid conflicts
   console.log('🧹 Cleaning up auth requests for test user...');
   try {
-    execSync(`mysql -h 127.0.0.1 -u KMPSQLDEV -pP@ssw0rd KMP_DEV -e "DELETE aa FROM activities_authorization_approvals aa JOIN activities_authorizations az ON aa.authorization_id = az.id JOIN members m ON az.member_id = m.id JOIN activities_activities act ON az.activity_id = act.id WHERE m.email_address = 'iris@ampdemo.com' AND act.name = 'Armored'; DELETE az FROM activities_authorizations az JOIN members m ON az.member_id = m.id JOIN activities_activities act ON az.activity_id = act.id WHERE m.email_address = 'iris@ampdemo.com' AND act.name = 'Armored';"`, { stdio: 'pipe' });
+    execFileSync('mysql', buildMysqlArgs(environment), { stdio: 'pipe' });
     console.log('✅ Auth requests cleaned up');
   } catch (error) {
     console.log('⚠️ Could not clean up auths (non-fatal):', error.message?.substring(0, 100));
@@ -41,13 +72,13 @@ async function globalSetup() {
   try {
     // Wait for the server to be ready
     console.log('⏳ Waiting for server to be ready...');
-    await page.goto(baseUrl, { waitUntil: 'networkidle' });
+    await waitForAppReady(apiContext);
     console.log('✅ Server is ready');
   } catch (error) {
     console.error('❌ Global setup failed:', error);
     throw error;
   } finally {
-    await browser.close();
+    await apiContext.dispose();
   }
 
   console.log('✅ Global setup completed');

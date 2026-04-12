@@ -11,6 +11,61 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$APP_DIR" || exit 1
 
+WITH_COVERAGE=""
+WITH_MUTATION=""
+
+usage() {
+    cat <<'EOF'
+Usage: bash bin/verify.sh [--with-coverage[=security|all]] [--with-mutation[=security|all]]
+
+Default behavior runs PHPUnit, Jest, Vite build, PHPCS, and PHPStan.
+Optional flags add slower coverage and mutation checks after the standard suite.
+EOF
+}
+
+validate_scope() {
+    local scope="$1"
+    local flag_name="$2"
+    case "$scope" in
+        security|all)
+            ;;
+        *)
+            echo "Unknown $flag_name scope: $scope" >&2
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --with-coverage)
+            WITH_COVERAGE="security"
+            ;;
+        --with-coverage=*)
+            WITH_COVERAGE="${1#*=}"
+            validate_scope "$WITH_COVERAGE" "--with-coverage"
+            ;;
+        --with-mutation)
+            WITH_MUTATION="security"
+            ;;
+        --with-mutation=*)
+            WITH_MUTATION="${1#*=}"
+            validate_scope "$WITH_MUTATION" "--with-mutation"
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage
+            exit 1
+            ;;
+    esac
+    shift
+done
+
 # Known PHPStan baseline errors that cannot be suppressed (type covariance in HtmlHelper)
 PHPSTAN_KNOWN_ERRORS=1
 
@@ -86,6 +141,29 @@ run_check "PHPStan Static Analysis" '
         exit 1
     fi
 '
+
+if [ -n "$WITH_COVERAGE" ]; then
+    PHP_COVERAGE_COMMAND='composer test:coverage'
+    JS_COVERAGE_COMMAND='npm run test:js:coverage'
+
+    if [ "$WITH_COVERAGE" = "security" ]; then
+        PHP_COVERAGE_COMMAND='composer test:coverage:security'
+        JS_COVERAGE_COMMAND='npm run test:js:coverage:security'
+    fi
+
+    run_check "PHP Coverage ($WITH_COVERAGE)" "$PHP_COVERAGE_COMMAND 2>&1 | tail -20; test \"\${PIPESTATUS[0]}\" -eq 0"
+    run_check "JS Coverage ($WITH_COVERAGE)" "$JS_COVERAGE_COMMAND 2>&1 | tail -20; test \"\${PIPESTATUS[0]}\" -eq 0"
+fi
+
+if [ -n "$WITH_MUTATION" ]; then
+    JS_MUTATION_COMMAND='npm run test:mutate'
+    if [ "$WITH_MUTATION" = "all" ]; then
+        JS_MUTATION_COMMAND='npm run test:mutate:all'
+    fi
+
+    run_check "PHP Mutation ($WITH_MUTATION)" 'composer mutate 2>&1 | tail -40; test "${PIPESTATUS[0]}" -eq 0'
+    run_check "JS Mutation ($WITH_MUTATION)" "$JS_MUTATION_COMMAND 2>&1 | tail -40; test \"\${PIPESTATUS[0]}\" -eq 0"
+fi
 
 # Summary
 echo ""
