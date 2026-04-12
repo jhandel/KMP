@@ -4,6 +4,8 @@ Complete reference for all KMP deployment configuration options.
 
 [← Back to Deployment Guide](README.md)
 
+> Legacy note: this page documents self-hosted configuration for archived deployments. New environments should not rely on the retired installer flow.
+
 ## Environment Variables
 
 ### Required
@@ -57,7 +59,7 @@ Complete reference for all KMP deployment configuration options.
 
 ## Config File (`~/.kmp/config.yaml`)
 
-The `kmp` management tool stores deployment configuration in `~/.kmp/config.yaml`. This file is created automatically by `kmp install`.
+Legacy self-hosted deployments store management-tool configuration in `~/.kmp/config.yaml`. Existing environments may still use this file, and maintainers can also create it manually when reconstructing an archived self-hosted install.
 
 ```yaml
 # Example config.yaml

@@ -6,24 +6,12 @@ Membership management system for SCA Kingdoms.
 
 Please review the wiki for solution details https://github.com/Ansteorra/KMP/wiki
 
-## 🚀 Deploy KMP
+## Deployment
 
-### One-Line Install
+KMP is moving to a managed multi-tenant hosting model. The standalone installer is retired for new environments and kept in the repository as archived reference only.
 
-**macOS/Linux:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/jhandel/KMP/main/installer/scripts/install.sh | bash && kmp install
-```
-
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/jhandel/KMP/main/installer/scripts/install.ps1 | iex; kmp install
-```
-
-### Supported Platforms
-Docker · Fly.io · Railway · Azure · AWS · Any VPS
-
-📖 [Full Deployment Guide](docs/deployment/README.md)
+- 📖 [Archived self-hosted deployment reference](docs/deployment/README.md)
+- 🛠️ [Legacy installer implementation notes](installer/README.md)
 
 Dev users all have the password "TestPassword"
 

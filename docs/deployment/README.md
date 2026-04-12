@@ -1,20 +1,17 @@
-# KMP Deployment Guide
+# Archived Self-Hosted Deployment Reference
 
-## Quick Start (60 seconds)
+KMP is moving to a managed multi-tenant hosting model. The standalone installer is retired for new deployments, but the self-hosted deployment knowledge is preserved here for legacy operators and maintainers.
 
-### Install the KMP manager:
-```bash
-curl -fsSL https://raw.githubusercontent.com/jhandel/KMP/main/installer/scripts/install.sh | bash
-```
+## Status
 
-### Deploy:
-```bash
-kmp install
-```
+| Area | Current status |
+|------|----------------|
+| Managed multi-tenant hosting | Primary deployment path |
+| `kmp install` | Retired for new deployments |
+| `bin/cake kmp_install` | Retired for new deployments |
+| Self-hosted guides below | Archived reference |
 
-The interactive wizard will guide you through choosing a platform and configuring your deployment.
-
-## Supported Platforms
+## Legacy Self-Hosted Platforms
 
 | Platform | Type | Database | SSL | Difficulty |
 |----------|------|----------|-----|------------|
@@ -26,29 +23,21 @@ The interactive wizard will guide you through choosing a platform and configurin
 | VPS (SSH) | Self-hosted | Bundled MariaDB | Caddy | ⭐⭐ Moderate |
 | Shared hosting (no root) | Traditional web host | Provider-managed or external | Provider-managed | ⭐⭐ Moderate |
 
-## How It Works
-
-1. Download the `kmp` management tool (single binary, no dependencies)
-2. Run `kmp install` — the TUI wizard guides you through platform selection and configuration
-3. KMP pulls a pre-built Docker image from ghcr.io (no building required)
-4. The installer provisions infrastructure (database, storage, SSL) for your chosen platform
-5. KMP runs — visit your domain to complete the web-based setup wizard
-
-## Lifecycle Commands
+## Legacy Lifecycle Commands
 
 | Command | Description |
 |---------|-------------|
-| `kmp install` | Deploy KMP to a new environment |
-| `kmp update` | Check for and apply updates |
-| `kmp status` | Show deployment health and version info |
-| `kmp logs [-f]` | View application logs |
-| `kmp backup` | Create a database backup |
-| `kmp restore <id>` | Restore from a backup |
-| `kmp rollback` | Revert to the previous version |
-| `kmp config` | View deployment configuration |
-| `kmp self-update` | Update the kmp tool itself |
+| `kmp install` | Retired; retained as historical reference only |
+| `kmp update` | Legacy self-hosted maintenance |
+| `kmp status` | Legacy self-hosted health and version checks |
+| `kmp logs [-f]` | Legacy self-hosted log access |
+| `kmp backup` | Legacy self-hosted database backup |
+| `kmp restore <id>` | Legacy self-hosted restore |
+| `kmp rollback` | Legacy self-hosted rollback |
+| `kmp config` | Legacy self-hosted deployment configuration |
+| `kmp self-update` | Legacy tool maintenance |
 
-## Release Channels
+## Self-Hosted Image Channels
 
 | Channel | Stability | Use Case |
 |---------|-----------|----------|
@@ -57,7 +46,7 @@ The interactive wizard will guide you through choosing a platform and configurin
 | `dev` | Development | Latest main branch |
 | `nightly` | Nightly build | Bleeding edge |
 
-## Architecture
+## Legacy Self-Hosted Architecture
 
 The KMP deployment system uses pre-built Docker images:
 
@@ -65,13 +54,13 @@ The KMP deployment system uses pre-built Docker images:
 GitHub Releases → ghcr.io/jhandel/kmp:{tag} → Your infrastructure
 ```
 
-Every release is:
+Every app image release is:
 - Multi-architecture (amd64 + arm64)
 - Smoke-tested in CI before publishing
 - Tagged with version, channel, and SHA digest
 - Immutable once published
 
-## Platform-Specific Guides
+## Archived Guides
 
 - [Docker/VPC Quick Start](quickstart-vpc.md)
 - [Fly.io Quick Start](quickstart-fly.md)
