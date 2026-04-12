@@ -1,9 +1,9 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Services\WorkflowEngine\Providers;
 
+use App\Model\Table\MembersTable;
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Services\WorkflowRegistry\WorkflowEntityRegistry;
@@ -43,6 +43,7 @@ class MembersWorkflowProvider
                     'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
                     'status' => ['type' => 'string', 'label' => 'Assigned Status'],
                     'isMinor' => ['type' => 'boolean', 'label' => 'Is Minor'],
+                    'source' => ['type' => 'string', 'label' => 'Registration Source'],
                 ],
             ],
             [
@@ -239,7 +240,12 @@ class MembersWorkflowProvider
                 'description' => 'Generic field update on a member entity',
                 'inputSchema' => [
                     'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
-                    'fields' => ['type' => 'object', 'label' => 'Fields to Update', 'required' => true, 'description' => 'Key-value pairs of field names and values'],
+                    'fields' => [
+                        'type' => 'object',
+                        'label' => 'Fields to Update',
+                        'required' => true,
+                        'description' => 'Key-value pairs of field names and values',
+                    ],
                 ],
                 'outputSchema' => [
                     'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
@@ -267,7 +273,9 @@ class MembersWorkflowProvider
             [
                 'action' => 'Members.PrepareRegistrationEmailVars',
                 'label' => 'Prepare Registration Email Vars',
-                'description' => 'Build all vars needed for registration email templates (welcome, secretary, minor-secretary) and resolve secretary addresses from app settings',
+                'description' => 'Build all vars needed for registration email templates'
+                    . ' (welcome, secretary, minor-secretary)'
+                    . ' and resolve secretary addresses from app settings',
                 'inputSchema' => [
                     'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
                 ],
@@ -284,6 +292,24 @@ class MembersWorkflowProvider
                 ],
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'prepareRegistrationEmailVars',
+                'isAsync' => false,
+            ],
+            [
+                'action' => 'Members.SendRegistrationNotifications',
+                'label' => 'Send Registration Notifications',
+                'description' => 'Queue the registration emails appropriate to the saved member'
+                    . ' and registration source',
+                'inputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID', 'required' => true],
+                    'source' => ['type' => 'string', 'label' => 'Registration Source'],
+                ],
+                'outputSchema' => [
+                    'memberId' => ['type' => 'integer', 'label' => 'Member ID'],
+                    'source' => ['type' => 'string', 'label' => 'Registration Source'],
+                    'queuedTemplates' => ['type' => 'array', 'label' => 'Queued Template Slugs'],
+                ],
+                'serviceClass' => $actionsClass,
+                'serviceMethod' => 'sendRegistrationNotifications',
                 'isAsync' => false,
             ],
         ]);
@@ -370,7 +396,7 @@ class MembersWorkflowProvider
                 'entityType' => 'Members.Members',
                 'label' => 'Member',
                 'description' => 'KMP member with lifecycle status and warrant eligibility',
-                'tableClass' => \App\Model\Table\MembersTable::class,
+                'tableClass' => MembersTable::class,
                 'fields' => [
                     'id' => ['type' => 'integer', 'label' => 'ID'],
                     'sca_name' => ['type' => 'string', 'label' => 'SCA Name'],

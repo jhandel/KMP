@@ -224,10 +224,6 @@ class MembersControllerTest extends HttpIntegrationTestCase
      */
     public function testAddPostWithValidData(): void
     {
-        // Deactivate workflow definitions so the legacy save path runs
-        $this->getTableLocator()->get('WorkflowDefinitions')
-            ->updateAll(['is_active' => false], ['slug' => 'member-registration']);
-
         // Branch must have can_have_members=1; KINGDOM_BRANCH_ID (2) does not
         $branch = $this->getTableLocator()->get('Branches')
             ->find()

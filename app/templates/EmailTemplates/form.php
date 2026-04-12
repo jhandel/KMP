@@ -8,10 +8,10 @@
 
 $this->assign('title', $emailTemplate->isNew() ? __('Add Email Template') : __('Edit Email Template'));
 ?>
-<?php $this->extend("/layout/TwitterBootstrap/dashboard");
+<?php $this->extend('/layout/TwitterBootstrap/dashboard');
 
-echo $this->KMP->startBlock("title");
-echo $this->KMP->getAppSetting("KMP.ShortSiteTitle") . ': ' . ($emailTemplate->isNew() ? 'Add Email Template' : 'Edit Email Template');
+echo $this->KMP->startBlock('title');
+echo $this->KMP->getAppSetting('KMP.ShortSiteTitle') . ': ' . ($emailTemplate->isNew() ? 'Add Email Template' : 'Edit Email Template');
 $this->KMP->endBlock(); ?>
 
 <div class="emailTemplates form content">
@@ -70,15 +70,21 @@ $this->KMP->endBlock(); ?>
                 'data-email-template-form-target' => 'subjectTemplate',
             ]) ?>
 
-            <?php if (!empty($emailTemplate->available_vars)): ?>
+            <?php if (!empty($emailTemplate->available_vars)) : ?>
             <div class="mb-3">
                 <small class="text-muted d-block mb-1">Quick insert:</small>
                 <div class="btn-group flex-wrap" role="group">
-                    <?php foreach ($emailTemplate->available_vars as $var): ?>
+                    <?php foreach ($emailTemplate->available_vars as $var) :
+                        $varName = is_array($var) ? (string)($var['name'] ?? '') : (string)$var;
+                        if ($varName === '') {
+                            continue;
+                        }
+                        $varDescription = is_array($var) ? (string)($var['description'] ?? $varName) : $varName;
+                        ?>
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-action="variable-insert#insert"
-                        data-variable-insert-variable-param="<?= h($var['name']) ?>"
-                        title="<?= h($var['description'] ?? $var['name']) ?>">
-                        {{<?= h($var['name']) ?>}}
+                        data-variable-insert-variable-param="<?= h($varName) ?>"
+                        title="<?= h($varDescription) ?>">
+                        {{<?= h($varName) ?>}}
                     </button>
                     <?php endforeach; ?>
                 </div>
@@ -184,16 +190,22 @@ $this->KMP->endBlock(); ?>
                         'data-action' => 'input->email-template-form#templateChanged',
                     ]) ?>
 
-                    <?php if (!empty($emailTemplate->available_vars)): ?>
+                    <?php if (!empty($emailTemplate->available_vars)) : ?>
                     <div class="mt-2">
                         <div class="mb-2"><strong>Available Variables:</strong> Click to insert</div>
                         <div class="btn-group flex-wrap mb-2" role="group">
-                            <?php foreach ($emailTemplate->available_vars as $var): ?>
+                            <?php foreach ($emailTemplate->available_vars as $var) :
+                                $varName = is_array($var) ? (string)($var['name'] ?? '') : (string)$var;
+                                if ($varName === '') {
+                                    continue;
+                                }
+                                $varDescription = is_array($var) ? (string)($var['description'] ?? $varName) : $varName;
+                                ?>
                             <button type="button" class="btn btn-sm btn-outline-primary"
                                 data-action="variable-insert#insert"
-                                data-variable-insert-variable-param="<?= h($var['name']) ?>"
-                                title="<?= h($var['description'] ?? $var['name']) ?>">
-                                {{<?= h($var['name']) ?>}}
+                                data-variable-insert-variable-param="<?= h($varName) ?>"
+                                title="<?= h($varDescription) ?>">
+                                {{<?= h($varName) ?>}}
                             </button>
                             <?php endforeach; ?>
                         </div>

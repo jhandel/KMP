@@ -192,13 +192,7 @@ class MemberRegistrationService
         $portalName = StaticHelpers::getAppSetting('KMP.LongSiteTitle', '', null, true);
         $resetUrl = '';
         if (!empty($member->password_token)) {
-            $resetUrl = Router::url([
-                'controller' => 'Members',
-                'action' => 'resetPassword',
-                'plugin' => null,
-                '_full' => true,
-                $member->password_token,
-            ]);
+            $resetUrl = Router::url('/members/reset-password/' . $member->password_token, true);
         }
 
         $registrationVars = [
@@ -208,13 +202,7 @@ class MemberRegistrationService
             'siteAdminSignature' => $siteAdminSignature,
         ];
 
-        $viewUrl = Router::url([
-            'controller' => 'Members',
-            'action' => 'view',
-            'plugin' => null,
-            '_full' => true,
-            $member->id,
-        ]);
+        $viewUrl = Router::url('/members/view/' . $member->id, true);
 
         $secretaryVars = [
             'memberViewUrl' => $viewUrl,
@@ -239,13 +227,7 @@ class MemberRegistrationService
     public function buildMinorRegistrationEmailVars(Member $member): array
     {
         $siteAdminSignature = StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true);
-        $viewUrl = Router::url([
-            'controller' => 'Members',
-            'action' => 'view',
-            'plugin' => null,
-            '_full' => true,
-            $member->id,
-        ]);
+        $viewUrl = Router::url('/members/view/' . $member->id, true);
 
         return [
             'memberViewUrl' => $viewUrl,

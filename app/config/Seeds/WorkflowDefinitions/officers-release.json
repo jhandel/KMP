@@ -27,7 +27,8 @@
                     "officerId": "$.trigger.officerId",
                     "releasedById": "$.trigger.releasedById",
                     "expiresOn": "$.trigger.expiresOn",
-                    "reason": "$.trigger.reason"
+                    "reason": "$.trigger.reason",
+                    "releaseStatus": "$.trigger.releaseStatus"
                 }
             },
             "position": {

@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Model\Table;
@@ -95,6 +94,29 @@ class EmailTemplatesTableTest extends BaseTestCase
         $this->assertSame('memberScaName', $template->variables_schema[0]['name']);
         $this->assertTrue($template->variables_schema[0]['required']);
         $this->assertSame('awardName', $template->variables_schema[1]['name']);
+    }
+
+    public function testAvailableVarsNormalizesLegacyStringList(): void
+    {
+        $template = new EmailTemplate();
+        $template->available_vars = ['memberScaName', 'memberViewUrl'];
+
+        $this->assertSame('memberScaName', $template->available_vars[0]['name']);
+        $this->assertSame('memberViewUrl', $template->available_vars[1]['name']);
+    }
+
+    public function testAvailableVarsNormalizesAssociativeFormat(): void
+    {
+        $template = new EmailTemplate();
+        $template->available_vars = [
+            'memberScaName' => 'Member SCA Name',
+            'memberViewUrl' => ['description' => 'Member profile URL'],
+        ];
+
+        $this->assertSame('memberScaName', $template->available_vars[0]['name']);
+        $this->assertSame('Member SCA Name', $template->available_vars[0]['description']);
+        $this->assertSame('memberViewUrl', $template->available_vars[1]['name']);
+        $this->assertSame('Member profile URL', $template->available_vars[1]['description']);
     }
 
     public function testValidationRequiresSlug(): void

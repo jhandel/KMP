@@ -14,7 +14,7 @@
             "outputs": [
                 {
                     "port": "next",
-                    "target": "check-only-one-per-branch"
+                    "target": "check-requires-warrant-before-create"
                 }
             ]
         },
@@ -37,7 +37,7 @@
                 },
                 {
                     "port": "false",
-                    "target": "check-requires-warrant",
+                    "target": "create-officer",
                     "label": "No"
                 }
             ]
@@ -48,7 +48,9 @@
             "config": {
                 "condition": "Officers.HasConflictingOfficer",
                 "officeId": "$.trigger.officeId",
-                "branchId": "$.trigger.branchId"
+                "branchId": "$.trigger.branchId",
+                "newOfficerStartDate": "$.trigger.startOn",
+                "newOfficerEndDate": "$.trigger.expiresOn"
             },
             "position": {
                 "x": 650,
@@ -62,7 +64,7 @@
                 },
                 {
                     "port": "false",
-                    "target": "check-requires-warrant",
+                    "target": "create-officer",
                     "label": "No Conflict"
                 }
             ]
@@ -75,7 +77,8 @@
                 "params": {
                     "officeId": "$.trigger.officeId",
                     "branchId": "$.trigger.branchId",
-                    "newOfficerStartDate": "$.trigger.startOn"
+                    "newOfficerStartDate": "$.trigger.startOn",
+                    "newOfficerEndDate": "$.trigger.expiresOn"
                 }
             },
             "position": {
@@ -85,11 +88,11 @@
             "outputs": [
                 {
                     "port": "next",
-                    "target": "check-requires-warrant"
+                    "target": "create-officer"
                 }
             ]
         },
-        "check-requires-warrant": {
+        "check-requires-warrant-before-create": {
             "type": "condition",
             "label": "Office Requires Warrant?",
             "config": {
@@ -108,7 +111,7 @@
                 },
                 {
                     "port": "false",
-                    "target": "create-officer",
+                    "target": "check-only-one-per-branch",
                     "label": "No"
                 }
             ]
@@ -127,7 +130,7 @@
             "outputs": [
                 {
                     "port": "true",
-                    "target": "create-officer",
+                    "target": "check-only-one-per-branch",
                     "label": "Yes"
                 },
                 {
@@ -159,23 +162,46 @@
             "outputs": [
                 {
                     "port": "next",
-                    "target": "recalculate-office"
+                    "target": "check-requires-warrant-after-create"
                 }
             ]
         },
-        "recalculate-office": {
-            "type": "action",
-            "label": "Recalculate Officers for Office",
+        "check-requires-warrant-after-create": {
+            "type": "condition",
+            "label": "Office Requires Warrant After Hire?",
             "config": {
-                "action": "Officers.RecalculateOfficersForOffice",
-                "params": {
-                    "officeId": "$.trigger.officeId",
-                    "updaterId": "$.trigger.memberId"
-                }
+                "condition": "Officers.OfficeRequiresWarrant",
+                "officeId": "$.trigger.officeId"
             },
             "position": {
                 "x": 1850,
                 "y": 250
+            },
+            "outputs": [
+                {
+                    "port": "true",
+                    "target": "request-warrant-roster",
+                    "label": "Yes"
+                },
+                {
+                    "port": "false",
+                    "target": "prepare-hire-notification-vars",
+                    "label": "No"
+                }
+            ]
+        },
+        "request-warrant-roster": {
+            "type": "action",
+            "label": "Request Warrant Roster",
+            "config": {
+                "action": "Officers.RequestWarrantRoster",
+                "params": {
+                    "officerId": "$.nodes.create-officer.result.officerId"
+                }
+            },
+            "position": {
+                "x": 2150,
+                "y": 120
             },
             "outputs": [
                 {
@@ -247,7 +273,12 @@
         "end-rejected": {
             "type": "end",
             "label": "Rejected \u2014 Not Warrantable",
-            "config": {},
+            "config": {
+                "result": {
+                    "success": false,
+                    "error": "Member is not warrantable"
+                }
+            },
             "position": {
                 "x": 1550,
                 "y": 50

@@ -81,7 +81,7 @@ class EmailTemplate extends BaseEntity
      */
     protected function _getAvailableVars($value): array
     {
-        return $this->_decodeJsonArray($value);
+        return $this->_normaliseAvailableVarEntries($this->_decodeJsonArray($value));
     }
 
     /**
@@ -92,7 +92,12 @@ class EmailTemplate extends BaseEntity
      */
     protected function _setAvailableVars($value): ?array
     {
-        return $this->_normaliseJsonArray($value);
+        $decoded = $this->_normaliseJsonArray($value);
+        if ($decoded === null) {
+            return null;
+        }
+
+        return $this->_normaliseAvailableVarEntries($decoded);
     }
 
     /**
@@ -215,6 +220,52 @@ class EmailTemplate extends BaseEntity
             }
 
             $normalised[] = ['name' => $name] + $entry;
+        }
+
+        return $normalised;
+    }
+
+    /**
+     * Normalize available_vars so legacy string lists and associative maps become
+     * a list of entries with an explicit `name` key.
+     *
+     * Supported inputs:
+     *   - ['memberScaName', 'memberViewUrl']
+     *   - [['name' => 'memberScaName', 'description' => '...']]
+     *   - ['memberScaName' => 'Member SCA Name']
+     *
+     * @param array $entries
+     * @return array
+     */
+    private function _normaliseAvailableVarEntries(array $entries): array
+    {
+        $normalised = [];
+
+        if (array_is_list($entries)) {
+            foreach ($entries as $entry) {
+                if (is_string($entry) && $entry !== '') {
+                    $normalised[] = ['name' => $entry];
+                    continue;
+                }
+                if (is_array($entry) && !empty($entry['name'])) {
+                    $normalised[] = $entry;
+                }
+            }
+
+            return $normalised;
+        }
+
+        foreach ($entries as $name => $entry) {
+            if (!is_string($name) || $name === '') {
+                continue;
+            }
+            if (is_string($entry) && $entry !== '') {
+                $normalised[] = ['name' => $name, 'description' => $entry];
+                continue;
+            }
+            if (is_array($entry)) {
+                $normalised[] = ['name' => $name] + $entry;
+            }
         }
 
         return $normalised;

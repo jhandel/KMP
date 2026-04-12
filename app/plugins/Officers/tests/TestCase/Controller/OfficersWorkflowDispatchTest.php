@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace Officers\Test\TestCase\Controller;
@@ -8,17 +7,22 @@ use App\Services\ServiceResult;
 use App\Services\WarrantManager\WarrantManagerInterface;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Test\TestCase\Support\HttpIntegrationTestCase;
-use Cake\Core\ContainerInterface;
+use Cake\Core\ContainerInterface as CakeContainerInterface;
+use Cake\Event\EventInterface;
 use Cake\I18n\DateTime;
 use Cake\ORM\TableRegistry;
-use Officers\Services\OfficerManagerInterface;
+use Closure;
+use Exception;
+use Officers\Model\Entity\Officer;
+use Psr\Container\ContainerInterface as PsrContainerInterface;
+use ReflectionProperty;
 
 /**
- * Tests dual-path workflow dispatch in OfficersController.
+ * Tests workflow dispatch in OfficersController.
  *
  * Verifies that assign(), release(), and requestWarrant() route through
  * TriggerDispatcher when a matching workflow definition is active, and
- * fall back to legacy OfficerManager / WarrantManager calls otherwise.
+ * surface clear errors when required workflows are unavailable.
  *
  * @uses \Officers\Controller\OfficersController
  */
@@ -49,8 +53,8 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
 
         // Provide ContainerInterface so the DI chain for WorkflowEngine
         // and TriggerDispatcher can resolve without hitting unresolvable deps.
-        $this->mockServiceClean(ContainerInterface::class, function () {
-            return $this->createMock(ContainerInterface::class);
+        $this->mockServiceClean(CakeContainerInterface::class, function () {
+            return $this->createMock(CakeContainerInterface::class);
         });
     }
 
@@ -68,7 +72,7 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
      * entries, causing unwanted dependency resolution. This override clears
      * those arguments for services we've replaced with mocks.
      */
-    public function modifyContainer(\Cake\Event\EventInterface $event, \Psr\Container\ContainerInterface $container): void
+    public function modifyContainer(EventInterface $event, PsrContainerInterface $container): void
     {
         parent::modifyContainer($event, $container);
 
@@ -76,10 +80,10 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
             if ($container->has($key)) {
                 try {
                     $def = $container->extend($key);
-                    $ref = new \ReflectionProperty($def, 'arguments');
+                    $ref = new ReflectionProperty($def, 'arguments');
                     $ref->setAccessible(true);
                     $ref->setValue($def, []);
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     // Definition may not exist in aggregate — ignore
                 }
             }
@@ -89,7 +93,7 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
     /**
      * Mock a service AND mark it for DI argument clearing.
      */
-    protected function mockServiceClean(string $class, \Closure $factory): void
+    protected function mockServiceClean(string $class, Closure $factory): void
     {
         $this->mockService($class, $factory);
         $this->mockedServiceKeys[] = $class;
@@ -197,24 +201,11 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
     // ---------------------------------------------------------------
 
     /**
-     * Test assign() uses legacy OfficerManager when no workflow is active.
+     * Test assign() shows an error when the workflow is unavailable.
      */
-    public function testAssignUsesLegacyWhenNoWorkflow(): void
+    public function testAssignFlashesErrorWhenWorkflowUnavailable(): void
     {
         $this->deactivateWorkflows(['officer-hire']);
-
-        $called = false;
-        $this->mockServiceClean(OfficerManagerInterface::class, function () use (&$called) {
-            $mock = $this->createMock(OfficerManagerInterface::class);
-            $mock->method('assign')
-                ->willReturnCallback(function () use (&$called) {
-                    $called = true;
-
-                    return new ServiceResult(true);
-                });
-
-            return $mock;
-        });
 
         $this->mockServiceClean(TriggerDispatcher::class, function () {
             $mock = $this->createMock(TriggerDispatcher::class);
@@ -226,7 +217,7 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
         $this->post('/officers/officers/assign', $this->getAssignData());
 
         $this->assertRedirect();
-        $this->assertTrue($called, 'Legacy OfficerManager::assign should have been called');
+        $this->assertFlashMessage('The officer assignment workflow is not currently available.', 'flash');
     }
 
     /**
@@ -243,19 +234,19 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
                 ->willReturnCallback(function (string $event, array $context) use (&$dispatched) {
                     $dispatched = true;
                     $this->assertSame('Officers.HireRequested', $event);
+                    $this->assertArrayHasKey('memberId', $context);
+                    $this->assertArrayHasKey('officeId', $context);
+                    $this->assertArrayHasKey('branchId', $context);
+                    $this->assertArrayHasKey('startOn', $context);
+                    $this->assertArrayHasKey('expiresOn', $context);
+                    $this->assertArrayHasKey('deputyDescription', $context);
+                    $this->assertArrayHasKey('emailAddress', $context);
                     $this->assertArrayHasKey('member_id', $context);
                     $this->assertArrayHasKey('office_id', $context);
                     $this->assertArrayHasKey('branch_id', $context);
 
-                    return ['instance_id' => 999];
+                    return [new ServiceResult(true, null, ['instanceId' => 999])];
                 });
-
-            return $mock;
-        });
-
-        $this->mockServiceClean(OfficerManagerInterface::class, function () {
-            $mock = $this->createMock(OfficerManagerInterface::class);
-            $mock->expects($this->never())->method('assign');
 
             return $mock;
         });
@@ -264,26 +255,27 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
 
         $this->assertRedirect();
         $this->assertTrue($dispatched, 'TriggerDispatcher::dispatch should have been called');
+        $this->assertFlashMessage('The officer has been saved.', 'flash');
     }
 
     /**
-     * Test assign() legacy path sets flash error on failure.
+     * Test assign() surfaces workflow rejection errors.
      */
-    public function testAssignLegacyFlashesErrorOnFailure(): void
+    public function testAssignFlashesWorkflowFailureMessage(): void
     {
-        $this->deactivateWorkflows(['officer-hire']);
-
-        $this->mockServiceClean(OfficerManagerInterface::class, function () {
-            $mock = $this->createMock(OfficerManagerInterface::class);
-            $mock->method('assign')
-                ->willReturn(new ServiceResult(false, 'Duplicate assignment'));
-
-            return $mock;
-        });
+        $this->ensureActiveWorkflow('officer-hire');
 
         $this->mockServiceClean(TriggerDispatcher::class, function () {
             $mock = $this->createMock(TriggerDispatcher::class);
-            $mock->expects($this->never())->method('dispatch');
+            $mock->method('dispatch')
+                ->willReturn([
+                    new ServiceResult(true, null, [
+                        'workflowResult' => [
+                            'success' => false,
+                            'error' => 'Member is not warrantable',
+                        ],
+                    ]),
+                ]);
 
             return $mock;
         });
@@ -291,7 +283,7 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
         $this->post('/officers/officers/assign', $this->getAssignData());
 
         $this->assertRedirect();
-        $this->assertFlashMessage('Duplicate assignment', 'flash');
+        $this->assertFlashMessage('Member is not warrantable', 'flash');
     }
 
     // ---------------------------------------------------------------
@@ -344,8 +336,9 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
                     $this->assertArrayHasKey('releasedById', $context);
                     $this->assertArrayHasKey('expiresOn', $context);
                     $this->assertArrayHasKey('reason', $context);
+                    $this->assertSame(Officer::RELEASED_STATUS, $context['releaseStatus']);
 
-                    return ['instance_id' => 888];
+                    return [new ServiceResult(true, null, ['instanceId' => 888])];
                 });
 
             return $mock;
@@ -359,6 +352,34 @@ class OfficersWorkflowDispatchTest extends HttpIntegrationTestCase
 
         $this->assertRedirect();
         $this->assertTrue($dispatched, 'TriggerDispatcher::dispatch should have been called');
+    }
+
+    /**
+     * Test release() surfaces workflow execution failures.
+     */
+    public function testReleaseFlashesWorkflowFailureMessage(): void
+    {
+        $this->ensureActiveWorkflow('officers-release');
+        $officer = $this->createTestOfficer();
+
+        $this->mockServiceClean(TriggerDispatcher::class, function () {
+            $mock = $this->createMock(TriggerDispatcher::class);
+            $mock->method('dispatch')
+                ->willReturn([
+                    new ServiceResult(false, 'Unable to release officer'),
+                ]);
+
+            return $mock;
+        });
+
+        $this->post('/officers/officers/release', [
+            'id' => $officer->id,
+            'revoked_reason' => 'Stepping down',
+            'revoked_on' => DateTime::now()->toDateString(),
+        ]);
+
+        $this->assertRedirect();
+        $this->assertFlashMessage('Unable to release officer', 'flash');
     }
 
     // ---------------------------------------------------------------

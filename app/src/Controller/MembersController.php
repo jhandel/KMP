@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Controller;
@@ -20,6 +19,7 @@ use App\Services\MemberProfileService;
 use App\Services\MemberRegistrationService;
 use App\Services\MemberSearchService;
 use App\Services\QuickLoginDeviceService;
+use App\Services\ServiceResult;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use Authentication\PasswordHasher\DefaultPasswordHasher;
 use Cake\Datasource\Exception\RecordNotFoundException;
@@ -29,10 +29,12 @@ use Cake\Http\Exception\ForbiddenException;
 use Cake\Http\Exception\NotFoundException;
 use Cake\Http\Response;
 use Cake\I18n\DateTime;
+use Cake\Log\Log;
 use Cake\Mailer\MailerAwareTrait;
 use Cake\ORM\Query\SelectQuery;
 use Cake\Routing\Router;
 use Psr\Http\Message\UploadedFileInterface;
+use Throwable;
 
 /**
  * Manages member CRUD, authentication, profiles, and member discovery.
@@ -1041,7 +1043,7 @@ class MembersController extends AppController
      *
      * @return \\Cake\\Http\\Response|null|void
      */
-    public function add(TriggerDispatcher $dispatcher, MemberRegistrationService $regService)
+    public function add(TriggerDispatcher $dispatcher)
     {
         $member = $this->Members->newEmptyEntity();
         $this->Authorization->authorize($member);
@@ -1082,73 +1084,70 @@ class MembersController extends AppController
             } else {
                 $member->status = Member::STATUS_ACTIVE;
             }
-            $addResult = $this->dispatchOrLegacy(
-                $dispatcher,
-                'member-registration',
-                'Members.Registered',
-                [
-                    'member' => $member->toArray(),
-                    'form_data' => $this->request->getData(),
-                ],
-                function () use ($member, $regService) {
-                    if ($this->Members->save($member)) {
-                        if ($member->age < 18) {
-                            $minorSecretaryEmail = StaticHelpers::getAppSetting(
-                                'Members.NewMinorSecretaryEmail',
-                                '',
-                                null,
-                                true,
-                            );
-                            if ($minorSecretaryEmail !== '') {
-                                $this->queueMail('KMP', 'sendFromTemplate', $minorSecretaryEmail, array_merge(
-                                    ['_templateId' => 'member-registration-secretary-minor'],
-                                    $regService->buildMinorRegistrationEmailVars($member),
-                                ));
-                            }
-                            $this->Flash->success(__(
-                                'The Member has been saved and the minor '
-                                . 'registration email has been sent for '
-                                . 'verification.',
-                            ));
-                        } else {
-                            $this->Flash->success(__(
-                                'The Member has been saved. Please ask the '
-                                . "member to use 'forgot password' to set "
-                                . 'their password.',
-                            ));
-                        }
+            $connection = $this->Members->getConnection();
+            $connection->begin();
 
-                        return $this->redirect(['action' => 'view', $member->id]);
-                    }
-                    $this->Flash->error(
-                        __('The Member could not be saved. Please, try again.'),
-                    );
+            if (!$this->Members->save($member)) {
+                $connection->rollback();
+                $this->Flash->error(
+                    __('The Member could not be saved. Please, try again.'),
+                );
+                $this->setAddFormViewVars($member);
+
+                return null;
+            }
+
+            try {
+                $results = $this->dispatchWorkflowOrFail(
+                    $dispatcher,
+                    'member-registration',
+                    'Members.Registered',
+                    [
+                        'memberId' => (int)$member->id,
+                        'memberPublicId' => (string)$member->public_id,
+                        'status' => (string)$member->status,
+                        'isMinor' => $member->age < 18,
+                        'source' => 'admin-add',
+                    ],
+                );
+                $workflowError = $this->extractWorkflowDispatchFailure(
+                    $results,
+                    'The member registration workflow could not be completed.',
+                );
+                if ($workflowError !== null) {
+                    $connection->rollback();
+                    $this->Flash->error(__($workflowError));
+                    $this->setAddFormViewVars($member);
 
                     return null;
-                },
-            );
-            if ($addResult instanceof Response) {
-                return $addResult;
-            }
-        }
-        $months = array_reduce(range(1, 12), function ($rslt, $m) {
-            $rslt[$m] = date('F', mktime(0, 0, 0, $m, 10));
+                }
+            } catch (Throwable $e) {
+                $connection->rollback();
+                Log::error('Member registration workflow dispatch failed in add(): ' . $e->getMessage());
+                $this->Flash->error(__('The member registration workflow is not currently available.'));
+                $this->setAddFormViewVars($member);
 
-            return $rslt;
-        });
-        $years = array_combine(range(date('Y'), date('Y') - 130), range(date('Y'), date('Y') - 130));
-        $treeList = $this->Members->Branches
-            ->find('list', keyPath: function ($entity) {
-                return $entity->id . '|' . ($entity->can_have_members == 1 ? 'true' : 'false');
-            })
-            ->where(['can_have_members' => true])
-            ->orderBy(['name' => 'ASC'])->toArray();
-        $this->set(compact(
-            'member',
-            'treeList',
-            'months',
-            'years',
-        ));
+                return null;
+            }
+
+            $connection->commit();
+            if ($member->age < 18) {
+                $this->Flash->success(__(
+                    'The Member has been saved and the minor '
+                    . 'registration email has been sent for '
+                    . 'verification.',
+                ));
+            } else {
+                $this->Flash->success(__(
+                    'The Member has been saved. Please ask the '
+                    . "member to use 'forgot password' to set "
+                    . 'their password.',
+                ));
+            }
+
+            return $this->redirect(['action' => 'view', $member->id]);
+        }
+        $this->setAddFormViewVars($member);
     }
 
     /**
@@ -2462,7 +2461,7 @@ class MembersController extends AppController
                 $uploadResult = $regService->processCardUpload($file);
                 if (!$uploadResult['success']) {
                     $this->Flash->error($uploadResult['message']);
-                    $this->set(compact('member'));
+                    $this->setRegisterFormViewVars($member);
 
                     return;
                 }
@@ -2477,55 +2476,44 @@ class MembersController extends AppController
 
                 return $this->redirect(['action' => 'login']);
             }
+            $connection = $this->Members->getConnection();
+            $connection->begin();
+
             if ($regService->saveMember($member)) {
-                $this->dispatchOrLegacy(
-                    $dispatcher,
-                    'member-registration',
-                    'Members.Registered',
-                    [
-                        'memberId' => (int)$member->id,
-                        'memberPublicId' => (string)$member->public_id,
-                        'status' => (string)$member->status,
-                        'isMinor' => $member->age <= 17,
-                    ],
-                    function () use ($member, $regService): void {
-                        if ($member->age > 17) {
-                            $emailVars = $regService->buildAdultRegistrationEmailVars($member);
-                            $adultSecretaryEmail = StaticHelpers::getAppSetting(
-                                'Members.NewMemberSecretaryEmail',
-                                '',
-                                null,
-                                true,
-                            );
-                            $this->queueMail('KMP', 'sendFromTemplate', $member->email_address, array_merge(
-                                ['_templateId' => 'member-registration-welcome'],
-                                $emailVars['registrationVars'],
-                            ));
-                            if ($adultSecretaryEmail !== '') {
-                                $this->queueMail('KMP', 'sendFromTemplate', $adultSecretaryEmail, array_merge(
-                                    ['_templateId' => 'member-registration-secretary'],
-                                    $emailVars['secretaryVars'],
-                                ));
-                            }
+                try {
+                    $results = $this->dispatchWorkflowOrFail(
+                        $dispatcher,
+                        'member-registration',
+                        'Members.Registered',
+                        [
+                            'memberId' => (int)$member->id,
+                            'memberPublicId' => (string)$member->public_id,
+                            'status' => (string)$member->status,
+                            'isMinor' => $member->age <= 17,
+                            'source' => 'self-register',
+                        ],
+                    );
+                    $workflowError = $this->extractWorkflowDispatchFailure(
+                        $results,
+                        'The member registration workflow could not be completed.',
+                    );
+                    if ($workflowError !== null) {
+                        $connection->rollback();
+                        $this->Flash->error(__($workflowError));
+                        $this->setRegisterFormViewVars($member);
 
-                            return;
-                        }
+                        return;
+                    }
+                } catch (Throwable $e) {
+                    $connection->rollback();
+                    Log::error('Member registration workflow dispatch failed in register(): ' . $e->getMessage());
+                    $this->Flash->error(__('The member registration workflow is not currently available.'));
+                    $this->setRegisterFormViewVars($member);
 
-                        $secretaryVars = $regService->buildMinorRegistrationEmailVars($member);
-                        $minorSecretaryEmail = StaticHelpers::getAppSetting(
-                            'Members.NewMinorSecretaryEmail',
-                            '',
-                            null,
-                            true,
-                        );
-                        if ($minorSecretaryEmail !== '') {
-                            $this->queueMail('KMP', 'sendFromTemplate', $minorSecretaryEmail, array_merge(
-                                ['_templateId' => 'member-registration-secretary-minor'],
-                                $secretaryVars,
-                            ));
-                        }
-                    },
-                );
+                    return;
+                }
+
+                $connection->commit();
 
                 if ($member->age > 17) {
                     $this->Flash->success(__(
@@ -2544,10 +2532,91 @@ class MembersController extends AppController
 
                 return $this->redirect(['action' => 'login']);
             }
+
+            $connection->rollback();
             $this->Flash->error(
                 __('The Member could not be saved. Please, try again.'),
             );
         }
+        $this->setRegisterFormViewVars($member);
+    }
+
+    /**
+     * Extract the first workflow dispatch failure from trigger results.
+     *
+     * @param array<int, mixed> $results Workflow dispatch results.
+     * @param string $defaultMessage Fallback error message.
+     * @return string|null
+     */
+    private function extractWorkflowDispatchFailure(array $results, string $defaultMessage): ?string
+    {
+        if ($results === []) {
+            return $defaultMessage;
+        }
+
+        foreach ($results as $result) {
+            if ($result instanceof ServiceResult) {
+                if (!$result->success) {
+                    return $result->reason ?? $defaultMessage;
+                }
+
+                $workflowResult = is_array($result->data ?? null)
+                    ? ($result->data['workflowResult'] ?? null)
+                    : null;
+                if (
+                    is_array($workflowResult)
+                    && array_key_exists('success', $workflowResult)
+                    && $workflowResult['success'] === false
+                ) {
+                    return (string)($workflowResult['error'] ?? $workflowResult['reason'] ?? $defaultMessage);
+                }
+
+                continue;
+            }
+
+            if (
+                is_array($result)
+                && array_key_exists('success', $result)
+                && $result['success'] === false
+            ) {
+                return (string)($result['error'] ?? $result['reason'] ?? $defaultMessage);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Populate shared view vars for the admin add-member form.
+     *
+     * @param \App\Model\Entity\Member $member Current form entity
+     * @return void
+     */
+    private function setAddFormViewVars(Member $member): void
+    {
+        $months = array_reduce(range(1, 12), function ($rslt, $m) {
+            $rslt[$m] = date('F', mktime(0, 0, 0, $m, 10));
+
+            return $rslt;
+        });
+        $years = array_combine(range(date('Y'), date('Y') - 130), range(date('Y'), date('Y') - 130));
+        $treeList = $this->Members->Branches
+            ->find('list', keyPath: function ($entity) {
+                return $entity->id . '|' . ($entity->can_have_members == 1 ? 'true' : 'false');
+            })
+            ->where(['can_have_members' => true])
+            ->orderBy(['name' => 'ASC'])->toArray();
+        $this->set(compact('member', 'treeList', 'months', 'years'));
+    }
+
+    /**
+     * Populate shared view vars for the public registration form.
+     *
+     * @param \App\Model\Entity\Member $member Current form entity
+     * @return void
+     */
+    private function setRegisterFormViewVars(Member $member): void
+    {
         $headerImage = StaticHelpers::getAppSetting(
             'KMP.Login.Graphic',
         );

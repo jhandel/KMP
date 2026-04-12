@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Test\TestCase\Services\WorkflowEngine\Providers;
 
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
+use App\Model\Entity\Warrant;
 use App\Services\ServiceResult;
 use App\Services\WarrantManager\WarrantManagerInterface;
+use App\Services\WarrantManager\WarrantRequest;
+use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Test\TestCase\BaseTestCase;
@@ -28,6 +31,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
     private ActiveWindowManagerInterface $activeWindowManager;
     private WarrantManagerInterface $warrantManager;
     private OfficerManagerInterface $officerManager;
+    private TriggerDispatcher $triggerDispatcher;
 
     protected function setUp(): void
     {
@@ -36,12 +40,17 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $this->activeWindowManager = $this->createMock(ActiveWindowManagerInterface::class);
         $this->warrantManager = $this->createMock(WarrantManagerInterface::class);
         $this->officerManager = $this->createMock(OfficerManagerInterface::class);
+        $this->triggerDispatcher = $this->createMock(TriggerDispatcher::class);
 
-        $this->actions = new OfficerWorkflowActions(
-            $this->activeWindowManager,
-            $this->warrantManager,
-            $this->officerManager,
-        );
+        $this->actions = $this->getMockBuilder(OfficerWorkflowActions::class)
+            ->setConstructorArgs([
+                $this->activeWindowManager,
+                $this->warrantManager,
+                $this->officerManager,
+                $this->triggerDispatcher,
+            ])
+            ->onlyMethods(['queueMail'])
+            ->getMock();
         $this->conditions = new OfficerWorkflowConditions();
     }
 
@@ -84,6 +93,97 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $this->assertContains('Officers.IsOnlyOnePerBranch', $conditionKeys);
         $this->assertContains('Officers.IsMemberWarrantable', $conditionKeys);
         $this->assertContains('Officers.HasConflictingOfficer', $conditionKeys);
+    }
+
+    public function testOfficerHireWorkflowChecksWarrantabilityBeforeConflictResolution(): void
+    {
+        $definition = json_decode(
+            (string)file_get_contents(ROOT . '/config/Seeds/WorkflowDefinitions/officers-hire.json'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+
+        $this->assertSame(
+            'check-requires-warrant-before-create',
+            $definition['nodes']['trigger-hire']['outputs'][0]['target'],
+        );
+        $this->assertSame(
+            'check-only-one-per-branch',
+            $definition['nodes']['check-requires-warrant-before-create']['outputs'][1]['target'],
+        );
+        $this->assertSame(
+            'check-only-one-per-branch',
+            $definition['nodes']['check-warrantable']['outputs'][0]['target'],
+        );
+        $this->assertSame(
+            'create-officer',
+            $definition['nodes']['check-has-conflict']['outputs'][1]['target'],
+        );
+        $this->assertSame(
+            'create-officer',
+            $definition['nodes']['release-conflicting']['outputs'][0]['target'],
+        );
+    }
+
+    // =====================================================
+    // CreateOfficerRecord action
+    // =====================================================
+
+    public function testCreateOfficerRecordThrowsWhenWarrantRequiredMemberIsNotWarrantable(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Member is not warrantable');
+
+        $this->actions->createOfficerRecord(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'memberId' => self::TEST_MEMBER_DEVON_ID,
+                'officeId' => 2,
+                'branchId' => self::KINGDOM_BRANCH_ID,
+                'startOn' => DateTime::now()->format('Y-m-d H:i:s'),
+                'expiresOn' => DateTime::now()->addMonths(6)->format('Y-m-d H:i:s'),
+                'emailAddress' => 'devon@example.test',
+                'deputyDescription' => '',
+            ],
+        );
+    }
+
+    public function testCreateOfficerRecordDoesNotLetActiveWindowManagerRecloseUniqueOfficeConflicts(): void
+    {
+        $startOn = DateTime::now()->addDays(10);
+        $expiresOn = DateTime::now()->addDays(40);
+
+        $this->activeWindowManager->expects($this->once())
+            ->method('start')
+            ->with(
+                'Officers.Officers',
+                $this->isType('int'),
+                self::ADMIN_MEMBER_ID,
+                $this->callback(fn (DateTime $value) => $value->toDateTimeString() === $startOn->toDateTimeString()),
+                $this->callback(fn (?DateTime $value) => $value?->toDateTimeString() === $expiresOn->toDateTimeString()),
+                $this->isType('int'),
+                $this->isType('int'),
+                false,
+                self::KINGDOM_BRANCH_ID,
+            )
+            ->willReturn(new ServiceResult(true));
+
+        $result = $this->actions->createOfficerRecord(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'memberId' => self::TEST_MEMBER_AGATHA_ID,
+                'officeId' => 3,
+                'branchId' => self::KINGDOM_BRANCH_ID,
+                'startOn' => $startOn->format('Y-m-d H:i:s'),
+                'expiresOn' => $expiresOn->format('Y-m-d H:i:s'),
+                'emailAddress' => 'agatha@example.test',
+                'deputyDescription' => 'Northern Deputy',
+            ],
+        );
+
+        $this->assertArrayHasKey('officerId', $result);
+        $this->assertIsInt($result['officerId']);
     }
 
     // =====================================================
@@ -146,49 +246,260 @@ class OfficersWorkflowActionsTest extends BaseTestCase
 
     public function testReleaseConflictingOfficersReleasesCurrentOfficers(): void
     {
-        // Create a current officer for a one-per-branch office
-        $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
-        $officer = $officerTable->newEmptyEntity();
-        $officer->member_id = self::TEST_MEMBER_AGATHA_ID;
-        $officer->office_id = 6; // Kingdom Chronicler - only_one_per_branch = 1
-        $officer->branch_id = self::KINGDOM_BRANCH_ID;
-        $officer->status = Officer::CURRENT_STATUS;
-        $officer->start_on = DateTime::now()->subMonths(1);
-        $officer->expires_on = DateTime::now()->addMonths(11);
-        $officer->approver_id = self::ADMIN_MEMBER_ID;
-        $officer->approval_date = DateTime::now();
-        $officerTable->save($officer);
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(6);
+        $replacementStart = DateTime::now();
+        $officer = $this->createOfficerConflictFixture(
+            $office->id,
+            Officer::CURRENT_STATUS,
+            $replacementStart,
+            DateTime::now()->addMonths(11),
+        );
         $createdId = $officer->id;
 
         $context = ['triggeredBy' => self::ADMIN_MEMBER_ID];
         $config = [
-            'officeId' => 6,
+            'officeId' => $office->id,
             'branchId' => self::KINGDOM_BRANCH_ID,
-            'newOfficerStartDate' => DateTime::now()->format('Y-m-d H:i:s'),
+            'newOfficerStartDate' => $replacementStart->format('Y-m-d H:i:s'),
         ];
+
+        $this->triggerDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with(
+                'Officers.Released',
+                $this->callback(function (array $payload) use ($createdId) {
+                    $this->assertSame($createdId, $payload['officerId']);
+                    $this->assertSame(self::ADMIN_MEMBER_ID, $payload['releasedById']);
+                    $this->assertSame('Replaced by new officer', $payload['reason']);
+                    $this->assertSame(Officer::REPLACED_STATUS, $payload['releaseStatus']);
+                    $this->assertArrayHasKey('expiresOn', $payload);
+
+                    return true;
+                }),
+                self::ADMIN_MEMBER_ID,
+            )
+            ->willReturn([new ServiceResult(true, null, ['instanceId' => 321])]);
+
+        $this->activeWindowManager->expects($this->never())->method('stop');
+        $this->warrantManager->expects($this->never())->method('cancelByEntity');
 
         $result = $this->actions->releaseConflictingOfficers($context, $config);
 
         $this->assertArrayHasKey('releasedOfficerIds', $result);
         $this->assertContains($createdId, $result['releasedOfficerIds']);
+    }
 
-        // Verify the officer was actually marked as replaced
-        $updated = $officerTable->get($createdId);
-        $this->assertEquals(Officer::REPLACED_STATUS, $updated->status);
+    public function testReleaseConflictingOfficersTrimsCurrentOfficerAndLinkedRecords(): void
+    {
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(2);
+        $officer = $this->createOfficerConflictFixture(
+            $office->id,
+            Officer::CURRENT_STATUS,
+            DateTime::now()->subMonths(1),
+            DateTime::now()->addMonths(11),
+            true,
+        );
+        $memberRoleId = $officer->granted_member_role_id;
+        $newHireStart = DateTime::now()->addDays(10);
+        $expectedEnd = $newHireStart->subSeconds(1);
+
+        $this->actions->expects($this->once())
+            ->method('queueMail')
+            ->with(
+                'KMP',
+                'sendFromTemplate',
+                $this->anything(),
+                $this->callback(function (array $vars) {
+                    return $vars['_templateId'] === 'officer-assignment-adjusted-notification';
+                }),
+            );
+        $this->triggerDispatcher->expects($this->never())->method('dispatch');
+
+        $result = $this->actions->releaseConflictingOfficers(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'officeId' => $office->id,
+                'branchId' => self::KINGDOM_BRANCH_ID,
+                'newOfficerStartDate' => $newHireStart->format('Y-m-d H:i:s'),
+                'newOfficerEndDate' => $newHireStart->addMonths(2)->format('Y-m-d H:i:s'),
+            ],
+        );
+
+        $updatedOfficer = TableRegistry::getTableLocator()->get('Officers.Officers')->get($officer->id);
+        $updatedRole = TableRegistry::getTableLocator()->get('MemberRoles')->get($memberRoleId);
+        $updatedWarrant = TableRegistry::getTableLocator()->get('Warrants')
+            ->find()
+            ->where(['entity_type' => 'Officers.Officers', 'entity_id' => $officer->id])
+            ->firstOrFail();
+
+        $this->assertSame([], $result['releasedOfficerIds']);
+        $this->assertContains($officer->id, $result['adjustedOfficerIds']);
+        $this->assertSame($expectedEnd->toDateTimeString(), $updatedOfficer->expires_on->toDateTimeString());
+        $this->assertSame(Officer::CURRENT_STATUS, $updatedOfficer->status);
+        $this->assertSame($expectedEnd->toDateTimeString(), $updatedRole->expires_on->toDateTimeString());
+        $this->assertSame($expectedEnd->toDateTimeString(), $updatedWarrant->expires_on->toDateTimeString());
+        $this->assertSame(Warrant::CURRENT_STATUS, $updatedWarrant->status);
+    }
+
+    public function testReleaseConflictingOfficersPushesUpcomingOfficerStart(): void
+    {
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(2);
+        $upcomingStart = DateTime::now()->addDays(30);
+        $upcomingEnd = DateTime::now()->addMonths(6);
+        $officer = $this->createOfficerConflictFixture(
+            $office->id,
+            Officer::UPCOMING_STATUS,
+            $upcomingStart,
+            $upcomingEnd,
+            true,
+        );
+        $memberRoleId = $officer->granted_member_role_id;
+        $newHireStart = DateTime::now()->addDays(10);
+        $newHireEnd = DateTime::now()->addDays(40);
+        $expectedStart = $newHireEnd->addSeconds(1);
+
+        $this->actions->expects($this->once())
+            ->method('queueMail')
+            ->with(
+                'KMP',
+                'sendFromTemplate',
+                $this->anything(),
+                $this->callback(function (array $vars) {
+                    return $vars['_templateId'] === 'officer-assignment-adjusted-notification';
+                }),
+            );
+        $this->triggerDispatcher->expects($this->never())->method('dispatch');
+
+        $result = $this->actions->releaseConflictingOfficers(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'officeId' => $office->id,
+                'branchId' => self::KINGDOM_BRANCH_ID,
+                'newOfficerStartDate' => $newHireStart->format('Y-m-d H:i:s'),
+                'newOfficerEndDate' => $newHireEnd->format('Y-m-d H:i:s'),
+            ],
+        );
+
+        $updatedOfficer = TableRegistry::getTableLocator()->get('Officers.Officers')->get($officer->id);
+        $updatedRole = TableRegistry::getTableLocator()->get('MemberRoles')->get($memberRoleId);
+        $updatedWarrant = TableRegistry::getTableLocator()->get('Warrants')
+            ->find()
+            ->where(['entity_type' => 'Officers.Officers', 'entity_id' => $officer->id])
+            ->firstOrFail();
+
+        $this->assertSame([], $result['releasedOfficerIds']);
+        $this->assertContains($officer->id, $result['adjustedOfficerIds']);
+        $this->assertSame($expectedStart->toDateTimeString(), $updatedOfficer->start_on->toDateTimeString());
+        $this->assertSame($upcomingEnd->toDateTimeString(), $updatedOfficer->expires_on->toDateTimeString());
+        $this->assertSame(Officer::UPCOMING_STATUS, $updatedOfficer->status);
+        $this->assertSame($expectedStart->toDateTimeString(), $updatedRole->start_on->toDateTimeString());
+        $this->assertSame($expectedStart->toDateTimeString(), $updatedWarrant->start_on->toDateTimeString());
+        $this->assertSame(Warrant::PENDING_STATUS, $updatedWarrant->status);
+    }
+
+    public function testReleaseConflictingOfficersReleasesFullyCoveredUpcomingOfficer(): void
+    {
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(6);
+        $officer = $this->createOfficerConflictFixture(
+            $office->id,
+            Officer::UPCOMING_STATUS,
+            DateTime::now()->addDays(30),
+            DateTime::now()->addDays(60),
+        );
+
+        $this->triggerDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with(
+                'Officers.Released',
+                $this->callback(function (array $payload) use ($officer) {
+                    return $payload['officerId'] === $officer->id
+                        && $payload['releaseStatus'] === Officer::REPLACED_STATUS;
+                }),
+                self::ADMIN_MEMBER_ID,
+            )
+            ->willReturn([new ServiceResult(true, null, ['instanceId' => 222])]);
+        $this->actions->expects($this->never())->method('queueMail');
+
+        $result = $this->actions->releaseConflictingOfficers(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'officeId' => $office->id,
+                'branchId' => self::KINGDOM_BRANCH_ID,
+                'newOfficerStartDate' => DateTime::now()->addDays(15)->format('Y-m-d H:i:s'),
+                'newOfficerEndDate' => DateTime::now()->addDays(90)->format('Y-m-d H:i:s'),
+            ],
+        );
+
+        $this->assertContains($officer->id, $result['releasedOfficerIds']);
+        $this->assertSame([], $result['adjustedOfficerIds']);
     }
 
     public function testReleaseConflictingOfficersWithNoConflictsReturnsEmpty(): void
     {
         $context = ['triggeredBy' => self::ADMIN_MEMBER_ID];
         $config = [
-            'officeId' => 999999,
-            'branchId' => self::KINGDOM_BRANCH_ID,
+            'officeId' => 6,
+            'branchId' => 999999,
             'newOfficerStartDate' => DateTime::now()->format('Y-m-d H:i:s'),
+            'newOfficerEndDate' => DateTime::now()->addDays(10)->format('Y-m-d H:i:s'),
         ];
+
+        $this->triggerDispatcher->expects($this->never())->method('dispatch');
 
         $result = $this->actions->releaseConflictingOfficers($context, $config);
 
         $this->assertEmpty($result['releasedOfficerIds']);
+        $this->assertEmpty($result['adjustedOfficerIds']);
+    }
+
+    // =====================================================
+    // RequestWarrantRoster action
+    // =====================================================
+
+    public function testRequestWarrantRosterCreatesRosterRequest(): void
+    {
+        $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(2);
+
+        $officer = $officerTable->newEntity([
+            'member_id' => self::TEST_MEMBER_AGATHA_ID,
+            'office_id' => $office->id,
+            'branch_id' => self::KINGDOM_BRANCH_ID,
+            'status' => Officer::CURRENT_STATUS,
+            'start_on' => DateTime::now()->subDays(1),
+            'expires_on' => DateTime::now()->addMonths(3),
+            'approver_id' => self::ADMIN_MEMBER_ID,
+            'approval_date' => DateTime::now(),
+            'deputy_description' => 'North',
+            'granted_member_role_id' => null,
+        ]);
+        $officerTable->saveOrFail($officer);
+
+        $this->warrantManager->expects($this->once())
+            ->method('request')
+            ->with(
+                $this->stringContains($office->name),
+                '',
+                $this->callback(function (array $requests) use ($officer) {
+                    $this->assertCount(1, $requests);
+                    $this->assertInstanceOf(WarrantRequest::class, $requests[0]);
+                    $this->assertSame('Officers.Officers', $requests[0]->entity_type);
+                    $this->assertSame($officer->id, $requests[0]->entity_id);
+                    $this->assertSame(self::TEST_MEMBER_AGATHA_ID, $requests[0]->member_id);
+                    $this->assertStringContainsString('North', $requests[0]->name);
+
+                    return true;
+                }),
+                self::ADMIN_MEMBER_ID,
+            )
+            ->willReturn(new ServiceResult(true, null, 1234));
+
+        $result = $this->actions->requestWarrantRoster(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            ['officerId' => $officer->id],
+        );
+
+        $this->assertSame(1234, $result['rosterId']);
     }
 
     // =====================================================
@@ -238,6 +549,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
             $this->activeWindowManager,
             $this->warrantManager,
             null,
+            null,
         );
 
         $context = ['triggeredBy' => self::ADMIN_MEMBER_ID];
@@ -246,6 +558,58 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $result = $actions->recalculateOfficersForOffice($context, $config);
 
         $this->assertEquals(0, $result['updatedCount']);
+    }
+
+    // =====================================================
+    // Hire notification vars
+    // =====================================================
+
+    public function testPrepareHireNotificationVarsIncludesWarrantNoticeWhenRequired(): void
+    {
+        $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(2);
+
+        $officer = $officerTable->newEntity([
+            'member_id' => self::TEST_MEMBER_AGATHA_ID,
+            'office_id' => $office->id,
+            'branch_id' => self::KINGDOM_BRANCH_ID,
+            'status' => Officer::CURRENT_STATUS,
+            'start_on' => DateTime::now()->subDays(1),
+            'expires_on' => DateTime::now()->addMonths(2),
+            'approver_id' => self::ADMIN_MEMBER_ID,
+            'approval_date' => DateTime::now(),
+        ]);
+        $officerTable->saveOrFail($officer);
+
+        $result = $this->actions->prepareHireNotificationVars([], ['officerId' => $officer->id]);
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('requires a warrant', $result['data']['requiresWarrantNotice']);
+    }
+
+    public function testPrepareHireNotificationVarsLeavesWarrantNoticeBlankWhenNotRequired(): void
+    {
+        $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->find()
+            ->where(['requires_warrant' => false])
+            ->firstOrFail();
+
+        $officer = $officerTable->newEntity([
+            'member_id' => self::TEST_MEMBER_BRYCE_ID,
+            'office_id' => $office->id,
+            'branch_id' => self::KINGDOM_BRANCH_ID,
+            'status' => Officer::CURRENT_STATUS,
+            'start_on' => DateTime::now()->subDays(1),
+            'expires_on' => DateTime::now()->addMonths(2),
+            'approver_id' => self::ADMIN_MEMBER_ID,
+            'approval_date' => DateTime::now(),
+        ]);
+        $officerTable->saveOrFail($officer);
+
+        $result = $this->actions->prepareHireNotificationVars([], ['officerId' => $officer->id]);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('', $result['data']['requiresWarrantNotice']);
     }
 
     // =====================================================
@@ -349,7 +713,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $this->assertTrue($result['released']);
     }
 
-    public function testReleaseOfficerReturnsErrorWhenActiveWindowStopFails(): void
+    public function testReleaseOfficerThrowsWhenActiveWindowStopFails(): void
     {
         $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
         $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get(2);
@@ -373,7 +737,10 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $this->warrantManager->expects($this->never())
             ->method('cancelByEntity');
 
-        $result = $this->actions->releaseOfficer(
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Failed to release officer active window: Unable to stop active window');
+
+        $this->actions->releaseOfficer(
             ['triggeredBy' => self::ADMIN_MEMBER_ID],
             [
                 'officerId' => $officer->id,
@@ -382,9 +749,6 @@ class OfficersWorkflowActionsTest extends BaseTestCase
                 'expiresOn' => DateTime::now()->format('Y-m-d H:i:s'),
             ],
         );
-
-        $this->assertFalse($result['released']);
-        $this->assertSame('Unable to stop active window', $result['error']);
     }
 
     // =====================================================
@@ -398,6 +762,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $config = [
             'officeId' => 14,
             'branchId' => 31,
+            'newOfficerStartDate' => DateTime::now()->format('Y-m-d H:i:s'),
         ];
 
         $result = $this->conditions->hasConflictingOfficer($context, $config);
@@ -411,6 +776,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $config = [
             'officeId' => 999999,
             'branchId' => self::KINGDOM_BRANCH_ID,
+            'newOfficerStartDate' => DateTime::now()->format('Y-m-d H:i:s'),
         ];
 
         $result = $this->conditions->hasConflictingOfficer($context, $config);
@@ -426,6 +792,78 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $result = $this->conditions->hasConflictingOfficer($context, $config);
 
         $this->assertFalse($result);
+    }
+
+    private function createOfficerConflictFixture(
+        int $officeId,
+        string $status,
+        DateTime $startOn,
+        ?DateTime $expiresOn,
+        bool $withWarrant = false,
+    ): Officer {
+        $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
+        $memberRoleTable = TableRegistry::getTableLocator()->get('MemberRoles');
+        $rolesTable = TableRegistry::getTableLocator()->get('Roles');
+
+        $officer = $officerTable->newEntity([
+            'member_id' => self::TEST_MEMBER_AGATHA_ID,
+            'office_id' => $officeId,
+            'branch_id' => self::KINGDOM_BRANCH_ID,
+            'status' => $status,
+            'start_on' => $startOn,
+            'expires_on' => $expiresOn,
+            'approver_id' => self::ADMIN_MEMBER_ID,
+            'approval_date' => DateTime::now(),
+            'email_address' => 'agatha@example.test',
+        ]);
+        $officerTable->saveOrFail($officer);
+
+        $role = $rolesTable->find()->firstOrFail();
+        $memberRole = $memberRoleTable->newEntity([
+            'member_id' => self::TEST_MEMBER_AGATHA_ID,
+            'role_id' => $role->id,
+            'entity_type' => 'Officers.Officers',
+            'entity_id' => $officer->id,
+            'branch_id' => self::KINGDOM_BRANCH_ID,
+            'status' => $status,
+            'start_on' => $startOn,
+            'expires_on' => $expiresOn,
+            'approver_id' => self::ADMIN_MEMBER_ID,
+        ], ['accessibleFields' => ['*' => true]]);
+        $memberRoleTable->saveOrFail($memberRole);
+
+        $officer->granted_member_role_id = $memberRole->id;
+        $officerTable->saveOrFail($officer);
+
+        if ($withWarrant) {
+            $rosterTable = TableRegistry::getTableLocator()->get('WarrantRosters');
+            $warrantTable = TableRegistry::getTableLocator()->get('Warrants');
+
+            $roster = $rosterTable->newEntity([
+                'name' => 'Officer overlap roster ' . uniqid(),
+                'approvals_required' => 1,
+                'approval_count' => $status === Officer::CURRENT_STATUS ? 1 : 0,
+                'status' => $status === Officer::CURRENT_STATUS ? Warrant::CURRENT_STATUS : Warrant::PENDING_STATUS,
+                'created_by' => self::ADMIN_MEMBER_ID,
+            ], ['accessibleFields' => ['*' => true]]);
+            $rosterTable->saveOrFail($roster);
+
+            $warrant = $warrantTable->newEntity([
+                'name' => 'Officer overlap warrant ' . uniqid(),
+                'member_id' => self::TEST_MEMBER_AGATHA_ID,
+                'warrant_roster_id' => $roster->id,
+                'entity_type' => 'Officers.Officers',
+                'entity_id' => $officer->id,
+                'member_role_id' => $memberRole->id,
+                'requester_id' => self::ADMIN_MEMBER_ID,
+                'start_on' => $startOn,
+                'expires_on' => $expiresOn,
+                'status' => $status === Officer::CURRENT_STATUS ? Warrant::CURRENT_STATUS : Warrant::PENDING_STATUS,
+            ], ['accessibleFields' => ['*' => true]]);
+            $warrantTable->saveOrFail($warrant);
+        }
+
+        return $officerTable->get($officer->id, contain: ['Offices']);
     }
 
     // =====================================================

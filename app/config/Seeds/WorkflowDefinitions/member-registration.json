@@ -14,147 +14,23 @@
             "outputs": [
                 {
                     "port": "next",
-                    "target": "assign-status-and-tokens"
+                    "target": "send-registration-notifications"
                 }
             ]
         },
-        "assign-status-and-tokens": {
+        "send-registration-notifications": {
             "type": "action",
-            "label": "Assign Status and Tokens",
+            "label": "Send Registration Notifications",
             "config": {
-                "action": "Members.AssignStatusAndTokens",
+                "action": "Members.SendRegistrationNotifications",
                 "params": {
-                    "memberId": "$.trigger.memberId"
+                    "memberId": "$.trigger.memberId",
+                    "source": "$.trigger.source"
                 }
             },
             "position": {
-                "x": 350,
+                "x": 450,
                 "y": 200
-            },
-            "outputs": [
-                {
-                    "port": "next",
-                    "target": "prepare-registration-vars"
-                }
-            ]
-        },
-        "prepare-registration-vars": {
-            "type": "action",
-            "label": "Prepare Registration Email Vars",
-            "config": {
-                "action": "Members.PrepareRegistrationEmailVars",
-                "params": {
-                    "memberId": "$.trigger.memberId"
-                }
-            },
-            "position": {
-                "x": 650,
-                "y": 200
-            },
-            "outputs": [
-                {
-                    "port": "next",
-                    "target": "check-is-minor"
-                }
-            ]
-        },
-        "check-is-minor": {
-            "type": "condition",
-            "label": "Is Minor?",
-            "config": {
-                "condition": "Members.IsMinor",
-                "memberId": "$.trigger.memberId"
-            },
-            "position": {
-                "x": 950,
-                "y": 200
-            },
-            "outputs": [
-                {
-                    "port": "true",
-                    "target": "notify-secretary-minor",
-                    "label": "Minor"
-                },
-                {
-                    "port": "false",
-                    "target": "send-registration-email",
-                    "label": "Adult"
-                }
-            ]
-        },
-        "send-registration-email": {
-            "type": "action",
-            "label": "Send Registration Welcome Email",
-            "config": {
-                "action": "Core.SendEmail",
-                "params": {
-                    "to": "$.nodes.prepare-registration-vars.result.data.email",
-                    "template": "member-registration-welcome",
-                    "vars": {
-                        "memberScaName": "$.nodes.prepare-registration-vars.result.data.memberScaName",
-                        "passwordResetUrl": "$.nodes.prepare-registration-vars.result.data.passwordResetUrl",
-                        "portalName": "$.nodes.prepare-registration-vars.result.data.portalName",
-                        "siteAdminSignature": "$.nodes.prepare-registration-vars.result.data.siteAdminSignature"
-                    }
-                }
-            },
-            "position": {
-                "x": 1250,
-                "y": 300
-            },
-            "outputs": [
-                {
-                    "port": "next",
-                    "target": "notify-secretary-adult"
-                }
-            ]
-        },
-        "notify-secretary-adult": {
-            "type": "action",
-            "label": "Notify Secretary of New Member",
-            "config": {
-                "action": "Core.SendEmail",
-                "params": {
-                    "to": "$.nodes.prepare-registration-vars.result.data.adultSecretaryEmail",
-                    "template": "member-registration-secretary",
-                    "vars": {
-                        "memberScaName": "$.nodes.prepare-registration-vars.result.data.memberScaName",
-                        "memberViewUrl": "$.nodes.prepare-registration-vars.result.data.memberViewUrl",
-                        "memberCardPresent": "$.nodes.prepare-registration-vars.result.data.memberCardPresent",
-                        "siteAdminSignature": "$.nodes.prepare-registration-vars.result.data.siteAdminSignature"
-                    }
-                }
-            },
-            "position": {
-                "x": 1550,
-                "y": 300
-            },
-            "outputs": [
-                {
-                    "port": "next",
-                    "target": "end-complete"
-                }
-            ]
-        },
-        "notify-secretary-minor": {
-            "type": "action",
-            "label": "Notify Secretary of New Minor",
-            "config": {
-                "action": "Core.SendEmail",
-                "params": {
-                    "to": "$.nodes.prepare-registration-vars.result.data.minorSecretaryEmail",
-                    "template": "member-registration-secretary-minor",
-                    "vars": {
-                        "memberScaName": "$.nodes.prepare-registration-vars.result.data.memberScaName",
-                        "memberViewUrl": "$.nodes.prepare-registration-vars.result.data.memberViewUrl",
-                        "memberCardPresent": "$.nodes.prepare-registration-vars.result.data.memberCardPresent",
-                        "siteAdminSignature": "$.nodes.prepare-registration-vars.result.data.siteAdminSignature"
-                    }
-                }
-            },
-            "position": {
-                "x": 1250,
-                "y": 100
             },
             "outputs": [
                 {

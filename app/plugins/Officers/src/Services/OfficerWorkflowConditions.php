@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Officers\Services;
 
+use Cake\I18n\DateTime;
 use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
 use Cake\ORM\TableRegistry;
 
@@ -90,10 +91,10 @@ class OfficerWorkflowConditions
     }
 
     /**
-     * Check if a branch already has a current officer for a given office.
+     * Check if a branch already has a current or upcoming officer overlapping a hire window.
      *
      * @param array $context Current workflow context
-     * @param array $config Config with 'officeId' and 'branchId'
+     * @param array $config Config with officeId, branchId, newOfficerStartDate, newOfficerEndDate
      * @return bool
      */
     public function hasConflictingOfficer(array $context, array $config): bool
@@ -101,23 +102,81 @@ class OfficerWorkflowConditions
         try {
             $officeId = $this->resolveValue($config['officeId'] ?? null, $context);
             $branchId = $this->resolveValue($config['branchId'] ?? null, $context);
+            $startDateRaw = $this->resolveValue($config['newOfficerStartDate'] ?? null, $context);
 
-            if (empty($officeId) || empty($branchId)) {
+            if (empty($officeId) || empty($branchId) || empty($startDateRaw)) {
                 return false;
             }
 
+            $startDate = $startDateRaw instanceof DateTime
+                ? $startDateRaw
+                : new DateTime((string)$startDateRaw);
+            $endDate = $this->resolveEffectiveOfficerEndDate(
+                (int)$officeId,
+                $startDate,
+                $this->resolveValue($config['newOfficerEndDate'] ?? null, $context),
+            );
+
             $officerTable = TableRegistry::getTableLocator()->get('Officers.Officers');
-            $count = $officerTable->find()
+            $officers = $officerTable->find()
                 ->where([
                     'office_id' => (int)$officeId,
                     'branch_id' => (int)$branchId,
-                    'status' => 'Current',
+                    'status IN' => ['Current', 'Upcoming'],
                 ])
-                ->count();
+                ->all();
 
-            return $count > 0;
+            foreach ($officers as $officer) {
+                $existingStart = $officer->start_on instanceof DateTime
+                    ? $officer->start_on
+                    : new DateTime((string)$officer->start_on);
+                $existingEnd = $officer->expires_on instanceof DateTime
+                    ? $officer->expires_on
+                    : ($officer->expires_on !== null ? new DateTime((string)$officer->expires_on) : null);
+                if ($this->windowsOverlap($existingStart, $existingEnd, $startDate, $endDate)) {
+                    return true;
+                }
+            }
+
+            return false;
         } catch (\Throwable $e) {
             return false;
         }
+    }
+
+    private function resolveEffectiveOfficerEndDate(
+        int $officeId,
+        DateTime $startDate,
+        mixed $endDateRaw,
+    ): ?DateTime {
+        if ($endDateRaw instanceof DateTime) {
+            return $endDateRaw;
+        }
+        if ($endDateRaw !== null && $endDateRaw !== '') {
+            return new DateTime((string)$endDateRaw);
+        }
+
+        $office = TableRegistry::getTableLocator()->get('Officers.Offices')->get($officeId);
+        if ((int)$office->term_length > 0) {
+            return $startDate->modify("+{$office->term_length} months");
+        }
+
+        return null;
+    }
+
+    private function windowsOverlap(
+        DateTime $existingStart,
+        ?DateTime $existingEnd,
+        DateTime $newStart,
+        ?DateTime $newEnd,
+    ): bool {
+        if ($existingEnd !== null && $existingEnd < $newStart) {
+            return false;
+        }
+        if ($newEnd !== null && $newEnd < $existingStart) {
+            return false;
+        }
+
+        return true;
     }
 }

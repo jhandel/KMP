@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Services\WorkflowEngine\Providers;
@@ -13,6 +12,7 @@ use App\Services\WorkflowEngine\WorkflowContextAwareTrait;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\Locator\LocatorAwareTrait;
+use Throwable;
 
 /**
  * Workflow action implementations for member lifecycle operations.
@@ -31,6 +31,12 @@ class MembersWorkflowActions
     private MemberAuthenticationService $authService;
     private MemberRegistrationService $regService;
 
+    /**
+     * Initialize workflow member action collaborators.
+     *
+     * @param \App\Services\MemberAuthenticationService|null $authService Optional auth service override
+     * @param \App\Services\MemberRegistrationService|null $regService Optional registration service override
+     */
     public function __construct(
         ?MemberAuthenticationService $authService = null,
         ?MemberRegistrationService $regService = null,
@@ -83,7 +89,7 @@ class MembersWorkflowActions
             }
 
             return ['success' => true, 'data' => ['memberId' => $member->id, 'status' => $member->status]];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow Register failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage(), 'memberId' => null];
@@ -111,7 +117,7 @@ class MembersWorkflowActions
             }
 
             return ['success' => true, 'data' => ['memberId' => $memberId, 'status' => Member::STATUS_ACTIVE]];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow Activate failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -143,7 +149,7 @@ class MembersWorkflowActions
             }
 
             return ['success' => true, 'data' => ['memberId' => $memberId, 'status' => Member::STATUS_DEACTIVATED]];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow Deactivate failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -184,7 +190,7 @@ class MembersWorkflowActions
                     'resetUrl' => $result['resetUrl'],
                 ],
             ];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow SendPasswordReset failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -221,7 +227,7 @@ class MembersWorkflowActions
                     'memberId' => $result['member']->id,
                 ],
             ];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow ValidatePasswordReset failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -268,7 +274,7 @@ class MembersWorkflowActions
                     'memberId' => $memberId,
                 ],
             ];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow AgeUpMember failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -299,11 +305,13 @@ class MembersWorkflowActions
             $changed = $currentWarrantable !== $originalWarrantable;
 
             if ($changed) {
-                if (!$membersTable->save($member, [
+                if (
+                    !$membersTable->save($member, [
                     'checkRules' => false,
                     'validate' => false,
                     'callbacks' => false,
-                ])) {
+                    ])
+                ) {
                     return ['success' => false, 'error' => 'Failed to save warrantable status'];
                 }
             }
@@ -316,7 +324,7 @@ class MembersWorkflowActions
                     'reasons' => $member->non_warrantable_reasons ?? [],
                 ],
             ];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow SyncWarrantableStatus failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -398,7 +406,7 @@ class MembersWorkflowActions
                     'verified' => true,
                 ],
             ];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow VerifyMembership failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -435,7 +443,7 @@ class MembersWorkflowActions
             }
 
             return ['success' => true, 'data' => ['memberId' => $memberId, 'updatedFields' => array_keys($fields)]];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow UpdateMemberField failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -467,7 +475,7 @@ class MembersWorkflowActions
             }
 
             return ['success' => true, 'data' => ['memberId' => $memberId, 'status' => $member->status]];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow AssignStatusAndTokens failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -494,8 +502,6 @@ class MembersWorkflowActions
             $member = $membersTable->get($memberId);
 
             $adultVars = $this->regService->buildAdultRegistrationEmailVars($member);
-            $minorVars = $this->regService->buildMinorRegistrationEmailVars($member);
-
             $adultSecretaryEmail = StaticHelpers::getAppSetting('Members.NewMemberSecretaryEmail', '', null, true);
             $minorSecretaryEmail = StaticHelpers::getAppSetting('Members.NewMinorSecretaryEmail', '', null, true);
             $siteAdminSignature = StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true);
@@ -515,8 +521,88 @@ class MembersWorkflowActions
                     'portalName' => $portalName,
                 ],
             ];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('Workflow PrepareRegistrationEmailVars failed: ' . $e->getMessage());
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Queue the registration emails appropriate to the registration source and member age.
+     *
+     * Admin-created adult members do not receive registration workflow emails. Public
+     * self-registration queues the adult welcome email plus the adult secretary notice.
+     * Minor registrations queue the minor secretary notice for both sources.
+     *
+     * @param array $context Current workflow context
+     * @param array $config Config with memberId and optional source
+     * @return array Output with queued template slugs
+     */
+    public function sendRegistrationNotifications(array $context, array $config): array
+    {
+        try {
+            $memberId = (int)$this->resolveValue($config['memberId'] ?? null, $context);
+            if ($memberId <= 0) {
+                return ['success' => false, 'error' => 'memberId is required'];
+            }
+
+            $source = (string)$this->resolveValue($config['source'] ?? 'self-register', $context);
+            $membersTable = $this->fetchTable('Members');
+            /** @var \App\Model\Entity\Member $member */
+            $member = $membersTable->get($memberId);
+
+            $queuedTemplates = [];
+
+            if ($member->age !== null && $member->age > 17) {
+                if ($source === 'self-register') {
+                    $emailVars = $this->regService->buildAdultRegistrationEmailVars($member);
+                    $this->queueMail('KMP', 'sendFromTemplate', $member->email_address, array_merge(
+                        ['_templateId' => 'member-registration-welcome'],
+                        $emailVars['registrationVars'],
+                    ));
+                    $queuedTemplates[] = 'member-registration-welcome';
+
+                    $adultSecretaryEmail = StaticHelpers::getAppSetting(
+                        'Members.NewMemberSecretaryEmail',
+                        '',
+                        null,
+                        true,
+                    );
+                    if ($adultSecretaryEmail !== '') {
+                        $this->queueMail('KMP', 'sendFromTemplate', $adultSecretaryEmail, array_merge(
+                            ['_templateId' => 'member-registration-secretary'],
+                            $emailVars['secretaryVars'],
+                        ));
+                        $queuedTemplates[] = 'member-registration-secretary';
+                    }
+                }
+            } else {
+                $minorSecretaryEmail = StaticHelpers::getAppSetting(
+                    'Members.NewMinorSecretaryEmail',
+                    '',
+                    null,
+                    true,
+                );
+                if ($minorSecretaryEmail !== '') {
+                    $this->queueMail('KMP', 'sendFromTemplate', $minorSecretaryEmail, array_merge(
+                        ['_templateId' => 'member-registration-secretary-minor'],
+                        $this->regService->buildMinorRegistrationEmailVars($member),
+                    ));
+                    $queuedTemplates[] = 'member-registration-secretary-minor';
+                }
+            }
+
+            return [
+                'success' => true,
+                'data' => [
+                    'memberId' => $memberId,
+                    'source' => $source,
+                    'queuedTemplates' => $queuedTemplates,
+                ],
+            ];
+        } catch (Throwable $e) {
+            Log::error('Workflow SendRegistrationNotifications failed: ' . $e->getMessage());
 
             return ['success' => false, 'error' => $e->getMessage()];
         }
@@ -538,7 +624,7 @@ class MembersWorkflowActions
                 'passwordResetUrl' => $resetUrl,
                 'siteAdminSignature' => StaticHelpers::getAppSetting('Email.SiteAdminSignature', '', null, true),
             ]);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::warning('Workflow SendPasswordReset: email queuing failed: ' . $e->getMessage());
         }
     }

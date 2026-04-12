@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Services\WorkflowEngine\Providers;
@@ -52,7 +51,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
                 'branchId' => self::KINGDOM_BRANCH_ID,
                 'birthMonth' => 1,
                 'birthYear' => 1990,
-            ]
+            ],
         );
 
         $this->assertTrue($result['success']);
@@ -76,12 +75,129 @@ class MembersWorkflowActionsTest extends BaseTestCase
                 'branchId' => self::KINGDOM_BRANCH_ID,
                 'birthMonth' => 1,
                 'birthYear' => $currentYear - 10,
-            ]
+            ],
         );
 
         $this->assertTrue($result['success']);
         $this->assertNotNull($result['data']['memberId']);
         $this->assertEquals(Member::STATUS_UNVERIFIED_MINOR, $result['data']['status']);
+    }
+
+    public function testSendRegistrationNotificationsQueuesAdultSelfRegisterEmails(): void
+    {
+        $this->skipIfPostgres();
+
+        $result = $this->actions->register(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'scaName' => 'Adult Notify',
+                'firstName' => 'Adult',
+                'lastName' => 'Notify',
+                'emailAddress' => 'notify_adult_' . uniqid() . '@example.com',
+                'branchId' => self::KINGDOM_BRANCH_ID,
+                'birthMonth' => 1,
+                'birthYear' => 1990,
+            ],
+        );
+        $memberId = (int)$result['data']['memberId'];
+
+        $queued = [];
+        $actions = $this->getMockBuilder(MembersWorkflowActions::class)
+            ->onlyMethods(['queueMail'])
+            ->getMock();
+        $actions->method('queueMail')->willReturnCallback(
+            function (string $mailer, string $action, string $to, array $vars) use (&$queued): void {
+                $queued[] = [
+                    'mailer' => $mailer,
+                    'action' => $action,
+                    'to' => $to,
+                    'template' => $vars['_templateId'] ?? null,
+                ];
+            },
+        );
+
+        $notifyResult = $actions->sendRegistrationNotifications([], [
+            'memberId' => $memberId,
+            'source' => 'self-register',
+        ]);
+
+        $this->assertTrue($notifyResult['success']);
+        $this->assertSame(
+            ['member-registration-welcome', 'member-registration-secretary'],
+            array_column($queued, 'template'),
+        );
+    }
+
+    public function testSendRegistrationNotificationsSkipsAdminAddedAdultEmails(): void
+    {
+        $this->skipIfPostgres();
+
+        $result = $this->actions->register(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'scaName' => 'Adult Admin Add',
+                'firstName' => 'Adult',
+                'lastName' => 'Admin',
+                'emailAddress' => 'admin_adult_' . uniqid() . '@example.com',
+                'branchId' => self::KINGDOM_BRANCH_ID,
+                'birthMonth' => 1,
+                'birthYear' => 1990,
+            ],
+        );
+        $memberId = (int)$result['data']['memberId'];
+
+        $actions = $this->getMockBuilder(MembersWorkflowActions::class)
+            ->onlyMethods(['queueMail'])
+            ->getMock();
+        $actions->expects($this->never())->method('queueMail');
+
+        $notifyResult = $actions->sendRegistrationNotifications([], [
+            'memberId' => $memberId,
+            'source' => 'admin-add',
+        ]);
+
+        $this->assertTrue($notifyResult['success']);
+        $this->assertSame([], $notifyResult['data']['queuedTemplates']);
+    }
+
+    public function testSendRegistrationNotificationsQueuesMinorSecretaryEmail(): void
+    {
+        $this->skipIfPostgres();
+
+        $result = $this->actions->register(
+            ['triggeredBy' => self::ADMIN_MEMBER_ID],
+            [
+                'scaName' => 'Minor Notify',
+                'firstName' => 'Minor',
+                'lastName' => 'Notify',
+                'emailAddress' => 'notify_minor_' . uniqid() . '@example.com',
+                'branchId' => self::KINGDOM_BRANCH_ID,
+                'birthMonth' => 1,
+                'birthYear' => (int)date('Y') - 10,
+            ],
+        );
+        $memberId = (int)$result['data']['memberId'];
+
+        $queued = [];
+        $actions = $this->getMockBuilder(MembersWorkflowActions::class)
+            ->onlyMethods(['queueMail'])
+            ->getMock();
+        $actions->method('queueMail')->willReturnCallback(
+            function (string $mailer, string $action, string $to, array $vars) use (&$queued): void {
+                $queued[] = [
+                    'to' => $to,
+                    'template' => $vars['_templateId'] ?? null,
+                ];
+            },
+        );
+
+        $notifyResult = $actions->sendRegistrationNotifications([], [
+            'memberId' => $memberId,
+            'source' => 'admin-add',
+        ]);
+
+        $this->assertTrue($notifyResult['success']);
+        $this->assertSame(['member-registration-secretary-minor'], array_column($queued, 'template'));
     }
 
     // ==========================================================
@@ -94,7 +210,6 @@ class MembersWorkflowActionsTest extends BaseTestCase
 
         // Use existing seeded member, change status directly
         $member = $this->membersTable->get(self::TEST_MEMBER_AGATHA_ID);
-        $originalStatus = $member->status;
 
         // Set to deactivated first
         $member->status = Member::STATUS_DEACTIVATED;
@@ -102,7 +217,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
 
         $result = $this->actions->activate(
             ['triggeredBy' => self::ADMIN_MEMBER_ID],
-            ['memberId' => self::TEST_MEMBER_AGATHA_ID]
+            ['memberId' => self::TEST_MEMBER_AGATHA_ID],
         );
 
         $this->assertTrue($result['success']);
@@ -117,12 +232,9 @@ class MembersWorkflowActionsTest extends BaseTestCase
     {
         $this->skipIfPostgres();
 
-        $member = $this->membersTable->get(self::TEST_MEMBER_DEVON_ID);
-        $originalEmail = $member->email_address;
-
         $result = $this->actions->deactivate(
             ['triggeredBy' => self::ADMIN_MEMBER_ID],
-            ['memberId' => self::TEST_MEMBER_DEVON_ID]
+            ['memberId' => self::TEST_MEMBER_DEVON_ID],
         );
 
         $this->assertTrue($result['success']);
@@ -154,7 +266,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
 
         $result = $actionsWithMock->sendPasswordReset(
             [],
-            ['emailAddress' => 'bryce@ampdemo.com']
+            ['emailAddress' => 'bryce@ampdemo.com'],
         );
 
         $this->assertTrue($result['success']);
@@ -207,7 +319,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
 
         $result = $actionsWithMock->sendPasswordReset(
             [],
-            ['emailAddress' => 'nonexistent@example.com']
+            ['emailAddress' => 'nonexistent@example.com'],
         );
 
         $this->assertFalse($result['success']);
@@ -240,13 +352,13 @@ class MembersWorkflowActionsTest extends BaseTestCase
                 1,
                 (int)date('Y') - 20,
                 self::KINGDOM_BRANCH_ID,
-            ]
+            ],
         );
         $memberId = (int)$conn->execute('SELECT LAST_INSERT_ID() AS id')->fetchColumn(0);
 
         $result = $this->actions->ageUpMember(
             ['triggeredBy' => self::ADMIN_MEMBER_ID],
-            ['memberId' => $memberId]
+            ['memberId' => $memberId],
         );
 
         $this->assertTrue($result['success']);
@@ -314,13 +426,13 @@ class MembersWorkflowActionsTest extends BaseTestCase
                 1,
                 (int)date('Y') - 20,
                 self::KINGDOM_BRANCH_ID,
-            ]
+            ],
         );
         $memberId = (int)$conn->execute('SELECT LAST_INSERT_ID() AS id')->fetchColumn(0);
 
         $result = $this->actions->ageUpMember(
             ['triggeredBy' => self::ADMIN_MEMBER_ID],
-            ['memberId' => $memberId]
+            ['memberId' => $memberId],
         );
 
         $this->assertTrue($result['success']);
@@ -335,7 +447,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
         // Use existing adult seeded member — no transition should occur
         $result = $this->actions->ageUpMember(
             ['triggeredBy' => self::ADMIN_MEMBER_ID],
-            ['memberId' => self::TEST_MEMBER_EIRIK_ID]
+            ['memberId' => self::TEST_MEMBER_EIRIK_ID],
         );
 
         $this->assertTrue($result['success']);
@@ -352,7 +464,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
 
         $result = $this->actions->syncWarrantableStatus(
             ['triggeredBy' => self::ADMIN_MEMBER_ID],
-            ['memberId' => self::TEST_MEMBER_EIRIK_ID]
+            ['memberId' => self::TEST_MEMBER_EIRIK_ID],
         );
 
         $this->assertTrue($result['success']);
@@ -373,7 +485,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
             [
                 'memberId' => self::TEST_MEMBER_AGATHA_ID,
                 'fields' => ['sca_name' => 'Updated SCA Name'],
-            ]
+            ],
         );
 
         $this->assertTrue($result['success']);
@@ -386,7 +498,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
     {
         $result = $this->actions->updateMemberField(
             [],
-            ['memberId' => self::ADMIN_MEMBER_ID, 'fields' => []]
+            ['memberId' => self::ADMIN_MEMBER_ID, 'fields' => []],
         );
 
         $this->assertFalse($result['success']);
@@ -418,7 +530,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
                 1,
                 (int)date('Y') - 10,
                 self::KINGDOM_BRANCH_ID,
-            ]
+            ],
         );
         $memberId = (int)$conn->execute('SELECT LAST_INSERT_ID() AS id')->fetchColumn(0);
 
@@ -450,11 +562,11 @@ class MembersWorkflowActionsTest extends BaseTestCase
         $futureDate = DateTime::now()->addDays(30)->format('Y-m-d');
         $conn->execute(
             'UPDATE members SET membership_expires_on = ? WHERE id = ?',
-            [$futureDate, self::TEST_MEMBER_AGATHA_ID]
+            [$futureDate, self::TEST_MEMBER_AGATHA_ID],
         );
 
         $this->assertTrue(
-            $this->conditions->hasValidMembership([], ['memberId' => self::TEST_MEMBER_AGATHA_ID])
+            $this->conditions->hasValidMembership([], ['memberId' => self::TEST_MEMBER_AGATHA_ID]),
         );
     }
 
@@ -467,11 +579,11 @@ class MembersWorkflowActionsTest extends BaseTestCase
         $pastDate = DateTime::now()->subDays(30)->format('Y-m-d');
         $conn->execute(
             'UPDATE members SET membership_expires_on = ? WHERE id = ?',
-            [$pastDate, self::TEST_MEMBER_DEVON_ID]
+            [$pastDate, self::TEST_MEMBER_DEVON_ID],
         );
 
         $this->assertFalse(
-            $this->conditions->hasValidMembership([], ['memberId' => self::TEST_MEMBER_DEVON_ID])
+            $this->conditions->hasValidMembership([], ['memberId' => self::TEST_MEMBER_DEVON_ID]),
         );
     }
 
@@ -481,7 +593,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
 
         // Existing seeded member should be active
         $this->assertTrue(
-            $this->conditions->isActive([], ['memberId' => self::TEST_MEMBER_EIRIK_ID])
+            $this->conditions->isActive([], ['memberId' => self::TEST_MEMBER_EIRIK_ID]),
         );
 
         // Deactivate a member and check
@@ -490,7 +602,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
         $this->membersTable->save($member, ['checkRules' => false, 'validate' => false]);
 
         $this->assertFalse(
-            $this->conditions->isActive([], ['memberId' => self::TEST_MEMBER_DEVON_ID])
+            $this->conditions->isActive([], ['memberId' => self::TEST_MEMBER_DEVON_ID]),
         );
     }
 
@@ -500,7 +612,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
 
         // Existing seeded member should have email
         $this->assertTrue(
-            $this->conditions->hasEmailAddress([], ['memberId' => self::TEST_MEMBER_EIRIK_ID])
+            $this->conditions->hasEmailAddress([], ['memberId' => self::TEST_MEMBER_EIRIK_ID]),
         );
     }
 
@@ -542,7 +654,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
     {
         $result = $this->actions->activate(
             [],
-            ['memberId' => 999999999]
+            ['memberId' => 999999999],
         );
 
         $this->assertFalse($result['success']);
@@ -592,6 +704,7 @@ class MembersWorkflowActionsTest extends BaseTestCase
         $this->assertContains('Members.SyncWarrantableStatus', $actionNames);
         $this->assertContains('Members.VerifyMembership', $actionNames);
         $this->assertContains('Members.UpdateMemberField', $actionNames);
+        $this->assertContains('Members.SendRegistrationNotifications', $actionNames);
 
         $conditions = WorkflowConditionRegistry::getConditionsBySource('Members');
         $this->assertNotEmpty($conditions);

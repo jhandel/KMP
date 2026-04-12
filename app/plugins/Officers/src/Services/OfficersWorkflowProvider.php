@@ -8,6 +8,7 @@ use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use App\Services\WorkflowRegistry\WorkflowEntityRegistry;
 use App\Services\WorkflowRegistry\WorkflowTriggerRegistry;
+use Officers\Model\Entity\Officer;
 
 /**
  * Registers Officers plugin workflow triggers, actions, conditions, and entities.
@@ -111,6 +112,7 @@ class OfficersWorkflowProvider
                     'releasedById' => ['type' => 'integer', 'label' => 'Released By Member ID'],
                     'reason' => ['type' => 'string', 'label' => 'Reason', 'default' => ''],
                     'expiresOn' => ['type' => 'datetime', 'label' => 'Release Date'],
+                    'releaseStatus' => ['type' => 'string', 'label' => 'Release Status', 'default' => Officer::RELEASED_STATUS],
                 ],
                 'outputSchema' => [
                     'released' => ['type' => 'boolean'],
@@ -155,14 +157,16 @@ class OfficersWorkflowProvider
             [
                 'action' => 'Officers.ReleaseConflictingOfficers',
                 'label' => 'Release Conflicting Officers',
-                'description' => 'Release existing officers when a one-per-branch office gets a new assignment',
+                'description' => 'Release or reshape existing officers when a one-per-branch office gets a new assignment',
                 'inputSchema' => [
                     'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The office to check for conflicts'],
                     'branchId' => ['type' => 'integer', 'label' => 'Branch ID', 'required' => true, 'description' => 'The branch to check for conflicts'],
                     'newOfficerStartDate' => ['type' => 'datetime', 'label' => 'New Officer Start Date', 'description' => 'Start date of new officer; used as release date for conflicts'],
+                    'newOfficerEndDate' => ['type' => 'datetime', 'label' => 'New Officer End Date', 'description' => 'End date of new officer; used for overlap trimming and push-back decisions'],
                 ],
                 'outputSchema' => [
                     'releasedOfficerIds' => ['type' => 'array', 'label' => 'Released Officer IDs'],
+                    'adjustedOfficerIds' => ['type' => 'array', 'label' => 'Adjusted Officer IDs'],
                 ],
                 'serviceClass' => $actionsClass,
                 'serviceMethod' => 'releaseConflictingOfficers',
@@ -269,10 +273,12 @@ class OfficersWorkflowProvider
             [
                 'condition' => 'Officers.HasConflictingOfficer',
                 'label' => 'Has Conflicting Officer',
-                'description' => 'Check if a branch already has a current officer for a given office',
+                'description' => 'Check if a branch already has a current or upcoming officer overlapping the incoming hire window',
                 'inputSchema' => [
                     'officeId' => ['type' => 'integer', 'label' => 'Office ID', 'required' => true, 'description' => 'The office to check for conflicts'],
                     'branchId' => ['type' => 'integer', 'label' => 'Branch ID', 'required' => true, 'description' => 'The branch to check for conflicts'],
+                    'newOfficerStartDate' => ['type' => 'datetime', 'label' => 'New Officer Start Date', 'required' => true, 'description' => 'Start date of the proposed hire'],
+                    'newOfficerEndDate' => ['type' => 'datetime', 'label' => 'New Officer End Date', 'description' => 'Optional end date of the proposed hire'],
                 ],
                 'evaluatorClass' => $conditionsClass,
                 'evaluatorMethod' => 'hasConflictingOfficer',

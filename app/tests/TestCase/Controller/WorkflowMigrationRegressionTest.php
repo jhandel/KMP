@@ -332,40 +332,6 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
     }
 
     /**
-     * Officers assign(): officer hire falls back to legacy OfficerManager.
-     */
-    public function testOfficersAssignLegacyPath(): void
-    {
-        $stub = $this->buildTraitStub(self::ADMIN_MEMBER_ID);
-        $dispatcher = $this->buildMockDispatcher();
-
-        $legacyCalled = false;
-        $stub->callDispatchOrLegacy(
-            $dispatcher,
-            'officer-hire',
-            'Officers.HireRequested',
-            [
-                'member_id' => self::ADMIN_MEMBER_ID,
-                'office_id' => 1,
-                'branch_id' => self::KINGDOM_BRANCH_ID,
-                'start_on' => '2025-01-01 00:00:00',
-                'end_on' => null,
-                'deputy_description' => null,
-                'approver_id' => self::ADMIN_MEMBER_ID,
-                'email_address' => 'test@example.com',
-            ],
-            function () use (&$legacyCalled) {
-                $legacyCalled = true;
-
-                return (object)['success' => true, 'reason' => ''];
-            },
-        );
-
-        $this->assertTrue($legacyCalled, 'Legacy OfficerManager hire path must run when no workflow is active');
-        $this->assertEmpty($this->dispatched);
-    }
-
-    /**
      * Officers release(): release falls back to legacy path.
      */
     public function testOfficersReleaseLegacyPath(): void
@@ -392,35 +358,6 @@ class WorkflowMigrationRegressionTest extends BaseTestCase
         );
 
         $this->assertTrue($legacyCalled, 'Legacy OfficerManager release path must run when no workflow is active');
-        $this->assertEmpty($this->dispatched);
-    }
-
-    /**
-     * Members add(): registration falls back to legacy MemberRegistrationService.
-     */
-    public function testMembersAddLegacyPath(): void
-    {
-        $stub = $this->buildTraitStub(self::ADMIN_MEMBER_ID);
-        $dispatcher = $this->buildMockDispatcher();
-
-        $legacyCalled = false;
-        $result = $stub->callDispatchOrLegacy(
-            $dispatcher,
-            'member-registration',
-            'Members.Registered',
-            [
-                'member' => ['sca_name' => 'Test Member', 'email_address' => 'test@test.com'],
-                'form_data' => [],
-            ],
-            function () use (&$legacyCalled) {
-                $legacyCalled = true;
-
-                return 'legacy-redirect';
-            },
-        );
-
-        $this->assertTrue($legacyCalled, 'Legacy member registration must run when no workflow is active');
-        $this->assertEquals('legacy-redirect', $result);
         $this->assertEmpty($this->dispatched);
     }
 

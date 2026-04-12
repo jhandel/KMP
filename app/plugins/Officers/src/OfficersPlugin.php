@@ -215,7 +215,9 @@ class OfficersPlugin extends BasePlugin implements KMPPluginInterface, KMPApiPlu
         // OfficerWorkflowActions — workflow actions using injected managers
         $container->add(OfficerWorkflowActions::class)
             ->addArgument(ActiveWindowManagerInterface::class)
-            ->addArgument(WarrantManagerInterface::class);
+            ->addArgument(WarrantManagerInterface::class)
+            ->addArgument(OfficerManagerInterface::class)
+            ->addArgument(TriggerDispatcher::class);
 
         // OfficerWorkflowConditions — workflow conditions (no constructor dependencies)
         $container->add(OfficerWorkflowConditions::class);

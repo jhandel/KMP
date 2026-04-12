@@ -127,13 +127,14 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             [
                 'name' => 'Officer Hire',
                 'slug' => 'officer-hire',
-                'description' => 'Full officer hire process: conflict resolution, warrant validation, ' .
-                    'officer creation, reporting field calculation, and notification.',
+                'description' => 'Full officer hire process: warrant validation before conflict resolution, ' .
+                    'officer creation, warrant roster creation when required, and notification.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Officers.HireRequested'],
                 'entity_type' => 'Officers',
                 'json_file' => 'officers-hire.json',
                 'execution_mode' => 'ephemeral',
+                'is_active' => true,
             ],
             [
                 'name' => 'Officer Release',
@@ -162,13 +163,14 @@ class InitWorkflowDefinitionsSeed extends BaseSeed
             [
                 'name' => 'Member Registration',
                 'slug' => 'member-registration',
-                'description' => 'New member registration: checks age (minor vs. adult), assigns ' .
-                    'appropriate role and status, sends welcome email.',
+                'description' => 'Member registration notifications for saved members: send the ' .
+                    'adult self-registration welcome/secretary emails or minor secretary notice.',
                 'trigger_type' => 'event',
                 'trigger_config' => ['event' => 'Members.Registered'],
                 'entity_type' => 'Members',
                 'json_file' => 'member-registration.json',
                 'execution_mode' => 'ephemeral',
+                'is_active' => true,
             ],
             [
                 'name' => 'Waiver Collection Closure',
