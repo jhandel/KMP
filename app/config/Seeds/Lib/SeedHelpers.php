@@ -204,4 +204,67 @@ class SeedHelpers
         $role = $rolesTable->find()->where(['name' => $roleName])->firstOrFail();
         return self::getMemberRoleId($memberId, $role->id);
     }
+
+    /**
+     * Insert rows into a table, skipping any whose `$keyColumn` value already exists.
+     *
+     * Used by dev seeders so they remain idempotent when baseline rows are already
+     * inserted by migrations (e.g. Awards migration creates a "Kingdom Court"
+     * gathering activity that collides with the dev seed's row id 1).
+     *
+     * @param object $seed The BaseSeed instance (caller passes `$this`).
+     * @param string $tableName Target table.
+     * @param array<int, array<string, mixed>> $rows Rows to insert.
+     * @param string $keyColumn Column used for uniqueness check (default `name`).
+     */
+    public static function insertIfMissing(object $seed, string $tableName, array $rows, string $keyColumn = 'name'): void
+    {
+        if (empty($rows)) {
+            return;
+        }
+        $existing = $seed->fetchAll("SELECT {$keyColumn} FROM {$tableName}");
+        $existingKeys = array_column($existing ?: [], $keyColumn);
+        $newRows = array_filter($rows, fn(array $r) => isset($r[$keyColumn]) && !in_array($r[$keyColumn], $existingKeys, true));
+        if (empty($newRows)) {
+            return;
+        }
+        $table = $seed->table($tableName);
+        $table->insert(array_values($newRows))->save();
+    }
+
+    /**
+     * Advance Postgres sequences so the next auto-generated id is past any
+     * explicit-id rows inserted by seeders/migrations. No-op on MySQL.
+     *
+     * When seeders insert rows with explicit id values, Postgres's identity
+     * sequence is not advanced, so subsequent app inserts (which rely on
+     * nextval) collide with the seeded ids. Call this after seeding completes.
+     *
+     * @param object $seed The BaseSeed instance (caller passes `$this`).
+     * @param array<int, string> $tables Tables whose `id` sequences to reset.
+     *   When empty, all tables in the current schema with an integer `id`
+     *   column and an owned sequence are reset.
+     */
+    public static function resetPostgresSequences(object $seed, array $tables = []): void
+    {
+        $adapter = method_exists($seed, 'getAdapter') ? $seed->getAdapter() : null;
+        if ($adapter === null || $adapter->getAdapterType() !== 'pgsql') {
+            return;
+        }
+        if (empty($tables)) {
+            $rows = $seed->fetchAll(
+                "SELECT c.table_name FROM information_schema.columns c " .
+                "WHERE c.table_schema = current_schema() AND c.column_name = 'id' " .
+                "AND c.data_type IN ('integer','bigint') " .
+                "AND pg_get_serial_sequence(c.table_schema || '.' || c.table_name, 'id') IS NOT NULL"
+            );
+            $tables = array_column($rows ?: [], 'table_name');
+        }
+        foreach ($tables as $table) {
+            $seed->execute(
+                "SELECT setval(pg_get_serial_sequence('{$table}', 'id'), " .
+                "GREATEST(COALESCE((SELECT MAX(id) FROM {$table}), 0), 1))"
+            );
+        }
+    }
 }
