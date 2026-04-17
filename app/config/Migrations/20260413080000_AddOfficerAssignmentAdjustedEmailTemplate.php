@@ -3,9 +3,12 @@
 declare(strict_types=1);
 
 use Migrations\BaseMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 class AddOfficerAssignmentAdjustedEmailTemplate extends BaseMigration
 {
+    use CrossEngineMigrationTrait;
+
     public function up(): void
     {
         $now = date('Y-m-d H:i:s');
@@ -31,8 +34,8 @@ class AddOfficerAssignmentAdjustedEmailTemplate extends BaseMigration
             'reason' => ['type' => 'string', 'label' => 'Adjustment Reason', 'required' => true],
             'siteAdminSignature' => ['type' => 'string', 'label' => 'Site Admin Signature'],
         ], JSON_THROW_ON_ERROR);
-        $subject = addslashes('Officer Assignment Dates Updated: {{officeName}}');
-        $text = addslashes(
+        $subject = $this->sqlEscape('Officer Assignment Dates Updated: {{officeName}}');
+        $text = $this->sqlEscape(
             "Good day {{memberScaName}}\n\n"
             . "Your assignment dates for {{officeName}} in {{branchName}} have been updated.\n\n"
             . "Previous Term:\n"
@@ -60,7 +63,7 @@ class AddOfficerAssignmentAdjustedEmailTemplate extends BaseMigration
                         text_template = '{$text}',
                         available_vars = '{$availableVars}',
                         variables_schema = '{$variablesSchema}',
-                        is_active = 1,
+                        is_active = TRUE,
                         modified = '{$now}',
                         modified_by = 1
                   WHERE id = " . (int)$existing['id'],
@@ -81,7 +84,7 @@ class AddOfficerAssignmentAdjustedEmailTemplate extends BaseMigration
                     '{$text}',
                     '{$availableVars}',
                     '{$variablesSchema}',
-                    1,
+                    TRUE,
                     NULL,
                     '{$now}',
                     '{$now}',

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\BaseMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Finalize email_templates around slug-only identity.
@@ -12,6 +13,8 @@ use Migrations\BaseMigration;
  */
 class RemoveLegacyMailerIdentityFromEmailTemplates extends BaseMigration
 {
+    use CrossEngineMigrationTrait;
+
     /**
      * @return void
      */
@@ -85,7 +88,7 @@ class RemoveLegacyMailerIdentityFromEmailTemplates extends BaseMigration
 
             $this->execute(
                 "UPDATE email_templates
-                    SET slug = '" . addslashes($slug) . "',
+                    SET slug = '" . $this->sqlEscape($slug) . "',
                         modified = '{$now}',
                         modified_by = 1
                   WHERE id = {$templateId}",
@@ -165,7 +168,7 @@ class RemoveLegacyMailerIdentityFromEmailTemplates extends BaseMigration
         $row = $this->fetchRow(
             "SELECT id
                FROM email_templates
-              WHERE slug = '" . addslashes($slug) . "'
+              WHERE slug = '" . $this->sqlEscape($slug) . "'
                 AND {$kingdomClause}
                 AND id != {$templateId}
               LIMIT 1",

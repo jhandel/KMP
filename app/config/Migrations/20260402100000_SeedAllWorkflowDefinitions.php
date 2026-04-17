@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\AbstractMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Seed all 8 workflow definitions from JSON files.
@@ -12,6 +13,8 @@ use Migrations\AbstractMigration;
  */
 class SeedAllWorkflowDefinitions extends AbstractMigration
 {
+    use CrossEngineMigrationTrait;
+
     /**
      * Seed workflow definitions from the current metadata/JSON source.
      *
@@ -65,16 +68,16 @@ class SeedAllWorkflowDefinitions extends AbstractMigration
                 continue;
             }
 
-            $name = addslashes($meta['name']);
-            $slug = addslashes($meta['slug']);
-            $desc = addslashes($meta['description']);
-            $triggerConfig = addslashes(json_encode($meta['trigger_config']));
-            $entityType = addslashes($meta['entity_type']);
-            $defJson = addslashes(json_encode($decoded));
+            $name = $this->sqlEscape($meta['name']);
+            $slug = $this->sqlEscape($meta['slug']);
+            $desc = $this->sqlEscape($meta['description']);
+            $triggerConfig = $this->sqlEscape(json_encode($meta['trigger_config']));
+            $entityType = $this->sqlEscape($meta['entity_type']);
+            $defJson = $this->sqlEscape(json_encode($decoded));
 
-            $executionMode = addslashes($meta['execution_mode'] ?? 'durable');
+            $executionMode = $this->sqlEscape($meta['execution_mode'] ?? 'durable');
 
-            $isActive = !empty($meta['is_active']) ? 1 : 0;
+            $isActive = $this->sqlBool(!empty($meta['is_active']));
 
             $this->execute(
                 'INSERT INTO workflow_definitions (' .

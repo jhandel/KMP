@@ -15,7 +15,7 @@ class AddApproveWarrantRostersPermission extends AbstractMigration
         // Create the permission
         $this->execute(
             "INSERT INTO permissions (name, is_system, is_super_user, require_active_membership, created, modified)
-             VALUES ('Can Approve Warrant Rosters', 1, 0, 1, NOW(), NOW())"
+             VALUES ('Can Approve Warrant Rosters', TRUE, FALSE, TRUE, NOW(), NOW())"
         );
 
         // Find the new permission ID
@@ -32,22 +32,43 @@ class AddApproveWarrantRostersPermission extends AbstractMigration
                 "SELECT role_id FROM roles_permissions WHERE permission_id = " . (int)$manageRow['id']
             );
             foreach ($rows as $r) {
-                $this->execute(
-                    "INSERT IGNORE INTO roles_permissions (role_id, permission_id)
-                     VALUES ({$r['role_id']}, {$newPermId})"
+                $exists = $this->fetchRow(
+                    "SELECT 1 FROM roles_permissions WHERE role_id = {$r['role_id']} AND permission_id = {$newPermId}"
                 );
+                if (!$exists) {
+                    $this->execute(
+                        "INSERT INTO roles_permissions (role_id, permission_id)
+                         VALUES ({$r['role_id']}, {$newPermId})"
+                    );
+                }
             }
         }
 
         // Map the permission to CakePHP authorization policies
-        $this->execute(
-            "INSERT IGNORE INTO permission_policies (permission_id, policy_class, policy_method)
-             VALUES ({$newPermId}, 'App\\\\Policy\\\\WarrantRosterPolicy', 'canApprove')"
+        $this->insertPermissionPolicyIfMissing($newPermId, 'App\\Policy\\WarrantRosterPolicy', 'canApprove');
+        $this->insertPermissionPolicyIfMissing($newPermId, 'App\\Policy\\WarrantRostersTablePolicy', 'canApprove');
+    }
+
+    /**
+     * Cross-engine insert-if-missing for permission_policies.
+     */
+    private function insertPermissionPolicyIfMissing(int $permId, string $policyClass, string $policyMethod): void
+    {
+        $esc = fn(string $s) => str_replace("'", "''", $s);
+        $classEsc = $esc($policyClass);
+        $methodEsc = $esc($policyMethod);
+        $exists = $this->fetchRow(
+            "SELECT 1 FROM permission_policies
+             WHERE permission_id = {$permId}
+               AND policy_class = '{$classEsc}'
+               AND policy_method = '{$methodEsc}'"
         );
-        $this->execute(
-            "INSERT IGNORE INTO permission_policies (permission_id, policy_class, policy_method)
-             VALUES ({$newPermId}, 'App\\\\Policy\\\\WarrantRostersTablePolicy', 'canApprove')"
-        );
+        if (!$exists) {
+            $this->execute(
+                "INSERT INTO permission_policies (permission_id, policy_class, policy_method)
+                 VALUES ({$permId}, '{$classEsc}', '{$methodEsc}')"
+            );
+        }
     }
 
     public function down(): void

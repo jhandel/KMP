@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\AbstractMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Backfill all existing warrant roster approvals into the workflow engine tables.
@@ -15,12 +16,23 @@ use Migrations\AbstractMigration;
  */
 class BackfillWarrantRosterApprovalsToWorkflowEngine extends AbstractMigration
 {
+    use CrossEngineMigrationTrait;
+
     public function up(): void
     {
+        // Skip backfill if the source table doesn't exist yet. warrant_rosters
+        // is created by a core migration but belongs to a feature that may
+        // not have been set up on a given install.
+        if (!$this->tableExistsInDb('warrant_rosters')) {
+            echo "Skipping backfill: warrant_rosters table does not exist (fresh install).\n";
+            return;
+        }
+
+        $ctxText = $this->jsonAsText('context');
         // Step 1: Idempotency check — skip if we already have migrated records
         $existing = $this->fetchRow(
             "SELECT COUNT(*) AS cnt FROM workflow_instances " .
-            "WHERE entity_type = 'WarrantRosters' AND context LIKE '%\"migrated\":true%'"
+            "WHERE entity_type = 'WarrantRosters' AND $ctxText LIKE '%\"migrated\":true%'"
         );
         if ($existing && (int)$existing['cnt'] > 0) {
             echo "Backfill already applied ({$existing['cnt']} migrated instances found). Skipping.\n";
@@ -81,7 +93,7 @@ class BackfillWarrantRosterApprovalsToWorkflowEngine extends AbstractMigration
 
         foreach ($rosters as $roster) {
             $rosterId = (int)$roster['id'];
-            $rosterName = addslashes($roster['name']);
+            $rosterName = $this->sqlEscape($roster['name']);
             $approvalsRequired = (int)$roster['approvals_required'];
             $status = strtolower($roster['status']);
             $created = $roster['created'];
@@ -129,7 +141,7 @@ class BackfillWarrantRosterApprovalsToWorkflowEngine extends AbstractMigration
                 'migrated' => true,
                 'migratedAt' => $now,
             ]);
-            $contextEsc = addslashes($context);
+            $contextEsc = $this->sqlEscape($context);
 
             // (a) Create workflow_instances
             $completedAtSql = $completedAt ? "'{$completedAt}'" : 'NULL';
@@ -147,7 +159,7 @@ class BackfillWarrantRosterApprovalsToWorkflowEngine extends AbstractMigration
             $instanceRow = $this->fetchRow(
                 "SELECT id FROM workflow_instances " .
                 "WHERE entity_type = 'WarrantRosters' AND entity_id = {$rosterId} " .
-                "AND context LIKE '%\"migrated\":true%' " .
+                "AND $ctxText LIKE '%\"migrated\":true%' " .
                 "ORDER BY id DESC LIMIT 1"
             );
             if (!$instanceRow) {
@@ -184,7 +196,7 @@ class BackfillWarrantRosterApprovalsToWorkflowEngine extends AbstractMigration
                 'entityTable' => 'WarrantRosters',
                 'entityIdKey' => 'trigger.rosterId',
             ]);
-            $approverConfigEsc = addslashes($approverConfig);
+            $approverConfigEsc = $this->sqlEscape($approverConfig);
             $approvalToken = bin2hex(random_bytes(16));
 
             $this->execute(
@@ -196,7 +208,7 @@ class BackfillWarrantRosterApprovalsToWorkflowEngine extends AbstractMigration
                 "VALUES ({$instanceId}, 'approval-gate', {$logId}, " .
                 "'policy', '{$approverConfigEsc}', NULL, " .
                 "{$approvalsRequired}, {$approvedCount}, {$rejectedCount}, " .
-                "'{$approvalStatus}', 1, NULL, 1, '{$approvalToken}', '{$created}', '{$now}')"
+                "'{$approvalStatus}', TRUE, NULL, 1, '{$approvalToken}', '{$created}', '{$now}')"
             );
 
             // Retrieve the workflow approval ID
@@ -239,7 +251,7 @@ class BackfillWarrantRosterApprovalsToWorkflowEngine extends AbstractMigration
         $totalMigrated = $counters['pending'] + $counters['approved'] + $counters['declined'];
         $instanceCount = $this->fetchRow(
             "SELECT COUNT(*) AS cnt FROM workflow_instances " .
-            "WHERE entity_type = 'WarrantRosters' AND context LIKE '%\"migrated\":true%'"
+            "WHERE entity_type = 'WarrantRosters' AND $ctxText LIKE '%\"migrated\":true%'"
         );
         $instTotal = $instanceCount ? (int)$instanceCount['cnt'] : 0;
 
@@ -254,21 +266,21 @@ class BackfillWarrantRosterApprovalsToWorkflowEngine extends AbstractMigration
             "DELETE FROM workflow_approval_responses WHERE workflow_approval_id IN " .
             "(SELECT id FROM workflow_approvals WHERE workflow_instance_id IN " .
             "(SELECT id FROM workflow_instances " .
-            "WHERE entity_type = 'WarrantRosters' AND context LIKE '%\"migrated\":true%'))"
+            "WHERE entity_type = 'WarrantRosters' AND $ctxText LIKE '%\"migrated\":true%'))"
         );
         $this->execute(
             "DELETE FROM workflow_approvals WHERE workflow_instance_id IN " .
             "(SELECT id FROM workflow_instances " .
-            "WHERE entity_type = 'WarrantRosters' AND context LIKE '%\"migrated\":true%')"
+            "WHERE entity_type = 'WarrantRosters' AND $ctxText LIKE '%\"migrated\":true%')"
         );
         $this->execute(
             "DELETE FROM workflow_execution_logs WHERE workflow_instance_id IN " .
             "(SELECT id FROM workflow_instances " .
-            "WHERE entity_type = 'WarrantRosters' AND context LIKE '%\"migrated\":true%')"
+            "WHERE entity_type = 'WarrantRosters' AND $ctxText LIKE '%\"migrated\":true%')"
         );
         $this->execute(
             "DELETE FROM workflow_instances " .
-            "WHERE entity_type = 'WarrantRosters' AND context LIKE '%\"migrated\":true%'"
+            "WHERE entity_type = 'WarrantRosters' AND $ctxText LIKE '%\"migrated\":true%'"
         );
     }
 }

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use Migrations\BaseMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Republishes the current award recommendation workflow definitions and activates them.
@@ -12,6 +13,8 @@ use Migrations\BaseMigration;
  */
 class PublishActiveAwardRecommendationWorkflowDefinitions extends BaseMigration
 {
+    use CrossEngineMigrationTrait;
+
     /**
      * @var array<int, string>
      */
@@ -58,7 +61,7 @@ class PublishActiveAwardRecommendationWorkflowDefinitions extends BaseMigration
         $slugs = implode("','", self::TARGET_SLUGS);
         $this->execute(
             "UPDATE workflow_definitions
-             SET is_active = 0
+             SET is_active = FALSE
              WHERE slug IN ('{$slugs}')",
         );
     }
@@ -79,15 +82,15 @@ class PublishActiveAwardRecommendationWorkflowDefinitions extends BaseMigration
         }
 
         $definition = json_decode((string)file_get_contents($jsonPath), true, 512, JSON_THROW_ON_ERROR);
-        $definitionJson = addslashes(json_encode($definition, JSON_THROW_ON_ERROR));
-        $triggerConfig = addslashes(json_encode($meta['trigger_config'], JSON_THROW_ON_ERROR));
-        $slug = addslashes((string)$meta['slug']);
-        $name = addslashes((string)$meta['name']);
-        $description = addslashes((string)$meta['description']);
-        $triggerType = addslashes((string)$meta['trigger_type']);
-        $entityType = addslashes((string)$meta['entity_type']);
-        $executionMode = addslashes((string)($meta['execution_mode'] ?? 'ephemeral'));
-        $isActive = !empty($meta['is_active']) ? 1 : 0;
+        $definitionJson = $this->sqlEscape(json_encode($definition, JSON_THROW_ON_ERROR));
+        $triggerConfig = $this->sqlEscape(json_encode($meta['trigger_config'], JSON_THROW_ON_ERROR));
+        $slug = $this->sqlEscape((string)$meta['slug']);
+        $name = $this->sqlEscape((string)$meta['name']);
+        $description = $this->sqlEscape((string)$meta['description']);
+        $triggerType = $this->sqlEscape((string)$meta['trigger_type']);
+        $entityType = $this->sqlEscape((string)$meta['entity_type']);
+        $executionMode = $this->sqlEscape((string)($meta['execution_mode'] ?? 'ephemeral'));
+        $isActive = $this->sqlBool(!empty($meta['is_active']));
 
         $definitionRow = $this->fetchRow(
             "SELECT id

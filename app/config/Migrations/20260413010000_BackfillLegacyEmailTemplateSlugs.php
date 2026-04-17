@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\BaseMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Backfill workflow-native slugs onto legacy mailer/action email template rows.
@@ -15,6 +16,8 @@ use Migrations\BaseMigration;
  */
 class BackfillLegacyEmailTemplateSlugs extends BaseMigration
 {
+    use CrossEngineMigrationTrait;
+
     /**
      * @return void
      */
@@ -26,8 +29,8 @@ class BackfillLegacyEmailTemplateSlugs extends BaseMigration
             $legacyRows = $this->fetchAll(
                 "SELECT id, kingdom_id
                  FROM email_templates
-                 WHERE mailer_class = '" . addslashes($mapping['mailer_class']) . "'
-                   AND action_method = '" . addslashes($mapping['action_method']) . "'
+                 WHERE mailer_class = '" . $this->sqlEscape($mapping['mailer_class']) . "'
+                   AND action_method = '" . $this->sqlEscape($mapping['action_method']) . "'
                    AND (slug IS NULL OR slug = '')",
             );
 
@@ -44,17 +47,17 @@ class BackfillLegacyEmailTemplateSlugs extends BaseMigration
 
                 $this->execute(
                     "UPDATE email_templates
-                     SET slug = '" . addslashes($mapping['slug']) . "',
+                     SET slug = '" . $this->sqlEscape($mapping['slug']) . "',
                          name = CASE
-                             WHEN name IS NULL OR name = '' THEN '" . addslashes($mapping['name']) . "'
+                             WHEN name IS NULL OR name = '' THEN '" . $this->sqlEscape($mapping['name']) . "'
                              ELSE name
                          END,
                          description = CASE
-                             WHEN description IS NULL OR description = '' THEN '" . addslashes($mapping['description']) . "'
+                             WHEN description IS NULL OR description = '' THEN '" . $this->sqlEscape($mapping['description']) . "'
                              ELSE description
                          END,
-                         available_vars = '" . addslashes(json_encode($mapping['available_vars'])) . "',
-                         variables_schema = '" . addslashes(json_encode($mapping['variables_schema'])) . "',
+                         available_vars = '" . $this->sqlEscape(json_encode($mapping['available_vars'])) . "',
+                         variables_schema = '" . $this->sqlEscape(json_encode($mapping['variables_schema'])) . "',
                          modified = '{$now}',
                          modified_by = 1
                      WHERE id = " . (int)$legacyRow['id'],
@@ -72,9 +75,9 @@ class BackfillLegacyEmailTemplateSlugs extends BaseMigration
             $this->execute(
                 "UPDATE email_templates
                  SET slug = NULL
-                 WHERE mailer_class = '" . addslashes($mapping['mailer_class']) . "'
-                   AND action_method = '" . addslashes($mapping['action_method']) . "'
-                   AND slug = '" . addslashes($mapping['slug']) . "'",
+                 WHERE mailer_class = '" . $this->sqlEscape($mapping['mailer_class']) . "'
+                   AND action_method = '" . $this->sqlEscape($mapping['action_method']) . "'
+                   AND slug = '" . $this->sqlEscape($mapping['slug']) . "'",
             );
         }
     }
@@ -94,7 +97,7 @@ class BackfillLegacyEmailTemplateSlugs extends BaseMigration
         $row = $this->fetchRow(
             "SELECT id
              FROM email_templates
-             WHERE slug = '" . addslashes($slug) . "'
+             WHERE slug = '" . $this->sqlEscape($slug) . "'
                AND {$kingdomClause}
                AND id != {$legacyId}
              ORDER BY id ASC

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\AbstractMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Fix activities-authorization-request workflow definition:
@@ -10,6 +11,8 @@ use Migrations\AbstractMigration;
  */
 class FixAuthorizationRequestWorkflowParams extends AbstractMigration
 {
+    use CrossEngineMigrationTrait;
+
     public function up(): void
     {
         // Update published versions for the authorization request workflow
@@ -39,7 +42,7 @@ class FixAuthorizationRequestWorkflowParams extends AbstractMigration
             $encoded = json_encode($definition, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             $this->execute(sprintf(
                 "UPDATE workflow_versions SET definition = '%s' WHERE id = %d",
-                addslashes($encoded),
+                $this->sqlEscape($encoded),
                 (int)$row['id']
             ));
         }

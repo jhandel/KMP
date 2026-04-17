@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\BaseMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Seed/backfill the workflow-native slug for the authorization retraction email.
@@ -14,6 +15,8 @@ use Migrations\BaseMigration;
  */
 class AddAuthorizationRetractionEmailTemplateSlug extends BaseMigration
 {
+    use CrossEngineMigrationTrait;
+
     private const SLUG = 'authorization-request-retracted';
 
     private const LEGACY_MAILER = 'Activities\Mailer\ActivitiesMailer';
@@ -37,7 +40,7 @@ class AddAuthorizationRetractionEmailTemplateSlug extends BaseMigration
         ];
 
         $existingSlug = $this->fetchRow(
-            "SELECT id FROM email_templates WHERE slug = '" . addslashes(self::SLUG) . "' AND kingdom_id IS NULL LIMIT 1",
+            "SELECT id FROM email_templates WHERE slug = '" . $this->sqlEscape(self::SLUG) . "' AND kingdom_id IS NULL LIMIT 1",
         );
         if ($existingSlug) {
             return;
@@ -46,8 +49,8 @@ class AddAuthorizationRetractionEmailTemplateSlug extends BaseMigration
         $legacyTemplate = $this->fetchRow(
             "SELECT id
                FROM email_templates
-              WHERE mailer_class = '" . addslashes(self::LEGACY_MAILER) . "'
-                AND action_method = '" . addslashes(self::LEGACY_ACTION) . "'
+              WHERE mailer_class = '" . $this->sqlEscape(self::LEGACY_MAILER) . "'
+                AND action_method = '" . $this->sqlEscape(self::LEGACY_ACTION) . "'
                 AND kingdom_id IS NULL
               ORDER BY id ASC
               LIMIT 1",
@@ -56,11 +59,11 @@ class AddAuthorizationRetractionEmailTemplateSlug extends BaseMigration
         if ($legacyTemplate) {
             $this->execute(
                 "UPDATE email_templates
-                    SET slug = '" . addslashes(self::SLUG) . "',
-                        name = '" . addslashes($name) . "',
-                        description = '" . addslashes($description) . "',
-                        available_vars = '" . addslashes(json_encode($availableVars)) . "',
-                        variables_schema = '" . addslashes(json_encode($variablesSchema)) . "',
+                    SET slug = '" . $this->sqlEscape(self::SLUG) . "',
+                        name = '" . $this->sqlEscape($name) . "',
+                        description = '" . $this->sqlEscape($description) . "',
+                        available_vars = '" . $this->sqlEscape(json_encode($availableVars)) . "',
+                        variables_schema = '" . $this->sqlEscape(json_encode($variablesSchema)) . "',
                         modified = '{$now}',
                         modified_by = 1
                   WHERE id = " . (int)$legacyTemplate['id'],
@@ -75,15 +78,15 @@ class AddAuthorizationRetractionEmailTemplateSlug extends BaseMigration
                  available_vars, variables_schema, is_active,
                  created, modified, created_by, modified_by, kingdom_id)
              VALUES (
-                 '" . addslashes(self::SLUG) . "',
-                 '" . addslashes($name) . "',
-                 '" . addslashes($description) . "',
+                 '" . $this->sqlEscape(self::SLUG) . "',
+                 '" . $this->sqlEscape($name) . "',
+                 '" . $this->sqlEscape($description) . "',
                  'Authorization Request Retracted: {{activityName}}',
                  'Good day {{approverScaName}}\n\n{{requesterScaName}} has retracted their authorization request for {{activityName}}.\n\nThis request has been cancelled and no further action is required on your part.\n\nThank you\n{{siteAdminSignature}}.',
                  NULL,
-                 '" . addslashes(json_encode($availableVars)) . "',
-                 '" . addslashes(json_encode($variablesSchema)) . "',
-                 1,
+                 '" . $this->sqlEscape(json_encode($availableVars)) . "',
+                 '" . $this->sqlEscape(json_encode($variablesSchema)) . "',
+                 TRUE,
                  '{$now}', '{$now}', 1, 1, NULL
              )",
         );
@@ -97,15 +100,15 @@ class AddAuthorizationRetractionEmailTemplateSlug extends BaseMigration
         $this->execute(
             "UPDATE email_templates
                 SET slug = NULL
-              WHERE slug = '" . addslashes(self::SLUG) . "'
-                AND mailer_class = '" . addslashes(self::LEGACY_MAILER) . "'
-                AND action_method = '" . addslashes(self::LEGACY_ACTION) . "'
+              WHERE slug = '" . $this->sqlEscape(self::SLUG) . "'
+                AND mailer_class = '" . $this->sqlEscape(self::LEGACY_MAILER) . "'
+                AND action_method = '" . $this->sqlEscape(self::LEGACY_ACTION) . "'
                 AND kingdom_id IS NULL",
         );
 
         $this->execute(
             "DELETE FROM email_templates
-              WHERE slug = '" . addslashes(self::SLUG) . "'
+              WHERE slug = '" . $this->sqlEscape(self::SLUG) . "'
                 AND mailer_class IS NULL
                 AND action_method IS NULL
                 AND kingdom_id IS NULL",

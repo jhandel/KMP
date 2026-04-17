@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\BaseMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Seed stable-slug email templates required by migrated workflow definitions.
@@ -22,6 +23,8 @@ use Migrations\BaseMigration;
  */
 class AddWorkflowEmailTemplateSlugs extends BaseMigration
 {
+    use CrossEngineMigrationTrait;
+
     /**
      * @return void
      */
@@ -33,7 +36,7 @@ class AddWorkflowEmailTemplateSlugs extends BaseMigration
 
         foreach ($templates as $tpl) {
             $existing = $this->fetchRow(
-                "SELECT id FROM email_templates WHERE slug = '" . addslashes($tpl['slug']) . "' AND kingdom_id IS NULL",
+                "SELECT id FROM email_templates WHERE slug = '" . $this->sqlEscape($tpl['slug']) . "' AND kingdom_id IS NULL",
             );
             if ($existing) {
                 continue;
@@ -46,17 +49,17 @@ class AddWorkflowEmailTemplateSlugs extends BaseMigration
                      available_vars, variables_schema, is_active,
                      created, modified, created_by, modified_by, kingdom_id)
                  VALUES (
-                     '" . addslashes($tpl['slug']) . "',
-                     '" . addslashes($tpl['name']) . "',
-                     '" . addslashes($tpl['description']) . "',
-                     " . ($tpl['mailer_class'] ? "'" . addslashes($tpl['mailer_class']) . "'" : 'NULL') . ",
-                     " . ($tpl['action_method'] ? "'" . addslashes($tpl['action_method']) . "'" : 'NULL') . ",
-                     '" . addslashes($tpl['subject_template']) . "',
-                     '" . addslashes($tpl['text_template']) . "',
+                     '" . $this->sqlEscape($tpl['slug']) . "',
+                     '" . $this->sqlEscape($tpl['name']) . "',
+                     '" . $this->sqlEscape($tpl['description']) . "',
+                     " . ($tpl['mailer_class'] ? "'" . $this->sqlEscape($tpl['mailer_class']) . "'" : 'NULL') . ",
+                     " . ($tpl['action_method'] ? "'" . $this->sqlEscape($tpl['action_method']) . "'" : 'NULL') . ",
+                     '" . $this->sqlEscape($tpl['subject_template']) . "',
+                     '" . $this->sqlEscape($tpl['text_template']) . "',
                      NULL,
-                     '" . addslashes(json_encode($tpl['available_vars'])) . "',
-                     '" . addslashes(json_encode($tpl['variables_schema'])) . "',
-                     1,
+                     '" . $this->sqlEscape(json_encode($tpl['available_vars'])) . "',
+                     '" . $this->sqlEscape(json_encode($tpl['variables_schema'])) . "',
+                     TRUE,
                      '{$now}', '{$now}', 1, 1, NULL
                  )",
             );
@@ -79,7 +82,7 @@ class AddWorkflowEmailTemplateSlugs extends BaseMigration
 
         foreach ($slugs as $slug) {
             $this->execute(
-                "DELETE FROM email_templates WHERE slug = '" . addslashes($slug) . "' AND kingdom_id IS NULL",
+                "DELETE FROM email_templates WHERE slug = '" . $this->sqlEscape($slug) . "' AND kingdom_id IS NULL",
             );
         }
     }

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\AbstractMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Backfill all existing Activities authorization approvals into the workflow engine tables.
@@ -15,12 +16,24 @@ use Migrations\AbstractMigration;
  */
 class BackfillAuthorizationApprovalsToWorkflowEngine extends AbstractMigration
 {
+    use CrossEngineMigrationTrait;
+
     public function up(): void
     {
+        // Skip backfill if the source plugin table doesn't exist yet.
+        // On fresh installs, Activities plugin migrations run after core
+        // migrations via the UpdateDatabaseCommand, so the table may be
+        // absent when this migration runs.
+        if (!$this->tableExistsInDb('activities_authorizations')) {
+            echo "Skipping backfill: activities_authorizations table does not exist (fresh install).\n";
+            return;
+        }
+
+        $ctxText = $this->jsonAsText('context');
         // Check idempotency — skip if we already have migrated records
         $existing = $this->fetchRow(
             "SELECT COUNT(*) AS cnt FROM workflow_instances " .
-            "WHERE entity_type = 'Activities.Authorizations' AND context LIKE '%\"migrated\":true%'"
+            "WHERE entity_type = 'Activities.Authorizations' AND $ctxText LIKE '%\"migrated\":true%'"
         );
         if ($existing && (int)$existing['cnt'] > 0) {
             echo "Backfill already applied ({$existing['cnt']} migrated instances found). Skipping.\n";
@@ -149,7 +162,7 @@ class BackfillAuthorizationApprovalsToWorkflowEngine extends AbstractMigration
                 'migrated' => true,
                 'migratedAt' => $now,
             ]);
-            $contextEsc = addslashes($context);
+            $contextEsc = $this->sqlEscape($context);
 
             // (a) Create workflow_instances
             $completedAtSql = $completedAt ? "'{$completedAt}'" : 'NULL';
@@ -166,7 +179,7 @@ class BackfillAuthorizationApprovalsToWorkflowEngine extends AbstractMigration
             $instanceRow = $this->fetchRow(
                 "SELECT id FROM workflow_instances " .
                 "WHERE entity_type = 'Activities.Authorizations' AND entity_id = {$authId} " .
-                "AND context LIKE '%\"migrated\":true%' " .
+                "AND $ctxText LIKE '%\"migrated\":true%' " .
                 "ORDER BY id DESC LIMIT 1"
             );
             if (!$instanceRow) {
@@ -214,7 +227,7 @@ class BackfillAuthorizationApprovalsToWorkflowEngine extends AbstractMigration
                 }
             }
 
-            $approverConfigJson = addslashes(json_encode($approverConfig));
+            $approverConfigJson = $this->sqlEscape(json_encode($approverConfig));
             $approvalToken = bin2hex(random_bytes(16));
 
             $this->execute(
@@ -224,7 +237,7 @@ class BackfillAuthorizationApprovalsToWorkflowEngine extends AbstractMigration
                 "status, allow_parallel, deadline, version, approval_token, created, modified) " .
                 "VALUES ({$instanceId}, 'approval-gate', {$logId}, " .
                 "'dynamic', '{$approverConfigJson}', {$requiredCount}, {$approvedCount}, {$rejectedCount}, " .
-                "'{$approvalStatus}', 0, NULL, 1, '{$approvalToken}', '{$created}', '{$now}')"
+                "'{$approvalStatus}', FALSE, NULL, 1, '{$approvalToken}', '{$created}', '{$now}')"
             );
 
             // Retrieve the workflow approval ID
@@ -249,7 +262,7 @@ class BackfillAuthorizationApprovalsToWorkflowEngine extends AbstractMigration
                 $respMemberId = (int)$resp['approver_id'];
                 $decision = ((int)$resp['approved'] === 1) ? 'approve' : 'reject';
                 $comment = $resp['approver_notes']
-                    ? "'" . addslashes($resp['approver_notes']) . "'"
+                    ? "'" . $this->sqlEscape($resp['approver_notes']) . "'"
                     : 'NULL';
                 $respondedOn = $resp['responded_on'];
 
@@ -266,14 +279,14 @@ class BackfillAuthorizationApprovalsToWorkflowEngine extends AbstractMigration
         $authCount = $this->fetchRow("SELECT COUNT(*) AS cnt FROM activities_authorizations");
         $instanceCount = $this->fetchRow(
             "SELECT COUNT(*) AS cnt FROM workflow_instances " .
-            "WHERE entity_type = 'Activities.Authorizations' AND context LIKE '%\"migrated\":true%'"
+            "WHERE entity_type = 'Activities.Authorizations' AND $ctxText LIKE '%\"migrated\":true%'"
         );
         $approvalCount = $this->fetchRow(
             "SELECT COUNT(*) AS cnt FROM workflow_approval_responses " .
             "WHERE workflow_approval_id IN (" .
             "SELECT id FROM workflow_approvals WHERE workflow_instance_id IN (" .
             "SELECT id FROM workflow_instances " .
-            "WHERE entity_type = 'Activities.Authorizations' AND context LIKE '%\"migrated\":true%'))"
+            "WHERE entity_type = 'Activities.Authorizations' AND $ctxText LIKE '%\"migrated\":true%'))"
         );
 
         $authTotal = $authCount ? (int)$authCount['cnt'] : 0;
@@ -289,21 +302,21 @@ class BackfillAuthorizationApprovalsToWorkflowEngine extends AbstractMigration
             "DELETE FROM workflow_approval_responses WHERE workflow_approval_id IN " .
             "(SELECT id FROM workflow_approvals WHERE workflow_instance_id IN " .
             "(SELECT id FROM workflow_instances " .
-            "WHERE entity_type = 'Activities.Authorizations' AND context LIKE '%\"migrated\":true%'))"
+            "WHERE entity_type = 'Activities.Authorizations' AND $ctxText LIKE '%\"migrated\":true%'))"
         );
         $this->execute(
             "DELETE FROM workflow_approvals WHERE workflow_instance_id IN " .
             "(SELECT id FROM workflow_instances " .
-            "WHERE entity_type = 'Activities.Authorizations' AND context LIKE '%\"migrated\":true%')"
+            "WHERE entity_type = 'Activities.Authorizations' AND $ctxText LIKE '%\"migrated\":true%')"
         );
         $this->execute(
             "DELETE FROM workflow_execution_logs WHERE workflow_instance_id IN " .
             "(SELECT id FROM workflow_instances " .
-            "WHERE entity_type = 'Activities.Authorizations' AND context LIKE '%\"migrated\":true%')"
+            "WHERE entity_type = 'Activities.Authorizations' AND $ctxText LIKE '%\"migrated\":true%')"
         );
         $this->execute(
             "DELETE FROM workflow_instances " .
-            "WHERE entity_type = 'Activities.Authorizations' AND context LIKE '%\"migrated\":true%'"
+            "WHERE entity_type = 'Activities.Authorizations' AND $ctxText LIKE '%\"migrated\":true%'"
         );
     }
 }

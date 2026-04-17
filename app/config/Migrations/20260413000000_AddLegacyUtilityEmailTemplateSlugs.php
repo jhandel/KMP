@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\BaseMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Seed workflow-native slugs for legacy utility and warrant email templates.
@@ -18,6 +19,8 @@ use Migrations\BaseMigration;
  */
 class AddLegacyUtilityEmailTemplateSlugs extends BaseMigration
 {
+    use CrossEngineMigrationTrait;
+
     /**
      * @return void
      */
@@ -27,7 +30,7 @@ class AddLegacyUtilityEmailTemplateSlugs extends BaseMigration
 
         foreach ($this->buildTemplates() as $template) {
             $existing = $this->fetchRow(
-                "SELECT id FROM email_templates WHERE slug = '" . addslashes($template['slug']) . "' AND kingdom_id IS NULL",
+                "SELECT id FROM email_templates WHERE slug = '" . $this->sqlEscape($template['slug']) . "' AND kingdom_id IS NULL",
             );
             if ($existing) {
                 continue;
@@ -40,17 +43,17 @@ class AddLegacyUtilityEmailTemplateSlugs extends BaseMigration
                      available_vars, variables_schema, is_active,
                      created, modified, created_by, modified_by, kingdom_id)
                  VALUES (
-                     '" . addslashes($template['slug']) . "',
-                     '" . addslashes($template['name']) . "',
-                     '" . addslashes($template['description']) . "',
-                     '" . addslashes($template['mailer_class']) . "',
-                     '" . addslashes($template['action_method']) . "',
-                     '" . addslashes($template['subject_template']) . "',
-                     '" . addslashes($template['text_template']) . "',
+                     '" . $this->sqlEscape($template['slug']) . "',
+                     '" . $this->sqlEscape($template['name']) . "',
+                     '" . $this->sqlEscape($template['description']) . "',
+                     '" . $this->sqlEscape($template['mailer_class']) . "',
+                     '" . $this->sqlEscape($template['action_method']) . "',
+                     '" . $this->sqlEscape($template['subject_template']) . "',
+                     '" . $this->sqlEscape($template['text_template']) . "',
                      NULL,
-                     '" . addslashes(json_encode($template['available_vars'])) . "',
-                     '" . addslashes(json_encode($template['variables_schema'])) . "',
-                     1,
+                     '" . $this->sqlEscape(json_encode($template['available_vars'])) . "',
+                     '" . $this->sqlEscape(json_encode($template['variables_schema'])) . "',
+                     TRUE,
                      '{$now}', '{$now}', 1, 1, NULL
                  )",
             );
@@ -64,7 +67,7 @@ class AddLegacyUtilityEmailTemplateSlugs extends BaseMigration
     {
         foreach (['password-reset', 'mobile-card-url', 'warrant-issued'] as $slug) {
             $this->execute(
-                "DELETE FROM email_templates WHERE slug = '" . addslashes($slug) . "' AND kingdom_id IS NULL",
+                "DELETE FROM email_templates WHERE slug = '" . $this->sqlEscape($slug) . "' AND kingdom_id IS NULL",
             );
         }
     }

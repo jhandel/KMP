@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Migrations\CrossEngineMigrationTrait;
 use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WorkflowInstance;
 use Cake\I18n\DateTime;
@@ -13,8 +14,15 @@ use Migrations\AbstractMigration;
  */
 class CancelRetractedAuthorizationWorkflowInstances extends AbstractMigration
 {
+    use CrossEngineMigrationTrait;
+
     public function up(): void
     {
+        // Skip if the Activities plugin table doesn't exist (fresh install).
+        if (!$this->tableExistsInDb('activities_authorizations')) {
+            return;
+        }
+
         $authorizationsTable = TableRegistry::getTableLocator()->get('Activities.Authorizations');
         $instancesTable = TableRegistry::getTableLocator()->get('WorkflowInstances');
         $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');

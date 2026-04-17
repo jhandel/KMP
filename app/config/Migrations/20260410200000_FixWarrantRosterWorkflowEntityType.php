@@ -20,12 +20,14 @@ class FixWarrantRosterWorkflowEntityType extends AbstractMigration
             "WHERE slug = 'warrants-roster-approval' AND entity_type = 'Warrants'"
         );
 
-        // Fix any existing workflow instances created from this definition
+        // Fix any existing workflow instances created from this definition.
+        // Use a subquery form instead of UPDATE...JOIN, which is MySQL-only.
         $this->execute(
-            "UPDATE workflow_instances wi " .
-            "INNER JOIN workflow_definitions wd ON wi.workflow_definition_id = wd.id " .
-            "SET wi.entity_type = 'WarrantRosters' " .
-            "WHERE wd.slug = 'warrants-roster-approval' AND wi.entity_type = 'Warrants'"
+            "UPDATE workflow_instances SET entity_type = 'WarrantRosters' " .
+            "WHERE entity_type = 'Warrants' " .
+            "AND workflow_definition_id IN (" .
+                "SELECT id FROM workflow_definitions WHERE slug = 'warrants-roster-approval'" .
+            ")"
         );
     }
 
@@ -38,10 +40,11 @@ class FixWarrantRosterWorkflowEntityType extends AbstractMigration
         );
 
         $this->execute(
-            "UPDATE workflow_instances wi " .
-            "INNER JOIN workflow_definitions wd ON wi.workflow_definition_id = wd.id " .
-            "SET wi.entity_type = 'Warrants' " .
-            "WHERE wd.slug = 'warrants-roster-approval' AND wi.entity_type = 'WarrantRosters'"
+            "UPDATE workflow_instances SET entity_type = 'Warrants' " .
+            "WHERE entity_type = 'WarrantRosters' " .
+            "AND workflow_definition_id IN (" .
+                "SELECT id FROM workflow_definitions WHERE slug = 'warrants-roster-approval'" .
+            ")"
         );
     }
 }

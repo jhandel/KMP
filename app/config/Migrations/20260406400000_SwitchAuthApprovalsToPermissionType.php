@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\AbstractMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Switch Activities authorization approvals from dynamic approver type
@@ -11,8 +12,19 @@ use Migrations\AbstractMigration;
  */
 class SwitchAuthApprovalsToPermissionType extends AbstractMigration
 {
+    use CrossEngineMigrationTrait;
+
     public function up(): void
     {
+        // Skip if the Activities plugin table doesn't exist. On fresh
+        // installs Activities plugin migrations run after core migrations,
+        // and on clean Postgres installs there are also no dynamic approvals
+        // to rewrite.
+        if (!$this->tableExistsInDb('activities_activities')) {
+            echo "Skipping: activities_activities table does not exist (fresh install).\n";
+            return;
+        }
+
         // 1. Update existing workflow_approvals records:
         //    Change approver_type from 'dynamic' to 'permission' and restructure approver_config
         //    to use {"permission": "<name>"} instead of {"service": "...", "method": "..."}
@@ -52,7 +64,7 @@ class SwitchAuthApprovalsToPermissionType extends AbstractMigration
                 }
             }
 
-            $encoded = addslashes(json_encode($newConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            $encoded = $this->sqlEscape(json_encode($newConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
             $this->execute(sprintf(
                 "UPDATE workflow_approvals SET approver_type = 'permission', approver_config = '%s' WHERE id = %d",
                 $encoded,
@@ -92,7 +104,7 @@ class SwitchAuthApprovalsToPermissionType extends AbstractMigration
                 ];
             }
 
-            $encoded = addslashes(json_encode($definition, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            $encoded = $this->sqlEscape(json_encode($definition, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
             $this->execute(sprintf(
                 "UPDATE workflow_versions SET definition = '%s' WHERE id = %d",
                 $encoded,

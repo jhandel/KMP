@@ -29,7 +29,7 @@ class RemoveAuthRenewalWorkflowAndActivateRequest extends BaseMigration
 
         // Activate the authorization request workflow
         $this->execute(
-            "UPDATE workflow_definitions SET is_active = 1 WHERE slug = 'activities-authorization-request'"
+            "UPDATE workflow_definitions SET is_active = TRUE WHERE slug = 'activities-authorization-request'"
         );
     }
 
@@ -37,7 +37,7 @@ class RemoveAuthRenewalWorkflowAndActivateRequest extends BaseMigration
     {
         // Deactivate the authorization request workflow
         $this->execute(
-            "UPDATE workflow_definitions SET is_active = 0 WHERE slug = 'activities-authorization-request'"
+            "UPDATE workflow_definitions SET is_active = FALSE WHERE slug = 'activities-authorization-request'"
         );
 
         // Re-creating the renewal workflow requires re-running the seed

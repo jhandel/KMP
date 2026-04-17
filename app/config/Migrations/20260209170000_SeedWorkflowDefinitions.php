@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Migrations\AbstractMigration;
+use App\Migrations\CrossEngineMigrationTrait;
 
 /**
  * Seed default workflow definitions and their initial published versions.
@@ -11,6 +12,8 @@ use Migrations\AbstractMigration;
  */
 class SeedWorkflowDefinitions extends AbstractMigration
 {
+    use CrossEngineMigrationTrait;
+
     public function up(): void
     {
         $now = date('Y-m-d H:i:s');
@@ -19,13 +22,13 @@ class SeedWorkflowDefinitions extends AbstractMigration
         $name = 'Warrant Roster Approval';
         $slug = 'warrant-roster';
         $desc = 'Default workflow for warrant roster approval process';
-        $triggerConfig = addslashes(json_encode(['event' => 'Warrants.RosterCreated']));
+        $triggerConfig = $this->sqlEscape(json_encode(['event' => 'Warrants.RosterCreated']));
         $entityType = 'Warrants';
-        $definition = addslashes(json_encode($this->getWarrantRosterDefinition()));
+        $definition = $this->sqlEscape(json_encode($this->getWarrantRosterDefinition()));
 
         $this->execute(
             "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
-                "VALUES ('{$name}', '{$slug}', '{$desc}', 'event', '{$triggerConfig}', '{$entityType}', 1, NULL, 1, 1, '{$now}', '{$now}')"
+                "VALUES ('{$name}', '{$slug}', '{$desc}', 'event', '{$triggerConfig}', '{$entityType}', TRUE, NULL, 1, 1, '{$now}', '{$now}')"
         );
 
         $this->execute(
@@ -45,13 +48,13 @@ class SeedWorkflowDefinitions extends AbstractMigration
         $name2 = 'Officer Hire';
         $slug2 = 'officer-hire';
         $desc2 = 'Default workflow for officer hiring: validates warrantability, creates officer record, sends notification, and requests warrant if required';
-        $triggerConfig2 = addslashes(json_encode(['event' => 'Officers.HireRequested']));
+        $triggerConfig2 = $this->sqlEscape(json_encode(['event' => 'Officers.HireRequested']));
         $entityType2 = 'Officers';
-        $definition2 = addslashes(json_encode($this->getOfficerHireDefinition()));
+        $definition2 = $this->sqlEscape(json_encode($this->getOfficerHireDefinition()));
 
         $this->execute(
             "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
-                "VALUES ('{$name2}', '{$slug2}', '{$desc2}', 'event', '{$triggerConfig2}', '{$entityType2}', 1, NULL, 1, 1, '{$now}', '{$now}')"
+                "VALUES ('{$name2}', '{$slug2}', '{$desc2}', 'event', '{$triggerConfig2}', '{$entityType2}', TRUE, NULL, 1, 1, '{$now}', '{$now}')"
         );
 
         $this->execute(
@@ -71,13 +74,13 @@ class SeedWorkflowDefinitions extends AbstractMigration
         $name3 = 'Activities Authorization Approval';
         $slug3 = 'activities-authorization';
         $desc3 = 'Default workflow for activity authorization approval with serial pick-next approver chain';
-        $triggerConfig3 = addslashes(json_encode(['event' => 'Activities.AuthorizationRequested']));
+        $triggerConfig3 = $this->sqlEscape(json_encode(['event' => 'Activities.AuthorizationRequested']));
         $entityType3 = 'Activities';
-        $definition3 = addslashes(json_encode($this->getActivitiesAuthorizationDefinition()));
+        $definition3 = $this->sqlEscape(json_encode($this->getActivitiesAuthorizationDefinition()));
 
         $this->execute(
             "INSERT INTO workflow_definitions (name, slug, description, trigger_type, trigger_config, entity_type, is_active, current_version_id, created_by, modified_by, created, modified) " .
-                "VALUES ('{$name3}', '{$slug3}', '{$desc3}', 'event', '{$triggerConfig3}', '{$entityType3}', 1, NULL, 1, 1, '{$now}', '{$now}')"
+                "VALUES ('{$name3}', '{$slug3}', '{$desc3}', 'event', '{$triggerConfig3}', '{$entityType3}', TRUE, NULL, 1, 1, '{$now}', '{$now}')"
         );
 
         $this->execute(
