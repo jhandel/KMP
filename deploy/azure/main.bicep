@@ -291,6 +291,7 @@ var commonEnv = [
   { name: 'BACKUP_ENCRYPTION_KEY', secretRef: 'backup-encryption-key' }
   { name: 'DEBUG', value: 'false' }
   { name: 'REQUIRE_HTTPS', value: 'true' }
+  { name: 'TRUST_PROXY', value: 'true' }
   { name: 'EMAIL_DRIVER', value: 'smtp' }
   { name: 'EMAIL_SMTP_HOST', value: emailSmtpHost }
   { name: 'EMAIL_SMTP_PORT', value: string(emailSmtpPort) }

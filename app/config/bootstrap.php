@@ -22,6 +22,21 @@ declare(strict_types=1);
 require __DIR__ . DIRECTORY_SEPARATOR . "paths.php";
 
 /*
+ * Trust reverse-proxy TLS termination when TRUST_PROXY=true (e.g. Azure
+ * Container Apps, AWS ALB, Nginx ingress). Azure's ingress sets
+ * X-Forwarded-Proto: https; without this, CakePHP generates http://
+ * Location headers which violates CSP `form-action 'self'` after POST
+ * redirects.
+ */
+if (
+    (getenv("TRUST_PROXY") === "true" || ($_ENV["TRUST_PROXY"] ?? null) === "true")
+    && empty($_SERVER["HTTPS"])
+    && (($_SERVER["HTTP_X_FORWARDED_PROTO"] ?? "") === "https")
+) {
+    $_SERVER["HTTPS"] = "on";
+}
+
+/*
  * Bootstrap CakePHP.
  *
  * Does the various bits of setup that CakePHP needs to do.
