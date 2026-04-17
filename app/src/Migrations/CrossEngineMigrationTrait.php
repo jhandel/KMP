@@ -25,11 +25,23 @@ trait CrossEngineMigrationTrait
     /**
      * Escape a value for inclusion inside a single-quoted SQL string literal.
      *
-     * Only the single-quote character needs escaping (by doubling it) per
-     * the SQL standard. This works identically on MySQL and Postgres.
+     * Per the SQL standard, only the single-quote character needs escaping
+     * (by doubling it). Postgres follows this exactly. MySQL, however, also
+     * treats backslash (\) as an escape character inside string literals
+     * unless NO_BACKSLASH_ESCAPES mode is set — so embedded `\` in a value
+     * (e.g. PHP class names like `App\Policy\Foo` or JSON `\\` sequences)
+     * would be eaten. On MySQL we therefore also double the backslashes.
+     * On Postgres with the default `standard_conforming_strings = on`
+     * backslashes are already literal, so doubling them would corrupt the
+     * value — do not escape them there.
      */
     protected function sqlEscape(string $value): string
     {
+        $adapter = $this->getAdapter()->getAdapterType();
+        if ($adapter === 'mysql') {
+            $value = str_replace('\\', '\\\\', $value);
+        }
+
         return str_replace("'", "''", $value);
     }
 
