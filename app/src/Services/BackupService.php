@@ -35,12 +35,82 @@ class BackupService
 
     /**
      * Tables excluded from backup (transient or migration-tracking data).
+     *
+     * Transient runtime state (queue, backup metadata) shouldn't cross
+     * environments. Session tokens are per-environment and must not leak
+     * across. Migration history (`phinxlog` + `*_phinxlog`) is excluded
+     * via matching in isExcludedTable(); restoring it would replace the
+     * target DB's migration state with the backup's state and cause
+     * mis-skipped/re-run migrations on next startup.
      */
     private const EXCLUDED_TABLES = [
         'queued_jobs',
         'queue_processes',
         'backups',
+        'sessions',
     ];
+
+    /**
+     * Return true when the table should never appear in a backup payload.
+     * Matches exact names in EXCLUDED_TABLES plus any phinxlog-style
+     * migration tracking tables ("phinxlog" and "<plugin>_phinxlog").
+     */
+    private static function isExcludedTable(string $tableName): bool
+    {
+        if (in_array($tableName, self::EXCLUDED_TABLES, true)) {
+            return true;
+        }
+        // Matches the core `phinxlog` table and every plugin-scoped variant
+        // (e.g. `activities_phinxlog`, `awards_phinxlog`, `officers_phinxlog`).
+        return (bool)preg_match('/(?:^|_)phinxlog$/i', $tableName);
+    }
+
+    /**
+     * Snapshot migration state for fingerprinting a backup.
+     *
+     * Returns a map of phinxlog-table-name → array of {version, migration_name}
+     * rows sorted by version. The structure stays stable across engines so the
+     * fingerprint can be compared between the bake environment (e.g. MySQL)
+     * and the restore environment (e.g. Postgres).
+     *
+     * @return array<string, array<int, array{version: string, migration_name: string}>>
+     */
+    public function getMigrationFingerprint(): array
+    {
+        $connection = ConnectionManager::get('default');
+        $schemaCollection = $connection->getSchemaCollection();
+        $fingerprint = [];
+        foreach ($schemaCollection->listTables() as $tableName) {
+            if (!preg_match('/(?:^|_)phinxlog$/i', $tableName)) {
+                continue;
+            }
+            try {
+                $quoted = $connection->getDriver()->quoteIdentifier($tableName);
+                $stmt = $connection->execute(
+                    "SELECT version, migration_name FROM {$quoted} ORDER BY version ASC",
+                );
+                $rows = $stmt->fetchAll('assoc') ?: [];
+            } catch (Exception $e) {
+                // If a phinxlog variant has an unexpected column shape, skip it
+                // rather than fail the whole export.
+                Log::warning(sprintf(
+                    'BackupService: skipping phinxlog "%s" in fingerprint (%s)',
+                    $tableName,
+                    $e->getMessage(),
+                ));
+                continue;
+            }
+            $fingerprint[$tableName] = array_map(static function ($row): array {
+                return [
+                    'version' => (string)($row['version'] ?? ''),
+                    'migration_name' => (string)($row['migration_name'] ?? ''),
+                ];
+            }, $rows);
+        }
+        ksort($fingerprint);
+
+        return $fingerprint;
+    }
 
     /**
      * Export all application tables to an encrypted backup file.
@@ -56,10 +126,12 @@ class BackupService
 
         // Filter out excluded tables (queue jobs are transient)
         $tables = array_values(array_filter($allTables, function (string $table) {
-            return !in_array($table, self::EXCLUDED_TABLES, true);
+            return !self::isExcludedTable($table);
         }));
 
         sort($tables);
+
+        $migrationFingerprint = $this->getMigrationFingerprint();
 
         $payload = [
             'meta' => [
@@ -67,6 +139,7 @@ class BackupService
                 'created_at' => DateTime::now()->toIso8601String(),
                 'table_count' => count($tables),
                 'tables' => $tables,
+                'migration_fingerprint' => $migrationFingerprint,
             ],
             'tables' => [],
         ];
@@ -131,10 +204,18 @@ class BackupService
      *
      * @param string $encryptedData Raw encrypted backup bytes
      * @param string $encryptionKey User-provided encryption key
+     * @param callable|null $progressReporter Optional progress callback
+     * @param array{ignoreSchemaMismatch?: bool} $options Restore options
      * @return array{table_count: int, row_count: int} Import statistics
      */
-    public function import(string $encryptedData, string $encryptionKey, ?callable $progressReporter = null): array
-    {
+    public function import(
+        string $encryptedData,
+        string $encryptionKey,
+        ?callable $progressReporter = null,
+        array $options = [],
+    ): array {
+        $ignoreSchemaMismatch = (bool)($options['ignoreSchemaMismatch'] ?? false);
+
         // Decrypt → decompress → JSON
         $this->reportProgress($progressReporter, 'decrypting', 'Decrypting backup file.');
         $compressed = $this->decrypt($encryptedData, $encryptionKey);
@@ -151,9 +232,26 @@ class BackupService
             throw new RuntimeException('Invalid backup file structure');
         }
 
+        // Guard against schema drift: compare migration state. Older backups
+        // (v1 without a fingerprint) are always allowed so this doesn't break
+        // existing backup files.
+        $backupFingerprint = $payload['meta']['migration_fingerprint'] ?? null;
+        if (is_array($backupFingerprint) && !empty($backupFingerprint)) {
+            $currentFingerprint = $this->getMigrationFingerprint();
+            if ($currentFingerprint !== $backupFingerprint && !$ignoreSchemaMismatch) {
+                $diff = $this->describeFingerprintDiff($backupFingerprint, $currentFingerprint);
+                throw new RuntimeException(
+                    "Backup migration fingerprint does not match current database schema.\n"
+                    . $diff
+                    . "\nRe-bake the backup against the current schema, or pass "
+                    . 'ignoreSchemaMismatch=true (CLI: --ignore-schema-mismatch) to bypass.',
+                );
+            }
+        }
+
         $tablesToRestore = [];
         foreach ($payload['tables'] as $tableName => $rows) {
-            if (in_array($tableName, self::EXCLUDED_TABLES, true)) {
+            if (self::isExcludedTable($tableName)) {
                 continue;
             }
             $tablesToRestore[$tableName] = is_array($rows) ? $rows : [];
@@ -172,6 +270,7 @@ class BackupService
         $isPostgres = $driver instanceof Postgres;
         $totalRows = 0;
         $processedTables = 0;
+        $notValidatedConstraintCount = 0;
 
         $connection->begin();
         try {
@@ -434,6 +533,7 @@ class BackupService
         return [
             'table_count' => $tableCount,
             'row_count' => $totalRows,
+            'constraints_not_valid' => $notValidatedConstraintCount,
         ];
     }
 
@@ -612,6 +712,48 @@ SQL;
             "INSERT INTO {$quotedTable} ({$quotedCols}) VALUES " . implode(', ', $valueSql),
             $params,
         );
+    }
+
+    /**
+     * Build a short human-readable diff between backup and current
+     * migration fingerprints for error messages.
+     *
+     * @param array<string, array<int, array{version: string, migration_name: string}>> $backup
+     * @param array<string, array<int, array{version: string, migration_name: string}>> $current
+     */
+    private function describeFingerprintDiff(array $backup, array $current): string
+    {
+        $lines = [];
+        $allTables = array_unique(array_merge(array_keys($backup), array_keys($current)));
+        sort($allTables);
+        foreach ($allTables as $table) {
+            $backupVersions = array_column($backup[$table] ?? [], 'version');
+            $currentVersions = array_column($current[$table] ?? [], 'version');
+            $onlyInBackup = array_values(array_diff($backupVersions, $currentVersions));
+            $onlyInCurrent = array_values(array_diff($currentVersions, $backupVersions));
+            if ($onlyInBackup === [] && $onlyInCurrent === []) {
+                continue;
+            }
+            $lines[] = sprintf('  %s:', $table);
+            if ($onlyInBackup !== []) {
+                $lines[] = sprintf(
+                    '    only in backup  : %s',
+                    implode(', ', array_slice($onlyInBackup, 0, 5))
+                    . (count($onlyInBackup) > 5 ? sprintf(' (+%d more)', count($onlyInBackup) - 5) : ''),
+                );
+            }
+            if ($onlyInCurrent !== []) {
+                $lines[] = sprintf(
+                    '    only in current : %s',
+                    implode(', ', array_slice($onlyInCurrent, 0, 5))
+                    . (count($onlyInCurrent) > 5 ? sprintf(' (+%d more)', count($onlyInCurrent) - 5) : ''),
+                );
+            }
+        }
+
+        return $lines === []
+            ? '  (fingerprints differ in structure but no version-level diff)'
+            : implode("\n", $lines);
     }
 
     /**
