@@ -62,9 +62,11 @@ run_cake() {
     CACHE_ENGINE=apcu bin/cake "$@"
 }
 
-# Step 1: drop all tables
+# Step 1: drop all tables. `resetDatabase` requires DEBUG=true (by design —
+# it's a destructive command). Override only for this call; the rest of the
+# job runs with production defaults.
 echo "[1/5] Resetting database schema (bin/cake resetDatabase)..."
-run_cake resetDatabase --no-interaction || run_cake resetDatabase
+DEBUG=true run_cake resetDatabase
 
 # Step 2: apply migrations (updateDatabase runs core + every active plugin's
 # migrations; no need to call `migrations migrate` separately). Fail hard —
