@@ -37,8 +37,8 @@ class AddApproveWarrantRostersPermission extends AbstractMigration
                 );
                 if (!$exists) {
                     $this->execute(
-                        "INSERT INTO roles_permissions (role_id, permission_id)
-                         VALUES ({$r['role_id']}, {$newPermId})"
+                        "INSERT INTO roles_permissions (role_id, permission_id, created, created_by)
+                         VALUES ({$r['role_id']}, {$newPermId}, CURRENT_TIMESTAMP, 1)"
                     );
                 }
             }
