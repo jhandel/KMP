@@ -100,7 +100,19 @@ RUN mkdir -p \
     /var/www/html/logs \
     /var/www/html/tmp \
     /var/www/html/images/uploaded \
-    /var/www/html/images/cache
+    /var/www/html/images/cache \
+    /opt/kmp
+
+# Bundle the dev seed + reset script so the Azure nightly "reset" job can
+# restore a known demo state inside the container (no external dump load).
+# These are not served by Apache (outside DocumentRoot).
+# Bundled nightly seed payload (engine-agnostic encrypted backup). The
+# directory is copied whole so the image still builds when the .kmpbackup
+# hasn't been baked yet — reset-and-seed.sh will fail fast with a helpful
+# message if someone tries to run a data restore in that state.
+COPY deploy/azure/seed/ /opt/kmp/seed/
+COPY docker/reset-and-seed.sh /opt/kmp/reset-and-seed.sh
+RUN chmod +x /opt/kmp/reset-and-seed.sh
 
 VOLUME ["/var/www/html/logs", "/var/www/html/tmp", "/var/www/html/images/uploaded", "/var/www/html/images/cache"]
 

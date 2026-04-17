@@ -281,26 +281,34 @@ run_migrations() {
 }
 
 # Use flock for atomic locking to prevent concurrent migrations
-echo "Acquiring migration lock..."
-(
-    if flock -w "$LOCK_TIMEOUT" 200; then
-        echo "Migration lock acquired (PID $$)"
-        run_migrations
-        echo "Migration lock released."
-    else
-        echo "WARNING: Could not acquire migration lock after ${LOCK_TIMEOUT}s, skipping migrations."
-    fi
-) 200>"$LOCK_FILE"
+if [ "${KMP_SKIP_MIGRATIONS:-false}" != "true" ]; then
+    echo "Acquiring migration lock..."
+    (
+        if flock -w "$LOCK_TIMEOUT" 200; then
+            echo "Migration lock acquired (PID $$)"
+            run_migrations
+            echo "Migration lock released."
+        else
+            echo "WARNING: Could not acquire migration lock after ${LOCK_TIMEOUT}s, skipping migrations."
+        fi
+    ) 200>"$LOCK_FILE"
+else
+    echo "KMP_SKIP_MIGRATIONS=true — skipping migrations (running as short-lived Azure Container Apps Job)."
+fi
 
 # ---------------------------------------------------------------------------
 # 6. Cron for queue processing and scheduled backups
 # ---------------------------------------------------------------------------
-echo "Configuring cron jobs..."
-QUEUE_CRON="*/2 * * * * cd /var/www/html && bin/cake queue run -q >> /var/log/cron.log 2>&1"
-BACKUP_CRON="0 3 * * * cd /var/www/html && bin/cake backup_check >> /var/log/cron.log 2>&1"
-(crontab -l 2>/dev/null | grep -v "queue run" | grep -v "backup_check"; echo "$QUEUE_CRON"; echo "$BACKUP_CRON") | crontab -
+if [ "${KMP_SKIP_CRON:-false}" != "true" ]; then
+    echo "Configuring cron jobs..."
+    QUEUE_CRON="*/2 * * * * cd /var/www/html && bin/cake queue run -q >> /var/log/cron.log 2>&1"
+    BACKUP_CRON="0 3 * * * cd /var/www/html && bin/cake backup_check >> /var/log/cron.log 2>&1"
+    (crontab -l 2>/dev/null | grep -v "queue run" | grep -v "backup_check"; echo "$QUEUE_CRON"; echo "$BACKUP_CRON") | crontab -
 
-service cron start
+    service cron start
+else
+    echo "KMP_SKIP_CRON=true — skipping cron setup (running as Azure Container Apps Job)."
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Ensure exactly one Apache MPM is enabled

@@ -34,3 +34,8 @@ app/backups
 app/tests/mutation-reports/
 app/cookies.txt
 app/tests/nav-debug.png
+
+# Azure deploy local settings (never commit — contains secrets)
+deploy/azure/nightly.env
+deploy/azure/*.secret
+deploy/azure/.azure-outputs.json

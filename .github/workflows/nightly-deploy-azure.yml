@@ -1,0 +1,172 @@
+name: Nightly / Deploy to Azure
+
+# Fires when the nightly image build finishes successfully, and on manual dispatch.
+on:
+  workflow_run:
+    workflows: ["Nightly / Dev Docker Image"]
+    types: [completed]
+    branches: [main, feature/workflow-engine]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (default: nightly)'
+        required: false
+        default: 'nightly'
+      full_reset:
+        description: 'Drop & reseed the database (destroys all data, resets passwords to TestPassword)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  id-token: write        # OIDC to Azure
+  contents: read
+  packages: read         # pull from ghcr.io
+
+concurrency:
+  group: azure-nightly-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # When triggered by workflow_run, only proceed on success.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: nightly
+    env:
+      IMAGE_TAG: ${{ github.event.inputs.image_tag || 'nightly' }}
+
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Import nightly image from GHCR into ACR
+        run: |
+          set -euo pipefail
+          ACR="${{ vars.AZURE_ACR_NAME }}"
+          TAG="${IMAGE_TAG}"
+          DATE_TAG="nightly-$(date -u +%Y-%m-%d)"
+
+          echo "Importing ghcr.io/jhandel/kmp:${TAG} -> ${ACR}.azurecr.io/kmp:${TAG}"
+          az acr import \
+            --name "$ACR" \
+            --source "ghcr.io/jhandel/kmp:${TAG}" \
+            --image "kmp:${TAG}" \
+            --image "kmp:${DATE_TAG}" \
+            --force
+
+          echo "IMAGE_REF=${ACR}.azurecr.io/kmp:${DATE_TAG}" >> $GITHUB_ENV
+          echo "DATE_TAG=${DATE_TAG}" >> $GITHUB_ENV
+
+      - name: Run migrate job and wait for completion
+        run: |
+          set -euo pipefail
+          RG="${{ vars.AZURE_RESOURCE_GROUP }}"
+          JOB="${{ vars.AZURE_MIGRATE_JOB_NAME }}"
+
+          # Update the job's image to the new revision BEFORE starting it
+          az containerapp job update -g "$RG" -n "$JOB" --image "$IMAGE_REF" -o none
+
+          EXEC_NAME="$(az containerapp job start -g "$RG" -n "$JOB" --query name -o tsv)"
+          echo "Started execution: $EXEC_NAME"
+
+          # Poll for completion (up to 30 min)
+          for i in $(seq 1 180); do
+            STATUS="$(az containerapp job execution show -g "$RG" --job-name "$JOB" -n "$EXEC_NAME" --query properties.status -o tsv 2>/dev/null || echo Unknown)"
+            echo "[$i/180] migrate status: $STATUS"
+            case "$STATUS" in
+              Succeeded) echo "✅ migrate succeeded"; break ;;
+              Failed|Cancelled|Degraded)
+                echo "❌ migrate finished with $STATUS — dumping logs"
+                az containerapp job execution show -g "$RG" --job-name "$JOB" -n "$EXEC_NAME" -o yaml || true
+                exit 1
+                ;;
+            esac
+            sleep 10
+            if [[ $i -eq 180 ]]; then echo "⏱  migrate timed out after 30 min"; exit 1; fi
+          done
+
+      - name: Optional full reset (manual dispatch only)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.full_reset == 'true' }}
+        run: |
+          set -euo pipefail
+          RG="${{ vars.AZURE_RESOURCE_GROUP }}"
+          JOB="${{ vars.AZURE_RESET_JOB_NAME }}"
+          echo "⚠️  FULL RESET requested — dropping schema + reloading dev_seed_clean.sql"
+          az containerapp job update -g "$RG" -n "$JOB" --image "$IMAGE_REF" -o none
+          EXEC_NAME="$(az containerapp job start -g "$RG" -n "$JOB" --query name -o tsv)"
+          echo "Started reset execution: $EXEC_NAME"
+          for i in $(seq 1 180); do
+            STATUS="$(az containerapp job execution show -g "$RG" --job-name "$JOB" -n "$EXEC_NAME" --query properties.status -o tsv 2>/dev/null || echo Unknown)"
+            echo "[$i/180] reset status: $STATUS"
+            case "$STATUS" in
+              Succeeded) echo "✅ reset succeeded (passwords = TestPassword)"; exit 0 ;;
+              Failed|Cancelled|Degraded)
+                echo "❌ reset finished with $STATUS"
+                az containerapp job execution show -g "$RG" --job-name "$JOB" -n "$EXEC_NAME" -o yaml || true
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "⏱  reset timed out"; exit 1
+
+      - name: Update web Container App image
+        run: |
+          set -euo pipefail
+          az containerapp update \
+            -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            -n "${{ vars.AZURE_WEB_APP_NAME }}" \
+            --image "$IMAGE_REF" \
+            -o none
+
+      - name: Update queue and sync jobs to new image
+        run: |
+          set -euo pipefail
+          RG="${{ vars.AZURE_RESOURCE_GROUP }}"
+          for job in "${{ vars.AZURE_QUEUE_JOB_NAME }}" "${{ vars.AZURE_SYNC_JOB_NAME }}" "${{ vars.AZURE_RESET_JOB_NAME }}"; do
+            echo "Updating $job to $IMAGE_REF"
+            az containerapp job update -g "$RG" -n "$job" --image "$IMAGE_REF" -o none
+          done
+
+      - name: Smoke-check /health
+        run: |
+          set -euo pipefail
+          FQDN="$(az containerapp show \
+            -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            -n "${{ vars.AZURE_WEB_APP_NAME }}" \
+            --query properties.configuration.ingress.fqdn -o tsv)"
+
+          echo "Probing https://$FQDN/health"
+          for i in $(seq 1 40); do
+            CODE="$(curl -sS -o /tmp/health.txt -w '%{http_code}' "https://$FQDN/health" || echo 000)"
+            if [[ "$CODE" == "200" ]]; then
+              echo "✅ /health OK"
+              cat /tmp/health.txt
+              exit 0
+            fi
+            echo "[$i/40] /health -> $CODE, waiting..."
+            sleep 15
+          done
+          echo "❌ /health never reached 200"
+          az containerapp logs show -g "${{ vars.AZURE_RESOURCE_GROUP }}" -n "${{ vars.AZURE_WEB_APP_NAME }}" --tail 200 --type console || true
+          exit 1
+
+      - name: Summary
+        if: always()
+        run: |
+          FQDN="$(az containerapp show \
+            -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            -n "${{ vars.AZURE_WEB_APP_NAME }}" \
+            --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo unknown)"
+          {
+            echo "## Nightly deploy to Azure"
+            echo ""
+            echo "- Image: \`$IMAGE_REF\`"
+            echo "- Web: https://$FQDN"
+            echo "- Status: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
