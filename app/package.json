@@ -27,12 +27,13 @@
         "test:perf": "node scripts/perf/sizing-benchmark.js"
     },
     "devDependencies": {
-        "@stryker-mutator/core": "^8.7.0",
-        "@stryker-mutator/jest-runner": "^8.7.0",
         "@babel/core": "^7.29.0",
+        "@babel/plugin-transform-runtime": "^7.29.0",
         "@babel/preset-env": "^7.29.0",
         "@babel/runtime": "^7.29.2",
         "@playwright/test": "^1.58.2",
+        "@stryker-mutator/core": "^8.7.0",
+        "@stryker-mutator/jest-runner": "^8.7.0",
         "@testing-library/jest-dom": "^6.9.1",
         "axios": "^1.13.5",
         "babel-jest": "^30.2.0",
