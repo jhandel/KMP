@@ -1,132 +1,250 @@
 #!/usr/bin/env bash
 # =============================================================================
-# KMP — Nightly deploy helper
+# KMP — Nightly deploy helper (direct az CLI)
 # -----------------------------------------------------------------------------
-# Thin wrapper over the `gh` CLI so you don't have to remember the workflow
-# file names / input parameters. All real work happens in GitHub Actions.
+# Drives the Azure nightly environment without needing the GitHub Actions
+# `nightly-deploy-azure.yml` workflow to be registered on the default branch.
+#
+# What it does mirrors the workflow:
+#   1. (optional) trigger a fresh GHCR build via `gh workflow run nightly.yml`
+#   2. `az acr import` ghcr.io/jhandel/kmp:<tag> into the nightly ACR
+#   3. run the migrate Container Apps Job and wait for Succeeded
+#   4. (optional, --reset) run the reset job to reseed the database
+#   5. update the web Container App image → forces a new revision
+#   6. update the queue / sync / reset job images
+#   7. poll /health until it returns 200
 #
 # Usage:
-#   deploy/azure/nightly-deploy.sh                 # build + deploy (push-free)
-#   deploy/azure/nightly-deploy.sh deploy          # deploy current :nightly image
-#   deploy/azure/nightly-deploy.sh build           # rebuild image (auto-chains deploy)
-#   deploy/azure/nightly-deploy.sh reset           # deploy + full DB reset + reseed
-#   deploy/azure/nightly-deploy.sh status          # show last 5 deploy runs
-#   deploy/azure/nightly-deploy.sh watch           # tail the latest deploy run
-#   deploy/azure/nightly-deploy.sh health          # curl the nightly /health endpoint
-#   deploy/azure/nightly-deploy.sh url             # print the nightly URL
+#   deploy/azure/nightly-deploy.sh deploy            # deploy current :nightly
+#   deploy/azure/nightly-deploy.sh deploy --reset    # deploy + wipe+reseed DB
+#   deploy/azure/nightly-deploy.sh build             # rebuild image via GH, then deploy
+#   deploy/azure/nightly-deploy.sh reset             # alias: deploy --reset
+#   deploy/azure/nightly-deploy.sh status            # recent GH build runs
+#   deploy/azure/nightly-deploy.sh health            # curl /health
+#   deploy/azure/nightly-deploy.sh url               # print nightly URL
+#   deploy/azure/nightly-deploy.sh logs [--tail N]   # tail web container logs
+#   deploy/azure/nightly-deploy.sh revisions         # list current revisions
+#   deploy/azure/nightly-deploy.sh help
 #
-# Environment:
-#   NIGHTLY_BRANCH  — branch to deploy from (default: current branch)
-#   GH_REPO         — owner/repo override (default: jhandel/KMP)
+# Environment overrides (defaults shown):
+#   AZURE_SUBSCRIPTION_ID   0df874b5-82eb-455c-8575-b1f9b589a735
+#   AZURE_RESOURCE_GROUP    kmp-nightly-rg
+#   AZURE_ACR_NAME          kmpnightlyacrd346d2
+#   AZURE_WEB_APP_NAME      kmpnightly-web
+#   AZURE_MIGRATE_JOB_NAME  kmpnightly-migrate
+#   AZURE_QUEUE_JOB_NAME    kmpnightly-queue
+#   AZURE_SYNC_JOB_NAME     kmpnightly-sync
+#   AZURE_RESET_JOB_NAME    kmpnightly-reset
+#   IMAGE_TAG               nightly
+#   NIGHTLY_BRANCH          <current git branch>   (used by `build`)
+#   GH_REPO                 jhandel/KMP            (used by `build` / `status`)
 # =============================================================================
 set -euo pipefail
 
+# ---- Config (source nightly.env if present for sub/region overrides) --------
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/nightly.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$(dirname "${BASH_SOURCE[0]}")/nightly.env"
+    set +a
+fi
+
+SUB="${AZURE_SUBSCRIPTION_ID:-0df874b5-82eb-455c-8575-b1f9b589a735}"
+RG="${AZURE_RESOURCE_GROUP:-kmp-nightly-rg}"
+ACR="${AZURE_ACR_NAME:-kmpnightlyacrd346d2}"
+WEB="${AZURE_WEB_APP_NAME:-kmpnightly-web}"
+MIGRATE_JOB="${AZURE_MIGRATE_JOB_NAME:-kmpnightly-migrate}"
+QUEUE_JOB="${AZURE_QUEUE_JOB_NAME:-kmpnightly-queue}"
+SYNC_JOB="${AZURE_SYNC_JOB_NAME:-kmpnightly-sync}"
+RESET_JOB="${AZURE_RESET_JOB_NAME:-kmpnightly-reset}"
+IMAGE_TAG="${IMAGE_TAG:-nightly}"
+
 REPO="${GH_REPO:-jhandel/KMP}"
 BRANCH="${NIGHTLY_BRANCH:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo feature/workflow-engine)}"
-
 BUILD_WF="nightly.yml"
-DEPLOY_WF="nightly-deploy-azure.yml"
 BUILD_NAME="Nightly / Dev Docker Image"
-DEPLOY_NAME="Nightly / Deploy to Azure"
 NIGHTLY_URL="https://kmpnightly-web.lemonstone-62ccb06f.centralus.azurecontainerapps.io"
 
-need() {
-    command -v "$1" >/dev/null 2>&1 || { echo "❌ required command missing: $1" >&2; exit 1; }
+# ---- Helpers ----------------------------------------------------------------
+need() { command -v "$1" >/dev/null 2>&1 || { echo "❌ required: $1" >&2; exit 1; }; }
+log()  { printf '\033[36m▶\033[0m %s\n' "$*"; }
+ok()   { printf '\033[32m✅\033[0m %s\n' "$*"; }
+warn() { printf '\033[33m⚠️ \033[0m %s\n' "$*"; }
+die()  { printf '\033[31m❌\033[0m %s\n' "$*" >&2; exit 1; }
+
+ensure_az() {
+    need az
+    # Ensure we're in the right subscription; az account set is idempotent.
+    az account set --subscription "$SUB" >/dev/null 2>&1 \
+        || die "az not logged in. Run: az login --tenant 77070ec3-247c-40ce-9a4f-df875ffe914f"
 }
 
-cmd_deploy() {
-    local extra=()
-    if [[ "${1:-}" == "--reset" ]]; then
-        extra=(-f full_reset=true)
-        echo "⚠️  FULL RESET requested — database will be wiped and reseeded."
-    fi
-    echo "🚀 Triggering $DEPLOY_NAME on $BRANCH (repo: $REPO)"
-    if ! gh workflow run "$DEPLOY_WF" --repo "$REPO" --ref "$BRANCH" "${extra[@]}" 2>&1; then
-        cat >&2 <<EOF
-
-❌ gh refused to trigger the deploy workflow.
-
-   This is almost always because '$DEPLOY_WF' does not yet exist on the
-   repo's default branch. GitHub Actions only registers workflow_dispatch
-   entry points for workflows present on the default branch.
-
-   Fixes (pick one):
-     • Merge / cherry-pick .github/workflows/$DEPLOY_WF to 'main'.
-     • Or run \`$0 build\` instead — the build workflow (nightly.yml) IS
-       registered, and once the deploy workflow is on main it will
-       auto-chain via workflow_run.
-EOF
-        exit 1
-    fi
-    sleep 4
-    cmd_status
-    echo "→ run \`$0 watch\` to tail the run."
+wait_job() {
+    local job="$1" exec_name="$2" label="${3:-$job}" max="${4:-180}"
+    for i in $(seq 1 "$max"); do
+        local status
+        status=$(az containerapp job execution show \
+                    -g "$RG" --job-name "$job" -n "$exec_name" \
+                    --query properties.status -o tsv 2>/dev/null || echo Unknown)
+        printf '  [%d/%d] %s: %s\n' "$i" "$max" "$label" "$status"
+        case "$status" in
+            Succeeded)
+                ok "$label succeeded"
+                return 0 ;;
+            Failed|Cancelled|Degraded)
+                warn "$label finished with $status — log tail:"
+                az containerapp job execution show -g "$RG" --job-name "$job" -n "$exec_name" -o yaml 2>&1 | tail -40 || true
+                return 1 ;;
+        esac
+        sleep 10
+    done
+    die "$label timed out after $((max*10))s"
 }
 
-cmd_build() {
-    echo "🏗  Triggering $BUILD_NAME on $BRANCH (will auto-chain deploy on success)"
-    gh workflow run "$BUILD_WF" --repo "$REPO" --ref "$BRANCH"
-    sleep 4
-    _list_runs "$BUILD_WF" 3
-    echo "→ run \`$0 watch\` once the build finishes to watch the deploy."
+run_job() {
+    local job="$1" image="$2" label="${3:-$job}"
+    log "Updating $job image → $image"
+    az containerapp job update -g "$RG" -n "$job" --image "$image" -o none
+    log "Starting $job"
+    local exec_name
+    exec_name=$(az containerapp job start -g "$RG" -n "$job" --query name -o tsv)
+    log "$job execution: $exec_name"
+    wait_job "$job" "$exec_name" "$label"
 }
 
-_list_runs() {
-    # Works even when the workflow file isn't on the default branch.
-    local wf="$1" limit="${2:-5}"
-    local json
-    json=$(gh api "repos/$REPO/actions/workflows/$wf/runs?per_page=$limit" 2>/dev/null || true)
-    if [[ -z "$json" ]] || echo "$json" | grep -q '"message":"Not Found"'; then
-        echo "  (workflow '$wf' not yet registered — it must exist on the default branch, or be triggered once manually)"
-        return
-    fi
-    echo "$json" | jq -r '.workflow_runs[] | [(.status // "?"), (.conclusion // "-"), .head_branch, .event, ("#" + (.run_number|tostring)), .display_title, .html_url] | @tsv' \
-        | awk -F'\t' '{printf "  %-10s %-10s %-28s %-15s %-6s %s\n    %s\n", $1, $2, $3, $4, $5, $6, $7}'
-}
-
-cmd_status() {
-    echo "── last 5 deploy runs ──"
-    _list_runs "$DEPLOY_WF" 5
-    echo ""
-    echo "── last 5 build runs ──"
-    _list_runs "$BUILD_WF" 5
-}
-
-cmd_watch() {
-    local id
-    id=$(gh api "repos/$REPO/actions/workflows/$DEPLOY_WF/runs?per_page=1" --jq '.workflow_runs[0].id' 2>/dev/null)
-    [[ -z "$id" || "$id" == "null" ]] && { echo "no deploy runs found"; exit 1; }
-    echo "⌚ watching deploy run $id"
-    gh run watch "$id" --repo "$REPO" --exit-status
-}
+# ---- Subcommands ------------------------------------------------------------
+cmd_url()    { echo "$NIGHTLY_URL"; }
 
 cmd_health() {
-    echo "🩺 GET $NIGHTLY_URL/health"
-    curl -sS "$NIGHTLY_URL/health"
+    log "GET $NIGHTLY_URL/health"
+    curl -fsS "$NIGHTLY_URL/health"
     echo
 }
 
-cmd_url() {
-    echo "$NIGHTLY_URL"
+cmd_status() {
+    need gh
+    echo "── last 5 build runs ($BUILD_NAME) ──"
+    gh run list --repo "$REPO" --workflow="$BUILD_WF" --limit 5 2>/dev/null \
+        || warn "could not list runs (check gh auth)"
 }
 
-need gh
-need git
+cmd_build() {
+    need gh
+    log "Triggering $BUILD_NAME on $BRANCH"
+    gh workflow run "$BUILD_WF" --repo "$REPO" --ref "$BRANCH"
+    sleep 4
+    local id
+    id=$(gh run list --repo "$REPO" --workflow="$BUILD_WF" --limit 1 --json databaseId -q '.[0].databaseId')
+    log "Watching build run $id (typically 6–9 min)"
+    gh run watch "$id" --repo "$REPO" --exit-status
+    ok "build done — proceeding to deploy"
+    cmd_deploy "$@"
+}
 
-case "${1:-deploy}" in
-    deploy)   cmd_deploy "${2:-}" ;;
-    reset)    cmd_deploy --reset ;;
-    build)    cmd_build ;;
-    status)   cmd_status ;;
-    watch)    cmd_watch ;;
-    health)   cmd_health ;;
-    url)      cmd_url ;;
-    -h|--help|help)
-        sed -n '2,19p' "$0"
-        ;;
-    *)
-        echo "unknown subcommand: $1" >&2
-        sed -n '2,19p' "$0"
-        exit 2
-        ;;
+cmd_revisions() {
+    ensure_az
+    az containerapp revision list -g "$RG" -n "$WEB" \
+        --query '[].{name:name,active:properties.active,image:properties.template.containers[0].image,createdTime:properties.createdTime,replicas:properties.replicas}' \
+        -o table
+}
+
+cmd_logs() {
+    ensure_az
+    local tail=200
+    if [[ "${1:-}" == "--tail" && -n "${2:-}" ]]; then tail="$2"; fi
+    az containerapp logs show -g "$RG" -n "$WEB" --tail "$tail" --type console --follow false
+}
+
+cmd_deploy() {
+    local do_reset=0
+    for arg in "$@"; do
+        case "$arg" in
+            --reset|reset) do_reset=1 ;;
+        esac
+    done
+
+    ensure_az
+    local date_tag="nightly-$(date -u +%Y-%m-%d-%H%M%S)"
+    local acr_login
+    acr_login=$(az acr show -n "$ACR" --query loginServer -o tsv)
+    local image_ref="${acr_login}/kmp:${date_tag}"
+
+    log "Importing ghcr.io/jhandel/kmp:${IMAGE_TAG} → ${acr_login}/kmp:{${IMAGE_TAG},${date_tag}}"
+    az acr import \
+        --name "$ACR" \
+        --source "ghcr.io/jhandel/kmp:${IMAGE_TAG}" \
+        --image "kmp:${IMAGE_TAG}" \
+        --image "kmp:${date_tag}" \
+        --force -o none
+    ok "image imported as $image_ref"
+
+    # 1. Migrate
+    run_job "$MIGRATE_JOB" "$image_ref" "migrate"
+
+    # 2. Optional full reset
+    if [[ "$do_reset" == 1 ]]; then
+        warn "FULL RESET — dropping & reseeding DB (all passwords reset to TestPassword)"
+        run_job "$RESET_JOB" "$image_ref" "reset"
+    fi
+
+    # 3. Web
+    log "Updating web Container App image"
+    az containerapp update -g "$RG" -n "$WEB" --image "$image_ref" -o none
+    ok "web image updated"
+
+    # 4. Other jobs (queue/sync/reset) so cron uses the new image next run
+    for job in "$QUEUE_JOB" "$SYNC_JOB" "$RESET_JOB"; do
+        log "Updating $job → $image_ref"
+        az containerapp job update -g "$RG" -n "$job" --image "$image_ref" -o none
+    done
+
+    # 5. Smoke-check /health
+    local fqdn
+    fqdn=$(az containerapp show -g "$RG" -n "$WEB" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+    log "Probing https://$fqdn/health (up to 10 min for new revision)"
+    for i in $(seq 1 40); do
+        local code
+        code=$(curl -sS -o /tmp/kmp-health.txt -w '%{http_code}' "https://$fqdn/health" || echo 000)
+        if [[ "$code" == "200" ]]; then
+            ok "/health OK"
+            cat /tmp/kmp-health.txt; echo
+            echo
+            ok "Deploy complete: https://$fqdn"
+            return 0
+        fi
+        printf '  [%d/40] /health → %s\n' "$i" "$code"
+        sleep 15
+    done
+    warn "/health never reached 200 within 10 min — recent logs:"
+    az containerapp logs show -g "$RG" -n "$WEB" --tail 200 --type console --follow false || true
+    die "deploy failed health check"
+}
+
+cmd_reset() { cmd_deploy --reset "$@"; }
+
+cmd_watch() {
+    need gh
+    local id
+    id=$(gh run list --repo "$REPO" --workflow="$BUILD_WF" --limit 1 --json databaseId,status -q '.[0] | select(.status != "completed") | .databaseId')
+    if [[ -z "$id" ]]; then
+        warn "no running build — showing latest run status instead"
+        cmd_status
+        return
+    fi
+    log "Watching build run $id"
+    gh run watch "$id" --repo "$REPO" --exit-status
+}
+
+cmd_help() {
+    sed -n '3,36p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+}
+
+# ---- Dispatch ---------------------------------------------------------------
+sub="${1:-help}"
+shift || true
+case "$sub" in
+    deploy|reset|build|status|watch|health|url|logs|revisions|help) "cmd_$sub" "$@" ;;
+    -h|--help) cmd_help ;;
+    *) die "unknown subcommand: $sub (try: deploy, build, reset, status, health, url, logs, revisions, help)" ;;
 esac
