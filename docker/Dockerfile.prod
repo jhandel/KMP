@@ -13,7 +13,7 @@
 # Falls back to php:8.3-apache-bookworm if the base image hasn't been built yet.
 ARG BASE_IMAGE=ghcr.io/jhandel/kmp-base:php83
 ARG APP_VERSION=dev
-ARG NODE_VERSION=22.12.0
+ARG NODE_VERSION=24.15.0
 
 # =============================================================================
 # Stage 1: Frontend assets

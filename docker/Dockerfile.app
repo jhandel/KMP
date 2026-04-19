@@ -8,7 +8,7 @@
 
 FROM php:8.3-apache-bookworm
 
-ARG NODE_VERSION=22.12.0
+ARG NODE_VERSION=24.15.0
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -6,7 +6,7 @@
 # [Choice] Debian version: bullseye, buster, stretch
 FROM mcr.microsoft.com/devcontainers/base:bookworm
 
-ARG NODE_VERSION=22.12.0
+ARG NODE_VERSION=24.15.0
 
 # Install system packages and PHP repository
 RUN apt-get update && \
