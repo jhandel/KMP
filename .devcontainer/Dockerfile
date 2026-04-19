@@ -25,8 +25,29 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive && \
     mariadb-server apache2 \
     patch python3-pip ruby-full build-essential zlib1g-dev \
     default-jdk libnet-ssleay-perl perl-modules libwhisker2-perl git \
-    xz-utils && \
+    xz-utils gnupg && \
     rm -rf /var/lib/apt/lists/*
+
+# Install PostgreSQL 16 from the PGDG repository to match Azure Database for
+# PostgreSQL Flexible Server (deploy/azure/main.bicep pins version '16'). Both
+# the server and client are installed so the devcontainer can run PG-backed
+# tests side-by-side with MariaDB; callers switch engines via DATABASE_URL.
+RUN install -d /usr/share/postgresql-common/pgdg && \
+    curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc && \
+    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -sc)-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list && \
+    apt-get update && export DEBIAN_FRONTEND=noninteractive && \
+    apt-get -y install --no-install-recommends \
+    postgresql-16 postgresql-client-16 postgresql-contrib-16 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Allow the vscode user to manage PostgreSQL peer-auth operations without a
+# password (mirrors the pattern used for MariaDB + Apache elsewhere in this
+# environment). Needed by .devcontainer/init_env/config_space.sh to run
+# `sudo -u postgres psql` during post-start provisioning.
+RUN echo 'vscode ALL=(postgres) NOPASSWD: ALL' > /etc/sudoers.d/vscode-postgres && \
+    chmod 0440 /etc/sudoers.d/vscode-postgres
 
 # Install Node.js from the official distribution to pin the exact version used by Vite.
 RUN ARCH=$(dpkg --print-architecture) && \

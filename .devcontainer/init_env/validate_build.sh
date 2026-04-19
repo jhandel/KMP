@@ -36,6 +36,8 @@ check_command "npm"
 check_command "go"
 check_command "java"
 check_command "python"
+check_command "psql"
+check_command "pg_isready" "no-version"
 
 echo ""
 echo "--- Security Tools ---"
@@ -73,9 +75,15 @@ else
     echo "⚠️  MariaDB service status unknown (normal in build)"
 fi
 
+if systemctl is-active --quiet postgresql 2>/dev/null || service postgresql status >/dev/null 2>&1 || pg_isready -q 2>/dev/null; then
+    echo "✅ PostgreSQL service is available"
+else
+    echo "⚠️  PostgreSQL service status unknown (normal in build)"
+fi
+
 echo ""
 echo "--- PHP Extensions ---"
-php -m | grep -E "(xdebug|apcu|mysql)" | while read ext; do
+php -m | grep -E "(xdebug|apcu|mysql|pgsql)" | while read ext; do
     echo "✅ PHP extension: $ext"
 done
 
