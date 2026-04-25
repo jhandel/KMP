@@ -27,12 +27,40 @@ echo $this->KMP->startBlock("pageTitle") ?>
 <?= $this->KMP->startBlock("recordActions") ?>
 <?php if ($warrantRoster->status == Warrant::PENDING_STATUS && $user->checkCan("approve", $warrantRoster)) :
     if (!$userApprovedAlready): ?>
-<?= $this->Form->postLink(__('Approve'), ['controller' => 'WarrantRosters', 'action' => 'approve', $warrantRoster->id], ['confirm' => __('Are you sure you want to approve # {0}?', $warrantRoster->name), 'class' => 'btn btn-primary']) ?>
+<?= $this->Form->create(null, [
+    'url' => ['controller' => 'WarrantRosters', 'action' => 'approve', $warrantRoster->id],
+    'data-turbo' => 'false',
+    'style' => 'display:inline;',
+]) ?>
+<?= $this->Form->button(__('Approve'), [
+    'type' => 'submit',
+    'class' => 'btn btn-primary',
+    'data-controller' => 'confirmation',
+    'data-action' => 'confirmation#confirm',
+    'data-confirmation-message-value' => __('Are you sure you want to approve # {0}?', $warrantRoster->name),
+    'data-confirmation-title-value' => __('Approve roster'),
+    'data-confirmation-confirm-label-value' => __('Approve'),
+]) ?>
+<?= $this->Form->end() ?>
 <?php endif ?>
 <?php endif ?>
 <?php if ($warrantRoster->status == Warrant::PENDING_STATUS && $user->checkCan("decline", $warrantRoster)) :
     if (!$userApprovedAlready): ?>
-<?= $this->Form->postLink(__('Decline'), ['controller' => 'WarrantRosters', 'action' => 'decline', $warrantRoster->id], ['confirm' => __('Are you sure you want to decline # {0}?', $warrantRoster->name), 'class' => 'btn btn-danger']) ?>
+<?= $this->Form->create(null, [
+    'url' => ['controller' => 'WarrantRosters', 'action' => 'decline', $warrantRoster->id],
+    'data-turbo' => 'false',
+    'style' => 'display:inline;',
+]) ?>
+<?= $this->Form->button(__('Decline'), [
+    'type' => 'submit',
+    'class' => 'btn btn-danger',
+    'data-controller' => 'confirmation',
+    'data-action' => 'confirmation#confirm',
+    'data-confirmation-message-value' => __('Are you sure you want to decline # {0}?', $warrantRoster->name),
+    'data-confirmation-title-value' => __('Decline roster'),
+    'data-confirmation-confirm-label-value' => __('Decline'),
+]) ?>
+<?= $this->Form->end() ?>
 <?php endif ?>
 <?php endif ?>
 <?php $this->KMP->endBlock() ?>
@@ -102,8 +130,30 @@ echo $this->KMP->startBlock("pageTitle") ?>
                     <td><?= h($warrant->status) ?></td>
                     <td class="actions text-end text-nowrap">
                         <?php if ($warrant->status == Warrant::PENDING_STATUS && $user->checkCan("decline", "WarrantRosters")) :
-                                    if (!$userApprovedAlready): ?>
-                        <?= $this->Form->postLink(__('Release from Office'), ['controller' => 'WarrantRosters', 'action' => 'declineWarrantInRoster', $warrantRoster->id, $warrant->id], ['confirm' => __('This will decline this individual warrant and release {0} from their office.', $warrant->member->sca_name), 'class' => 'btn-sm btn btn-danger']) ?>
+                                     if (!$userApprovedAlready): ?>
+                        <?= $this->Form->create(null, [
+                            'url' => [
+                                'controller' => 'WarrantRosters',
+                                'action' => 'declineWarrantInRoster',
+                                $warrantRoster->id,
+                                $warrant->id,
+                            ],
+                            'data-turbo' => 'false',
+                            'style' => 'display:inline;',
+                        ]) ?>
+                        <?= $this->Form->button(__('Release from Office'), [
+                            'type' => 'submit',
+                            'class' => 'btn-sm btn btn-danger',
+                            'data-controller' => 'confirmation',
+                            'data-action' => 'confirmation#confirm',
+                            'data-confirmation-message-value' => __(
+                                'This will decline this individual warrant and release {0} from their office.',
+                                $warrant->member->sca_name,
+                            ),
+                            'data-confirmation-title-value' => __('Release warrant'),
+                            'data-confirmation-confirm-label-value' => __('Release'),
+                        ]) ?>
+                        <?= $this->Form->end() ?>
                         <?php endif ?>
                         <?php endif ?>
                     </td>

@@ -2987,6 +2987,221 @@ function withinMaxClamp(min, value, max) {
 
 /***/ }),
 
+/***/ "./assets/js/KMP_accessibility.js":
+/*!****************************************!*\
+  !*** ./assets/js/KMP_accessibility.js ***!
+  \****************************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var bootstrap__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
+
+const getBootstrapModal = () => window.bootstrap?.Modal || globalThis.bootstrap?.Modal || bootstrap__WEBPACK_IMPORTED_MODULE_0__.Modal;
+const escapeHtml = text => {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+};
+const ensureLiveRegion = (role = 'status') => {
+  const id = role === 'alert' ? 'kmp-global-alert-region' : 'kmp-global-status-region';
+  let region = document.getElementById(id);
+  if (!region) {
+    region = document.createElement('div');
+    region.id = id;
+    region.className = 'visually-hidden';
+    region.setAttribute('role', role);
+    region.setAttribute('aria-live', role === 'alert' ? 'assertive' : 'polite');
+    region.setAttribute('aria-atomic', 'true');
+    document.body.appendChild(region);
+  }
+  return region;
+};
+const announce = (message, options = {}) => {
+  const region = ensureLiveRegion(options.assertive ? 'alert' : 'status');
+  region.textContent = '';
+  window.setTimeout(() => {
+    region.textContent = message;
+  }, 10);
+};
+const openDialog = ({
+  title,
+  message,
+  inputLabel,
+  inputRequired = false,
+  confirmLabel = 'OK',
+  cancelLabel = 'Cancel'
+}) => {
+  const Modal = getBootstrapModal();
+  if (!Modal || !document.body) {
+    return Promise.resolve({
+      confirmed: false,
+      value: ''
+    });
+  }
+  const previouslyFocused = document.activeElement;
+  const modal = document.createElement('div');
+  modal.className = 'modal fade';
+  modal.tabIndex = -1;
+  modal.setAttribute('aria-labelledby', 'kmp-a11y-dialog-title');
+  modal.setAttribute('aria-describedby', 'kmp-a11y-dialog-message');
+  const inputMarkup = inputLabel ? `
+        <div class="mb-3">
+            <label class="form-label" for="kmp-a11y-dialog-input">${escapeHtml(inputLabel)}</label>
+            <input id="kmp-a11y-dialog-input" class="form-control" type="text" ${inputRequired ? 'required' : ''}>
+        </div>
+    ` : '';
+  const cancelMarkup = cancelLabel ? `<button type="button" class="btn btn-secondary" data-dialog-cancel>${escapeHtml(cancelLabel)}</button>` : '';
+  modal.innerHTML = `
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="kmp-a11y-dialog-title">${escapeHtml(title)}</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="kmp-a11y-dialog-message"></p>
+                    ${inputMarkup}
+                </div>
+                <div class="modal-footer">
+                    ${cancelMarkup}
+                    <button type="button" class="btn btn-primary" data-dialog-confirm>${escapeHtml(confirmLabel)}</button>
+                </div>
+            </div>
+        </div>
+    `;
+  modal.querySelector('#kmp-a11y-dialog-message').textContent = message;
+  document.body.appendChild(modal);
+  return new Promise(resolve => {
+    const instance = new Modal(modal);
+    const input = modal.querySelector('#kmp-a11y-dialog-input');
+    let settled = false;
+    const settle = confirmed => {
+      if (settled) return;
+      settled = true;
+      const value = input ? input.value : '';
+      instance.hide();
+      resolve({
+        confirmed,
+        value
+      });
+    };
+    modal.querySelector('[data-dialog-confirm]').addEventListener('click', () => {
+      if (inputRequired && input && input.value.trim() === '') {
+        input.setAttribute('aria-invalid', 'true');
+        input.focus();
+        announce(`${inputLabel} is required.`, {
+          assertive: true
+        });
+        return;
+      }
+      settle(true);
+    });
+    modal.querySelector('[data-dialog-cancel]')?.addEventListener('click', () => settle(false));
+    modal.addEventListener('hidden.bs.modal', () => {
+      if (!settled) {
+        resolve({
+          confirmed: false,
+          value: ''
+        });
+      }
+      instance.dispose();
+      modal.remove();
+      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+        previouslyFocused.focus();
+      }
+    }, {
+      once: true
+    });
+    modal.addEventListener('shown.bs.modal', () => {
+      const focusTarget = input || modal.querySelector('[data-dialog-confirm]');
+      focusTarget.focus();
+    }, {
+      once: true
+    });
+    instance.show();
+  });
+};
+const confirm = async (message, options = {}) => {
+  const result = await openDialog({
+    title: options.title || 'Confirm action',
+    message,
+    confirmLabel: options.confirmLabel || 'Confirm',
+    cancelLabel: options.cancelLabel || 'Cancel'
+  });
+  return result.confirmed;
+};
+const prompt = async (message, options = {}) => {
+  const result = await openDialog({
+    title: options.title || 'Input required',
+    message,
+    inputLabel: options.inputLabel || message,
+    inputRequired: options.required || false,
+    confirmLabel: options.confirmLabel || 'Save',
+    cancelLabel: options.cancelLabel || 'Cancel'
+  });
+  return result.confirmed ? result.value : null;
+};
+const alert = async (message, options = {}) => {
+  await openDialog({
+    title: options.title || 'Notice',
+    message,
+    confirmLabel: options.confirmLabel || 'OK',
+    cancelLabel: null
+  });
+  announce(message, {
+    assertive: options.assertive || false
+  });
+};
+const findCakePostLinkForm = trigger => {
+  const onclick = trigger.getAttribute('onclick') || '';
+  const formName = onclick.match(/document\.([A-Za-z0-9_]+)\.requestSubmit\(\)/)?.[1];
+  if (!formName) {
+    return null;
+  }
+  return document.forms[formName] instanceof HTMLFormElement ? document.forms[formName] : null;
+};
+const submitConfirmedTrigger = trigger => {
+  const form = findCakePostLinkForm(trigger) || trigger.closest('form');
+  if (form instanceof HTMLFormElement) {
+    HTMLFormElement.prototype.submit.call(form);
+    return;
+  }
+  if (trigger instanceof HTMLAnchorElement && trigger.href && trigger.getAttribute('href') !== '#') {
+    window.location.assign(trigger.href);
+  }
+};
+const installCakeConfirmAdapter = () => {
+  if (document.documentElement.dataset.kmpCakeConfirmAdapter === 'true') {
+    return;
+  }
+  document.documentElement.dataset.kmpCakeConfirmAdapter = 'true';
+  document.addEventListener('click', async event => {
+    const trigger = event.target.closest('[data-confirm-message]');
+    if (!trigger) {
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const confirmed = await confirm(trigger.dataset.confirmMessage, {
+      title: trigger.dataset.confirmTitle || 'Confirm action',
+      confirmLabel: trigger.dataset.confirmLabel || 'Confirm'
+    });
+    if (confirmed) {
+      submitConfirmedTrigger(trigger);
+    }
+  }, true);
+};
+/* harmony default export */ __webpack_exports__["default"] = ({
+  alert,
+  announce,
+  confirm,
+  installCakeConfirmAdapter,
+  prompt
+});
+
+/***/ }),
+
 /***/ "./assets/js/KMP_utils.js":
 /*!********************************!*\
   !*** ./assets/js/KMP_utils.js ***!
@@ -3097,16 +3312,26 @@ class BackupRestoreStatusController extends _hotwired_stimulus__WEBPACK_IMPORTED
       return;
     }
     const confirmMessage = form.dataset.confirmMessage || 'Restore this backup and replace all current data?';
-    if (confirmMessage && !window.confirm(confirmMessage)) {
+    if (confirmMessage && !(await window.KMP_accessibility.confirm(confirmMessage, {
+      title: 'Restore backup',
+      confirmLabel: 'Restore backup'
+    }))) {
       return;
     }
     const restoreKeyPrompt = form.dataset.restoreKeyPrompt || 'Enter the backup encryption key to continue restore:';
-    const restoreKey = window.prompt(restoreKeyPrompt);
+    const restoreKey = await window.KMP_accessibility.prompt(restoreKeyPrompt, {
+      title: 'Backup encryption key',
+      inputLabel: 'Encryption key',
+      required: true,
+      confirmLabel: 'Continue restore'
+    });
     if (restoreKey === null) {
       return;
     }
     if (restoreKey.trim() === '') {
-      window.alert('An encryption key is required to restore this backup.');
+      window.KMP_accessibility.announce('An encryption key is required to restore this backup.', {
+        assertive: true
+      });
       return;
     }
     this.reloadScheduled = false;
@@ -4051,14 +4276,16 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _hotwired_turbo__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! @hotwired/turbo */ "./node_modules/@hotwired/turbo/dist/turbo.es2017-esm.js");
 /* harmony import */ var bootstrap__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
 /* harmony import */ var _KMP_utils_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./KMP_utils.js */ "./assets/js/KMP_utils.js");
-/* harmony import */ var _timezone_utils_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./timezone-utils.js */ "./assets/js/timezone-utils.js");
-/* harmony import */ var _controllers_qrcode_controller_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./controllers/qrcode-controller.js */ "./assets/js/controllers/qrcode-controller.js");
-/* harmony import */ var _controllers_timezone_input_controller_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./controllers/timezone-input-controller.js */ "./assets/js/controllers/timezone-input-controller.js");
-/* harmony import */ var _controllers_security_debug_controller_js__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./controllers/security-debug-controller.js */ "./assets/js/controllers/security-debug-controller.js");
-/* harmony import */ var _controllers_popover_controller_js__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./controllers/popover-controller.js */ "./assets/js/controllers/popover-controller.js");
-/* harmony import */ var _controllers_backup_restore_status_controller_js__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./controllers/backup-restore-status-controller.js */ "./assets/js/controllers/backup-restore-status-controller.js");
+/* harmony import */ var _KMP_accessibility_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./KMP_accessibility.js */ "./assets/js/KMP_accessibility.js");
+/* harmony import */ var _timezone_utils_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./timezone-utils.js */ "./assets/js/timezone-utils.js");
+/* harmony import */ var _controllers_qrcode_controller_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./controllers/qrcode-controller.js */ "./assets/js/controllers/qrcode-controller.js");
+/* harmony import */ var _controllers_timezone_input_controller_js__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./controllers/timezone-input-controller.js */ "./assets/js/controllers/timezone-input-controller.js");
+/* harmony import */ var _controllers_security_debug_controller_js__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./controllers/security-debug-controller.js */ "./assets/js/controllers/security-debug-controller.js");
+/* harmony import */ var _controllers_popover_controller_js__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./controllers/popover-controller.js */ "./assets/js/controllers/popover-controller.js");
+/* harmony import */ var _controllers_backup_restore_status_controller_js__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./controllers/backup-restore-status-controller.js */ "./assets/js/controllers/backup-restore-status-controller.js");
 /* provided dependency */ var bootstrap = __webpack_require__(/*! bootstrap */ "./node_modules/bootstrap/dist/js/bootstrap.esm.js");
 // export for others scripts to use
+
 
 
 
@@ -4078,6 +4305,8 @@ _hotwired_turbo__WEBPACK_IMPORTED_MODULE_1__.session.drive = false;
 //window.$ = $;
 //window.jQuery = jQuery;
 window.KMP_utils = _KMP_utils_js__WEBPACK_IMPORTED_MODULE_3__["default"];
+window.KMP_accessibility = _KMP_accessibility_js__WEBPACK_IMPORTED_MODULE_4__["default"];
+window.KMP_accessibility.installCakeConfirmAdapter();
 const stimulusApp = _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.Application.start();
 window.Stimulus = stimulusApp;
 

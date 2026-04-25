@@ -1,3 +1,7 @@
+<?php
+// Retired UI: this Kanban board is not linked from active Awards workflows.
+// Do not re-enable it without adding a keyboard-accessible state transition path.
+?>
 <turbo-frame id="boardView-frame" data-turbo='true'>
     <div class="row">
         <div class="col-12 text-end">

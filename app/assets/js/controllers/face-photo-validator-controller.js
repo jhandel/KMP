@@ -384,7 +384,7 @@ class FacePhotoValidatorController extends Controller {
 
     showError(message) {
         if (!this.hasWarningTarget) {
-            alert(message);
+            window.KMP_accessibility.announce(message, { assertive: true });
             return;
         }
         this.warningTarget.textContent = message;

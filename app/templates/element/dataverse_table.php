@@ -47,7 +47,7 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
                                class="form-check-input" 
                                data-<?= h($controllerName) ?>-target="selectAllCheckbox"
                                data-action="change-><?= h($controllerName) ?>#toggleAllSelection"
-                               title="Select all rows on this page">
+                               aria-label="<?= h(__('Select all rows on this page')) ?>">
                     </th>
                 <?php endif; ?>
                 <?php foreach ($visibleColumns as $columnKey): ?>
@@ -60,16 +60,29 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
                     ?>
                     <th scope="col"
                         class="<?= $sortable ? 'sortable-header' : '' ?> <?= $isSorted ? 'sorted-' . $sortDirection : '' ?>"
-                        style="<?= !empty($column['width']) ? 'width: ' . h($column['width']) . ';' : '' ?> 
-                               text-align: <?= h($column['alignment'] ?? 'left') ?>;"
+                        style="<?= !empty($column['width']) ? 'width: ' . h($column['width']) . ';' : '' ?> text-align: <?= h($column['alignment'] ?? 'left') ?>;"
                         <?php if ($sortable): ?>
-                        data-action="click-><?= h($controllerName) ?>#applySort"
-                        data-column-key="<?= h($columnKey) ?>"
-                        style="cursor: pointer;"
+                        aria-sort="<?= $isSorted ? h($sortDirection === 'asc' ? 'ascending' : 'descending') : 'none' ?>"
                         <?php endif; ?>>
-                        <?= h($column['label']) ?>
                         <?php if ($sortable): ?>
-                            <span class="sort-indicator ms-1">
+                            <button type="button"
+                                class="sortable-header-button"
+                                data-action="click-><?= h($controllerName) ?>#applySort"
+                                data-column-key="<?= h($columnKey) ?>">
+                                <span><?= h($column['label']) ?></span>
+                                <span class="visually-hidden">
+                                    <?php if ($isSorted): ?>
+                                        <?= h(__('sorted {0}', $sortDirection === 'asc' ? __('ascending') : __('descending'))) ?>
+                                    <?php else: ?>
+                                        <?= h(__('not sorted')) ?>
+                                    <?php endif; ?>
+                                </span>
+                            </button>
+                        <?php else: ?>
+                            <?= h($column['label']) ?>
+                        <?php endif; ?>
+                        <?php if ($sortable): ?>
+                            <span class="sort-indicator ms-1" aria-hidden="true">
                                 <?php if ($isSorted): ?>
                                     <?php if ($sortDirection === 'asc'): ?>
                                         <i class="bi bi-caret-up-fill"></i>
@@ -88,9 +101,10 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
                         <?php if ($enableColumnPicker): ?>
                             <button type="button"
                                 class="btn btn-sm btn-outline-secondary"
+                                aria-label="<?= h(__('Show or hide columns')) ?>"
                                 data-bs-toggle="modal"
                                 data-bs-target="#columnPickerModal-<?= h($gridKey) ?>">
-                                <i class="bi bi-list-columns"></i>
+                                <i class="bi bi-list-columns" aria-hidden="true"></i>
                             </button>
                         <?php endif; ?>
                     </th>
@@ -113,7 +127,8 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
                                        class="form-check-input" 
                                        value="<?= h($row[$primaryKey]) ?>"
                                        data-<?= h($controllerName) ?>-target="rowCheckbox"
-                                       data-action="change-><?= h($controllerName) ?>#toggleRowSelection">
+                                       data-action="change-><?= h($controllerName) ?>#toggleRowSelection"
+                                       aria-label="<?= h(__('Select row {0}', $row[$primaryKey])) ?>">
                             </td>
                         <?php endif; ?>
                         <?php foreach ($visibleColumns as $columnKey): ?>
@@ -293,12 +308,30 @@ $totalColumns = count($visibleColumns) + ($showActionsColumn ? 1 : 0) + ($enable
 
 <style>
     .sortable-header {
-        cursor: pointer;
         user-select: none;
     }
 
-    .sortable-header:hover {
+    .sortable-header:hover,
+    .sortable-header:focus-within {
         background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .sortable-header-button {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        color: inherit;
+        cursor: pointer;
+        display: inline-flex;
+        font: inherit;
+        margin: 0;
+        padding: 0;
+        text-align: inherit;
+    }
+
+    .sortable-header-button:focus-visible {
+        outline: 2px solid var(--bs-primary);
+        outline-offset: 2px;
     }
 
     .sorted-asc,

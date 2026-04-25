@@ -220,10 +220,16 @@ $canAddGathering = $identity && $identity->checkCan('add', $tempGathering);
                         <div class="input-group input-group-sm">
                             <input type="text" class="form-control" id="calendarFeedUrl"
                                 data-base-feed-url="<?= h($baseFeedUrl) ?>"
-                                value="<?= h($feedUrl) ?>" readonly onclick="this.select()">
+                                value="<?= h($feedUrl) ?>" readonly
+                                data-controller="clipboard"
+                                data-action="focus->clipboard#selectSource">
                             <button class="btn btn-outline-primary" type="button"
-                                onclick="navigator.clipboard.writeText(document.getElementById('calendarFeedUrl').value).then(() => { this.innerHTML = '<i class=\'bi bi-check\'></i>'; setTimeout(() => { this.innerHTML = '<i class=\'bi bi-clipboard\'></i>'; }, 1500); })">
-                                <i class="bi bi-clipboard"></i>
+                                data-controller="clipboard"
+                                data-action="clipboard#copy"
+                                data-clipboard-source-selector-value="#calendarFeedUrl"
+                                data-clipboard-success-message-value="<?= h(__('Calendar feed URL copied to clipboard.')) ?>">
+                                <i class="bi bi-clipboard" aria-hidden="true"></i>
+                                <span class="visually-hidden"><?= __('Copy calendar feed URL') ?></span>
                             </button>
                         </div>
                     </div>

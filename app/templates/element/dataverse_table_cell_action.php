@@ -159,8 +159,7 @@ switch ($actionType) {
             class="text-decoration-none d-flex align-items-center"
             data-action="click->grid-view#toggleSubRow"
             data-row-id="<?= h($row[$primaryKey]) ?>"
-            data-subrow-type="<?= h($actionParam) ?>"
-            onclick="event.preventDefault();">
+            data-subrow-type="<?= h($actionParam) ?>">
             <i class="bi bi-chevron-right toggle-icon me-1" style="font-size: 0.75rem;"></i>
             <span><?= $content ?></span>
         </a>
@@ -174,8 +173,7 @@ switch ($actionType) {
             class="text-decoration-none"
             data-action="click->grid-view#openModal"
             data-row-id="<?= h($row[$primaryKey]) ?>"
-            data-modal-type="<?= h($actionParam) ?>"
-            onclick="event.preventDefault();">
+            data-modal-type="<?= h($actionParam) ?>">
             <?= $content ?>
         </a>
 <?php

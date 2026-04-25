@@ -124,16 +124,20 @@ $allColumns = $gridState['columns']['all'] ?? [];
                         'url' => ['action' => 'approve', $request->id],
                         'data-turbo' => 'false',
                         'style' => 'display:inline;',
-                        'onsubmit' => 'return confirm(' . json_encode(__(
-                            "Are you sure you want to approve {0} for {1}?",
-                            $request->authorization->member->sca_name ?? 'this member',
-                            $request->authorization->activity->name ?? 'this authorization',
-                        )) . ')'
                     ]) ?>
                     <?= $this->Form->button(__("Approve"), [
                         "type" => "submit",
                         "title" => __("Approve"),
-                        "class" => "btn-sm btn btn-primary"
+                        "class" => "btn-sm btn btn-primary",
+                        "data-controller" => "confirmation",
+                        "data-action" => "confirmation#confirm",
+                        "data-confirmation-message-value" => __(
+                            "Are you sure you want to approve {0} for {1}?",
+                            $request->authorization->member->sca_name ?? 'this member',
+                            $request->authorization->activity->name ?? 'this authorization',
+                        ),
+                        "data-confirmation-title-value" => __("Approve authorization"),
+                        "data-confirmation-confirm-label-value" => __("Approve"),
                     ]) ?>
                     <?= $this->Form->end() ?>
                     <?php endif; ?>

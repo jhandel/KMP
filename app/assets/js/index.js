@@ -4,6 +4,7 @@ import { Application } from "@hotwired/stimulus";
 import * as Turbo from "@hotwired/turbo";
 import 'bootstrap';
 import KMP_utils from './KMP_utils.js';
+import KMP_accessibility from './KMP_accessibility.js';
 import './timezone-utils.js';
 
 // Import controllers
@@ -19,6 +20,8 @@ Turbo.session.drive = false;
 //window.$ = $;
 //window.jQuery = jQuery;
 window.KMP_utils = KMP_utils;
+window.KMP_accessibility = KMP_accessibility;
+window.KMP_accessibility.installCakeConfirmAdapter();
 const stimulusApp = Application.start();
 window.Stimulus = stimulusApp;
 

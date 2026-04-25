@@ -9,6 +9,10 @@ const activeSelector = "[aria-selected='true']"
  * Implements drag-and-drop functionality for Kanban board interfaces with
  * server synchronization and position tracking. Provides comprehensive
  * card movement, visual feedback, and AJAX-based persistence.
+ *
+ * Accessibility note: the Awards recommendation Kanban view that used this
+ * controller is retired and not linked from active UI. Do not reactivate a
+ * drag-only workflow without adding a keyboard-accessible move alternative.
  * 
  * Features:
  * - Drag-and-drop card movement between columns

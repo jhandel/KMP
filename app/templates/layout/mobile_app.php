@@ -55,7 +55,7 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
 ]) : null;
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="<?= h(\Cake\Core\Configure::read('App.language') ?: 'en') ?>">
 
 <head>
     <?= $this->Html->charset() ?>
@@ -1192,6 +1192,9 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
 </head>
 
 <body class="viewMobileCard"<?php if ($mobileSection): ?> data-section="<?= h($mobileSection) ?>"<?php endif; ?>>
+    <a class="visually-hidden-focusable position-absolute top-0 start-0 z-3 m-2 p-2 bg-body border rounded" href="#main-content">
+        <?= __('Skip to main content') ?>
+    </a>
     <?= $this->Flash->render() ?>
     <?php
     // Determine if this is the auth card page and build auth card URL
@@ -1209,7 +1212,7 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
     $authCardUrl = ['controller' => 'Members', 'action' => 'viewMobileCard', 'plugin' => null];
     $authCardUrlBuilt = $this->Url->build($authCardUrl);
     ?>
-    <div data-controller="member-mobile-card-pwa mobile-pin-gate<?= isset($cardUrl) ? ' member-mobile-card-profile' : '' ?><?= !$skipOfflineOverlay ? ' mobile-offline-overlay' : '' ?>"
+    <main id="main-content" tabindex="-1" data-controller="member-mobile-card-pwa mobile-pin-gate<?= isset($cardUrl) ? ' member-mobile-card-profile' : '' ?><?= !$skipOfflineOverlay ? ' mobile-offline-overlay' : '' ?>"
         <?php if (isset($cardUrl)): ?> data-member-mobile-card-profile-url-value="<?= h($cardUrl) ?>"
         data-member-mobile-card-profile-pwa-ready-value="false" <?php endif; ?>
         data-member-mobile-card-pwa-sw-url-value="<?= $swUrl ?>" data-member-mobile-card-pwa-pwa-ready-value="false"
@@ -1339,7 +1342,7 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
             }
             echo json_encode($cacheList); ?>
         </json>
-    </div>
+    </main>
 
 </body>
 
