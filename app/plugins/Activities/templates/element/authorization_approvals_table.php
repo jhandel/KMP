@@ -33,7 +33,7 @@ $allColumns = $gridState['columns']['all'] ?? [];
                 <?php endif; ?>
                 <?php endforeach; ?>
                 <?php if ($isPendingView): ?>
-                <th scope="col" class="actions"></th>
+                <th scope="col" class="actions"><span class="visually-hidden"><?= __('Actions') ?></span></th>
                 <?php endif; ?>
             </tr>
         </thead>

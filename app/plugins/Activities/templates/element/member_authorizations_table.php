@@ -35,7 +35,7 @@ $hasActions = $isCurrentView || $isPendingView;
                 <?php endif; ?>
                 <?php endforeach; ?>
                 <?php if ($hasActions): ?>
-                <th scope="col" class="actions"></th>
+                <th scope="col" class="actions"><span class="visually-hidden"><?= __('Actions') ?></span></th>
                 <?php endif; ?>
             </tr>
         </thead>

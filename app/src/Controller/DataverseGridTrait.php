@@ -50,6 +50,9 @@ trait DataverseGridTrait
      *       cleared via query string parameters. Useful for embedded grids where context
      *       filters (e.g., member_id) must always be applied.
      *   - enableBulkSelection (bool): Whether row selection checkboxes are shown (default: false)
+     *   - bulkSelection (array): Bulk selection accessibility label configuration.
+     *       Keys: selectAllLabel, rowLabelTemplate. rowLabelTemplate supports {field_key}
+     *       placeholders resolved from each row, including dotted paths and column renderField aliases.
      *   - bulkActions (array): Array of bulk action button configurations when enableBulkSelection is true.
      *       Each action is an array with keys: label, icon, modalTarget, permission.
      *
@@ -84,6 +87,7 @@ trait DataverseGridTrait
         $enableColumnPicker = $config['enableColumnPicker'] ?? true;
         $lockedFilters = $config['lockedFilters'] ?? [];
         $enableBulkSelection = $config['enableBulkSelection'] ?? false;
+        $bulkSelection = $config['bulkSelection'] ?? [];
         $bulkActions = $config['bulkActions'] ?? [];
 
         // Load column metadata
@@ -797,6 +801,7 @@ trait DataverseGridTrait
             enableColumnPicker: $enableColumnPicker,
             lockedFilters: $lockedFilters,
             enableBulkSelection: $enableBulkSelection,
+            bulkSelection: $bulkSelection,
             bulkActions: $bulkActions,
         );
 
@@ -845,6 +850,7 @@ trait DataverseGridTrait
      * @param bool $enableColumnPicker Whether column picker is available
      * @param array $skipFilterColumns Columns with filter UI but not query application
      * @param array $lockedFilters Filter column keys that cannot be removed by users
+     * @param array $bulkSelection Bulk selection accessibility label configuration
      * @return array Complete grid state
      */
     protected function buildDataverseGridState(
@@ -877,6 +883,7 @@ trait DataverseGridTrait
         bool $enableColumnPicker,
         array $lockedFilters = [],
         bool $enableBulkSelection = false,
+        array $bulkSelection = [],
         array $bulkActions = [],
     ): array {
         // Format views based on whether we're using system or saved views
@@ -1035,6 +1042,7 @@ trait DataverseGridTrait
                 'enableColumnPicker' => $enableColumnPicker,
                 'lockedFilters' => $lockedFilters,
                 'enableBulkSelection' => $enableBulkSelection,
+                'bulkSelection' => $bulkSelection,
                 'bulkActions' => $bulkActions,
             ],
             'dateRangeFilterColumns' => $dateRangeFilterColumns,

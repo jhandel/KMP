@@ -1211,6 +1211,7 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
 
     $authCardUrl = ['controller' => 'Members', 'action' => 'viewMobileCard', 'plugin' => null];
     $authCardUrlBuilt = $this->Url->build($authCardUrl);
+    $logoutUrlBuilt = $this->Url->build(['controller' => 'Members', 'action' => 'logout', 'plugin' => null]);
     ?>
     <main id="main-content" tabindex="-1" data-controller="member-mobile-card-pwa mobile-pin-gate<?= isset($cardUrl) ? ' member-mobile-card-profile' : '' ?><?= !$skipOfflineOverlay ? ' mobile-offline-overlay' : '' ?>"
         <?php if (isset($cardUrl)): ?> data-member-mobile-card-profile-url-value="<?= h($cardUrl) ?>"
@@ -1219,6 +1220,7 @@ $cardUrlForManifest = $currentUser ? $this->Url->build([
         data-member-mobile-card-pwa-auth-card-url-value="<?= h($authCardUrlBuilt) ?>"
         data-member-mobile-card-pwa-is-auth-card-value="<?= $isAuthCard ? 'true' : 'false' ?>"
         data-mobile-pin-gate-email-value="<?= h((string)($currentUser?->email_address ?? '')) ?>"
+        data-mobile-pin-gate-logout-url-value="<?= h($logoutUrlBuilt) ?>"
         <?php if (!$skipOfflineOverlay): ?>
         data-mobile-offline-overlay-auth-card-url-value="<?= h($authCardUrlBuilt) ?>" <?php endif; ?>>
         <div class="mobile-header-bar">

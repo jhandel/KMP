@@ -3655,8 +3655,10 @@ class PopoverController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.
   connect() {
     this.initializePopover();
     this.setupCloseButtonHandler();
+    this.setupEscapeHandler();
   }
   disconnect() {
+    this.removeEscapeHandler();
     this.removeCloseButtonHandler();
     this.destroyPopover();
   }
@@ -3693,6 +3695,15 @@ class PopoverController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.
   removeCloseButtonHandler() {
     document.removeEventListener('click', this.handleCloseClick);
   }
+  setupEscapeHandler() {
+    this.handleEscapeKey = this.handleEscapeKey.bind(this);
+    document.addEventListener('keydown', this.handleEscapeKey);
+  }
+  removeEscapeHandler() {
+    if (this.handleEscapeKey) {
+      document.removeEventListener('keydown', this.handleEscapeKey);
+    }
+  }
   handleCloseClick(event) {
     const closeBtn = event.target.closest('.popover .btn-close, .popover .popover-close-btn');
     if (!closeBtn) return;
@@ -3709,6 +3720,15 @@ class PopoverController extends _hotwired_stimulus__WEBPACK_IMPORTED_MODULE_0__.
     }
     event.preventDefault();
     event.stopPropagation();
+  }
+  handleEscapeKey(event) {
+    if (event.key !== 'Escape') return;
+    if (!this.element.getAttribute('aria-describedby')) return;
+    if (this.popover) {
+      this.popover.hide();
+    }
+    this.element.focus();
+    event.preventDefault();
   }
 
   // Action to programmatically show the popover

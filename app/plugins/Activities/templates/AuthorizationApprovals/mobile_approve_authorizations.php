@@ -60,7 +60,7 @@ $deniedCount = count($denied);
     <ul class="nav approval-tabs mb-3" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending-pane"
-                type="button" role="tab">
+                type="button" role="tab" aria-controls="pending-pane" aria-selected="true">
                 <i class="bi bi-hourglass-split me-1"></i>Pending
                 <?php if ($pendingCount > 0): ?>
                     <span class="badge ms-1"><?= $pendingCount ?></span>
@@ -69,13 +69,13 @@ $deniedCount = count($denied);
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="approved-tab" data-bs-toggle="tab" data-bs-target="#approved-pane"
-                type="button" role="tab">
+                type="button" role="tab" aria-controls="approved-pane" aria-selected="false">
                 <i class="bi bi-check-circle me-1"></i>OK
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="denied-tab" data-bs-toggle="tab" data-bs-target="#denied-pane"
-                type="button" role="tab">
+                type="button" role="tab" aria-controls="denied-pane" aria-selected="false">
                 <i class="bi bi-x-circle me-1"></i>Denied
             </button>
         </li>
@@ -84,7 +84,7 @@ $deniedCount = count($denied);
     <!-- Tabs Content -->
     <div class="tab-content">
         <!-- Pending Approvals -->
-        <div class="tab-pane fade show active" id="pending-pane" role="tabpanel" tabindex="0">
+        <div class="tab-pane fade show active" id="pending-pane" role="tabpanel" aria-labelledby="pending-tab" tabindex="0">
             <?php if (empty($pending)): ?>
                 <div class="empty-state-card">
                     <i class="bi bi-check-circle-fill d-block fs-1 mb-2" style="color: var(--mobile-success);"></i>
@@ -139,7 +139,7 @@ $deniedCount = count($denied);
         </div>
 
         <!-- Approved Authorizations -->
-        <div class="tab-pane fade" id="approved-pane" role="tabpanel" tabindex="0">
+        <div class="tab-pane fade" id="approved-pane" role="tabpanel" aria-labelledby="approved-tab" tabindex="0">
             <?php if (empty($approved)): ?>
                 <div class="empty-state-card">
                     <i class="bi bi-check-circle d-block fs-1 mb-2 text-muted"></i>
@@ -175,7 +175,7 @@ $deniedCount = count($denied);
         </div>
 
         <!-- Denied Authorizations -->
-        <div class="tab-pane fade" id="denied-pane" role="tabpanel" tabindex="0">
+        <div class="tab-pane fade" id="denied-pane" role="tabpanel" aria-labelledby="denied-tab" tabindex="0">
             <?php if (empty($denied)): ?>
                 <div class="empty-state-card">
                     <i class="bi bi-x-circle d-block fs-1 mb-2 text-muted"></i>

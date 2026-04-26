@@ -314,8 +314,8 @@ class GridViewController extends Controller {
             const removeBtn = document.createElement('button')
             removeBtn.type = 'button'
             removeBtn.className = 'btn btn-link p-0 m-0 text-decoration-none d-flex align-items-center justify-content-center'
-            removeBtn.style.cssText = 'width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.1); color: #202223; font-size: 0.7rem; line-height: 1;'
-            removeBtn.setAttribute('aria-label', 'Remove filter')
+            removeBtn.style.cssText = 'width: 24px; height: 24px; min-width: 24px; min-height: 24px; border-radius: 50%; background: rgba(0,0,0,0.1); color: #202223; font-size: 0.7rem; line-height: 1;'
+            removeBtn.setAttribute('aria-label', `Remove filter ${columnLabel}: ${valueLabel}`)
             removeBtn.setAttribute('data-action', 'click->grid-view#removeFilter')
             removeBtn.setAttribute('data-filter-column', column)
             removeBtn.setAttribute('data-filter-value', value)
@@ -323,6 +323,7 @@ class GridViewController extends Controller {
             const icon = document.createElement('i')
             icon.className = 'bi bi-x'
             icon.style.cssText = 'font-size: 0.9rem; font-weight: bold;'
+            icon.setAttribute('aria-hidden', 'true')
             removeBtn.appendChild(icon)
 
             badge.appendChild(removeBtn)
@@ -433,13 +434,14 @@ class GridViewController extends Controller {
         const removeBtn = document.createElement('button')
         removeBtn.type = 'button'
         removeBtn.className = 'btn btn-link p-0 m-0 text-decoration-none d-flex align-items-center justify-content-center'
-        removeBtn.style.cssText = 'width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.1); color: #202223; font-size: 0.7rem; line-height: 1;'
+        removeBtn.style.cssText = 'width: 24px; height: 24px; min-width: 24px; min-height: 24px; border-radius: 50%; background: rgba(0,0,0,0.1); color: #202223; font-size: 0.7rem; line-height: 1;'
         removeBtn.setAttribute('aria-label', 'Remove search')
         removeBtn.setAttribute('data-action', 'click->grid-view#clearSearch')
 
         const icon = document.createElement('i')
         icon.className = 'bi bi-x'
         icon.style.cssText = 'font-size: 0.9rem; font-weight: bold;'
+        icon.setAttribute('aria-hidden', 'true')
         removeBtn.appendChild(icon)
 
         badge.appendChild(removeBtn)
