@@ -390,8 +390,10 @@ trait DataverseGridTrait
                         continue;
                     }
 
-                    // Use queryField if available (for relation columns), otherwise use column key
-                    $fieldToFilter = $columnMeta['queryField'] ?? $columnKey;
+                    // Use filterQueryField for filter value matching when provided.
+                    // This lets relation columns sort/search on a display field while
+                    // filtering against the underlying foreign key value.
+                    $fieldToFilter = $columnMeta['filterQueryField'] ?? $columnMeta['queryField'] ?? $columnKey;
                     $qualifiedField = strpos(
                         $fieldToFilter,
                         '.',
