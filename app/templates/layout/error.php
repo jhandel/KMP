@@ -25,7 +25,7 @@
     </title>
     <?= $this->Html->meta("icon") ?>
 
-    <?= $this->Html->css(["normalize.min", "milligram.min", "fonts", "cake"]) ?>
+    <?= $this->AssetMix->css('error') ?>
 
     <?= $this->fetch("meta") ?>
     <?= $this->fetch("css") ?>
