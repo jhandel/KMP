@@ -501,6 +501,60 @@ class GatheringsController extends AppController
     }
 
     /**
+     * Kingdom Calendar view method
+     *
+     * Displays Kingdom Calendar gatherings in an interactive calendar
+     * Allows users to view, filter, and mark attendance for gatherings.
+     *
+     * @return \Cake\Http\Response|null|void Renders calendar view
+     */
+    public function kingdomCalendar()
+    {
+        $this->Authorization->authorize($this->Gatherings);
+
+        $query = $this->Gatherings
+            ->find('kingdomCalendarEvents')
+            ->contain(['GatheringTypes', 'Branches']);
+
+        $query = $this->Authorization->applyScope($query, 'index');
+
+        $this->set('gatherings', $this->paginate($query));
+    }
+
+    /**
+     * Kingdom Calendar Grid Data method
+     *
+     * Provides grid data for the Kingdom Calendar view
+     *
+     * @return \Cake\Http\Response|null|void Renders grid data
+     */
+    public function kingdomCalendarGridData()
+    {
+        $this->Authorization->authorize($this->Gatherings, 'gridData');
+
+        $query = $this->Gatherings
+            ->find('kingdomCalendarEvents')
+            ->contain(['GatheringTypes', 'Branches']);
+
+        $query = $this->Authorization->applyScope($query, 'index');
+
+        // Use the grid processing from DataverseGridTrait
+        $result = $this->processDataverseGrid(
+            $query,
+            'Gatherings.kingdomCalendar.main',
+            KingdomCalendarGatheringsColumns::class
+        );
+
+        if ($this->request->getHeaderLine('Turbo-Frame')) {
+            $this->set('content', $result['content']);
+            $this->render('cell_grid_content');
+        } else {
+            $this->set($result);
+            $this->render('cell_grid_table');
+        }
+    }
+
+    /**
      * Quick view method for calendar modal
      *
      * Returns a simplified view of a gathering for the calendar quick view modal.

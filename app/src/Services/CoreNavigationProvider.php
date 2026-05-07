@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Services;
@@ -204,6 +205,17 @@ class CoreNavigationProvider
                 'activePaths' => [
                     'Gatherings/view/*',
                 ],
+            ],
+            [
+                'type' => 'link',
+                'mergePath' => ['Gatherings'],
+                'label' => 'Kingdom Calendar',
+                'order' => 5,
+                'url' => [
+                    'controller' => 'Gatherings',
+                    'action' => 'kingdomCalendar',
+                ],
+                'icon' => 'bi-globe',
             ],
             [
                 'type' => 'link',

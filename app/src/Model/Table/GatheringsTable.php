@@ -205,6 +205,10 @@ class GatheringsTable extends Table
             ->requirePresence('created_by', 'create')
             ->notEmptyString('created_by');
 
+        $validator
+            ->boolean('kingdom_calendar_event')
+            ->notEmptyString('kingdom_calendar_event');
+
         return $validator;
     }
 
@@ -273,6 +277,17 @@ class GatheringsTable extends Table
         }
 
         return $query;
+    }
+
+    /**
+     * Find kingdom calendar events
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query object
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findKingdomCalendarEvents(SelectQuery $query): SelectQuery
+    {
+        return $query->where(['Gatherings.kingdom_calendar_event' => true]);
     }
 
     /**

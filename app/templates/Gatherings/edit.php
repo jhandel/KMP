@@ -39,19 +39,19 @@ $this->KMP->endBlock();
         <div class="row">
             <div class="col-md-6 mb-3">
                 <?php if ($lockBranch): ?>
-                    <?= $this->Form->control('branch_id', [
+                <?= $this->Form->control('branch_id', [
                         'options' => $branches,
                         'empty' => false,
                         'required' => true,
                         'class' => 'form-select',
                         'disabled' => true,
                     ]) ?>
-                    <?= $this->Form->hidden('branch_id', ['value' => $gathering->branch_id]) ?>
-                    <small class="form-text text-muted">
-                        <?= __('Branch cannot be changed based on your permissions.') ?>
-                    </small>
+                <?= $this->Form->hidden('branch_id', ['value' => $gathering->branch_id]) ?>
+                <small class="form-text text-muted">
+                    <?= __('Branch cannot be changed based on your permissions.') ?>
+                </small>
                 <?php elseif ($branchCount > 1): ?>
-                    <?php
+                <?php
                     $acAttrs = [];
                     if (!empty($gathering->branch_id) && !empty($gathering->branch)) {
                         $acAttrs['data-ac-init-selection-value'] = json_encode([
@@ -71,7 +71,7 @@ $this->KMP->endBlock();
                     );
                     ?>
                 <?php else: ?>
-                    <?= $this->Form->control('branch_id', [
+                <?= $this->Form->control('branch_id', [
                         'options' => $branches,
                         'empty' => __('-- Select Branch --'),
                         'required' => true,
@@ -188,6 +188,19 @@ $this->KMP->endBlock();
                 </label>
                 <small class="form-text text-muted d-block">
                     <?= __('Allow public access to this gathering\'s event page (includes schedule, activities, and staff information)') ?>
+                </small>
+            </div>
+            <div class="form-check">
+                <?= $this->Form->checkbox('kingdom_calendar_enabled', [
+                    'checked' => true,
+                    'id' => 'kingdom_calendar_enabled',
+                    'class' => 'form-check-input'
+                ]) ?>
+                <label class="form-check-label" for="kingdom_calendar_enabled">
+                    <?= __('Kingdom Calendar Event') ?>
+                </label>
+                <small class="form-text text-muted d-block">
+                    <?= __('Add or remove this event on the Kingdom Calendar') ?>
                 </small>
             </div>
         </div>

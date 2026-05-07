@@ -40,16 +40,16 @@ $this->KMP->endBlock();
         <div class="row">
             <div class="col-md-6 mb-3">
                 <?php if ($lockBranch): ?>
-                    <?= $this->Form->control('branch_id', [
+                <?= $this->Form->control('branch_id', [
                         'options' => $branches,
                         'empty' => false,
                         'required' => true,
                         'class' => 'form-select',
                         'disabled' => true,
                     ]) ?>
-                    <?= $this->Form->hidden('branch_id', ['value' => $gathering->branch_id]) ?>
+                <?= $this->Form->hidden('branch_id', ['value' => $gathering->branch_id]) ?>
                 <?php elseif ($branchCount > 1): ?>
-                    <?= $this->KMP->comboBoxControl(
+                <?= $this->KMP->comboBoxControl(
                         $this->Form,
                         'branch_name',
                         'branch_id',
@@ -60,7 +60,7 @@ $this->KMP->endBlock();
                         []
                     ) ?>
                 <?php else: ?>
-                    <?= $this->Form->control('branch_id', [
+                <?= $this->Form->control('branch_id', [
                         'options' => $branches,
                         'empty' => __('-- Select Branch --'),
                         'required' => true,
@@ -178,6 +178,19 @@ $this->KMP->endBlock();
                 </label>
                 <small class="form-text text-muted d-block">
                     <?= __('Allow public access to this gathering\'s event page (includes schedule, activities, and staff information)') ?>
+                </small>
+            </div>
+            <div class="form-check">
+                <?= $this->Form->checkbox('kingdom_calendar_enabled', [
+                    'checked' => true,
+                    'id' => 'kingdom_calendar_enabled',
+                    'class' => 'form-check-input'
+                ]) ?>
+                <label class="form-check-label" for="kingdom_calendar_enabled">
+                    <?= __('Kingdom Calendar Event') ?>
+                </label>
+                <small class="form-text text-muted d-block">
+                    <?= __('Add or remove this event on the Kingdom Calendar') ?>
                 </small>
             </div>
         </div>

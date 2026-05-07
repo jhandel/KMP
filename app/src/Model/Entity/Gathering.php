@@ -75,6 +75,7 @@ class Gathering extends BaseEntity
         'published' => false,
         'published_by' => false,
         'published_on' => false,
+        'kingdom_calendar_event' => false,
     ];
 
     /**
