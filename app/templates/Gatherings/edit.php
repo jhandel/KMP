@@ -191,12 +191,12 @@ $this->KMP->endBlock();
                 </small>
             </div>
             <div class="form-check">
-                <?= $this->Form->checkbox('kingdom_calendar_enabled', [
-                    'checked' => true,
-                    'id' => 'kingdom_calendar_enabled',
+                <?= $this->Form->checkbox('kingdom_calendar_event', [
+                    'checked' => false,
+                    'id' => 'kingdom_calendar_event',
                     'class' => 'form-check-input'
                 ]) ?>
-                <label class="form-check-label" for="kingdom_calendar_enabled">
+                <label class="form-check-label" for="kingdom_calendar_event">
                     <?= __('Kingdom Calendar Event') ?>
                 </label>
                 <small class="form-text text-muted d-block">

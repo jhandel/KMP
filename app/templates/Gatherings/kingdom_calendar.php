@@ -23,7 +23,7 @@ $this->KMP->endBlock();
     </div>
     <div class="col text-end">
         <?= $this->Html->link(
-            '<i class="bi bi-calendar-event"></i> Calendar View',
+            '<i class="bi bi-calendar-event"></i> AMP Gatherings',
             ['action' => 'calendar'],
             ['class' => 'btn btn-info', 'escape' => false]
         ) ?>
