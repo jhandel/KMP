@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\KMP\GridColumns\GatheringsGridColumns;
-use App\KMP\GridColumns\KingdomCalendarGatheringsGridColumns;
 use App\KMP\TimezoneHelper;
 use App\Services\CsvExportService;
 use App\Services\GatheringActivityService;
@@ -65,7 +64,6 @@ class GatheringsController extends AppController
             'gridData',
             'calendar',
             'calendarGridData',
-            'kingdomCalendarGridData',
             'mobileCalendar',
             'mobileCalendarData',
         );
@@ -512,104 +510,23 @@ class GatheringsController extends AppController
      */
     public function kingdomCalendar()
     {
-        $this->Authorization->authorize($this->Gatherings);
+        $securityGathering = $this->Gatherings->newEmptyEntity();
+        $this->Authorization->authorize($securityGathering, 'index');
 
         $query = $this->Gatherings
             ->find('kingdomCalendarEvents')
-            ->contain(['GatheringTypes', 'Branches']);
+            ->contain([
+                'GatheringTypes' => ['fields' => ['id', 'name', 'color']],
+                'Branches' => ['fields' => ['id', 'name']],
+                'GatheringActivities' => ['fields' => ['id', 'name']],
+                'GatheringAttendances' => [
+                    'fields' => ['id', 'gathering_id', 'member_id'],
+                ],
+            ]);
 
         $query = $this->Authorization->applyScope($query, 'index');
 
         $this->set('gatherings', $this->paginate($query));
-    }
-
-    /**
-     * Kingdom Calendar Grid Data method
-     *
-     * Provides grid data for the Kingdom Calendar view
-     *
-     * @return \Cake\Http\Response|null|void Renders grid data
-     */
-    public function kingdomCalendarGridData(CsvExportService $csvExportService)
-    {
-        $securityGathering = $this->Gatherings->newEmptyEntity();
-        $this->Authorization->authorize($securityGathering, 'index');
-
-        $currentUser = $this->Authentication->getIdentity();
-        $userTimezone = TimezoneHelper::getUserTimezone($currentUser);
-
-        $baseQuery = $this->Gatherings->find('kingdomCalendarEvents')
-            ->select([
-                'Gatherings.id',
-                'Gatherings.public_id',
-                'Gatherings.name',
-                'Gatherings.branch_id',
-                'Gatherings.gathering_type_id',
-                'Gatherings.start_date',
-                'Gatherings.end_date',
-                'Gatherings.location',
-                'Gatherings.cancelled_at',
-                'Gatherings.created',
-                'Gatherings.modified',
-            ])
-            ->contain([
-                'Branches' => ['fields' => ['id', 'name']],
-                'GatheringTypes' => ['fields' => ['id', 'name']],
-                'GatheringActivities' => ['fields' => ['GatheringActivities.id', 'GatheringActivities.name']],
-                'Creators' => ['fields' => ['id', 'sca_name']],
-            ])
-            ->leftJoinWith('GatheringActivities')
-            ->distinct();
-
-        $result = $this->processDataverseGrid([
-            'gridKey' => 'Gatherings.kingdomCalendar.main',
-            'gridColumnsClass' => KingdomCalendarGatheringsGridColumns::class,
-            'baseQuery' => $baseQuery,
-            'tableName' => 'Gatherings',
-            'defaultSort' => ['Gatherings.start_date' => 'DESC'],
-            'defaultPageSize' => 25,
-            'showAllTab' => false,
-            'canAddViews' => false,
-            'canFilter' => true,
-            'canExportCsv' => true,
-            'showFilterPills' => true,
-        ]);
-
-        if (!empty($result['isCsvExport'])) {
-            return $this->handleCsvExport($result, $csvExportService, 'kingdom-gatherings');
-        }
-
-        // Set view variables for dv_grid_* elements
-        $this->set([
-            'data' => $result['data'],
-            'gatherings' => $result['data'],
-            'gridState' => $result['gridState'],
-            'rowActions' => KingdomCalendarGatheringsGridColumns::getRowActions(),
-        ]);
-
-        // Build URLs for grid
-        $queryParams = $this->request->getQueryParams();
-        $dataUrl = Router::url(['action' => 'kingdomCalendarGridData']);
-        $tableDataUrl = $dataUrl;
-        if (!empty($queryParams)) {
-            $tableDataUrl .= '?' . http_build_query($queryParams);
-        }
-
-        // Determine which template to render based on Turbo-Frame header
-        $turboFrame = $this->request->getHeaderLine('Turbo-Frame');
-        $frameId = 'kingdom-calendar-grid';
-
-        if ($turboFrame === $frameId . '-table') {
-            $this->set('tableFrameId', $frameId . '-table');
-            $this->viewBuilder()->disableAutoLayout();
-            $this->viewBuilder()->setTemplate('../element/dv_grid_table');
-        } else {
-            $this->set('frameId', $frameId);
-            $this->set('dataUrl', $dataUrl);
-            $this->set('tableDataUrl', $tableDataUrl);
-            $this->viewBuilder()->disableAutoLayout();
-            $this->viewBuilder()->setTemplate('../element/dv_grid_content');
-        }
     }
 
     /**

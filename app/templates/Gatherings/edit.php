@@ -190,9 +190,10 @@ $this->KMP->endBlock();
                     <?= __('Allow public access to this gathering\'s event page (includes schedule, activities, and staff information)') ?>
                 </small>
             </div>
+        </div>
+        <div class="mb-3">
             <div class="form-check">
                 <?= $this->Form->checkbox('kingdom_calendar_event', [
-                    'checked' => false,
                     'id' => 'kingdom_calendar_event',
                     'class' => 'form-check-input'
                 ]) ?>
