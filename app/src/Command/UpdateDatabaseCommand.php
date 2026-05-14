@@ -3,20 +3,20 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use App\KMP\KMPPluginInterface;
+use App\Services\Tenant\TenantMigrationService;
 use Cake\Command\Command;
-use Cake\Command\SchemacacheClearCommand;
 use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
 use Cake\Console\ConsoleOptionParser;
-use Cake\Core\Plugin;
-use Migrations\Command\MigrateCommand as Migrate;
+use Throwable;
 
 /**
  * RevertDatabase command.
  */
 class UpdateDatabaseCommand extends Command
 {
+    use TenantAwareCommandTrait;
+
     /**
      * Hook method for defining this command's option parser.
      *
@@ -30,7 +30,13 @@ class UpdateDatabaseCommand extends Command
             ->addOption('plugin', [
                 'short' => 'p',
                 'help' => 'The plugin to run migrations for',
+            ])
+            ->addOption('connection', [
+                'short' => 'c',
+                'help' => 'Datasource connection to migrate.',
+                'default' => 'default',
             ]);
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -44,27 +50,36 @@ class UpdateDatabaseCommand extends Command
      */
     public function execute(Arguments $args, ConsoleIo $io): ?int
     {
-        $items = Plugin::getCollection();
-        $pluginsToMigrate = [];
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): ?int => $this->executeForTenant($args, $io),
+        );
+    }
 
-        foreach ($items as $name => $plugin) {
-            if ($plugin instanceof KMPPluginInterface) {
-                $pluginsToMigrate[$name] = $plugin->getMigrationOrder();
-            } else {
-                //check if the path of the plugin includes a config/migrations folder
-                if (is_dir($plugin->getPath() . 'config' . DS . 'Migrations')) {
-                    $pluginsToMigrate[$name] = 100;
-                }
+    /**
+     * Execute migrations with an already configured tenant connection when selected.
+     *
+     * @param \Cake\Console\Arguments $args The command arguments.
+     * @param \Cake\Console\ConsoleIo $io The console io
+     * @return int|null|void The exit code or null for success
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): ?int
+    {
+        $service = new TenantMigrationService();
+        $connection = $args->getOption('tenant') || $args->getOption('all-tenants')
+            ? 'tenant'
+            : ($args->getOption('connection') ?: 'default');
+        $plugin = $args->getOption('plugin');
+
+        try {
+            foreach ($service->migrate((string)$connection, $plugin === null ? null : (string)$plugin) as $scope) {
+                $io->out(sprintf('Migrated %s on %s.', $scope, $connection));
             }
-        }
-        //sort
-        asort($pluginsToMigrate);
-        $this->executeCommand(SchemacacheClearCommand::class, ['--connection', 'default'], $io);
-        $frameworkMigration = new Migrate();
-        $this->executeCommand($frameworkMigration, ['migrate']);
-        foreach ($pluginsToMigrate as $name => $order) {
-            $pluginMigration = new Migrate();
-            $this->executeCommand($pluginMigration, ['migrate', '-p', $name]);
+        } catch (Throwable $e) {
+            $io->error($e->getMessage());
+
+            return Command::CODE_ERROR;
         }
 
         return Command::CODE_SUCCESS;

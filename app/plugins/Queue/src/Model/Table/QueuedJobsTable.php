@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Queue\Model\Table;
 
 use ArrayObject;
+use App\Services\Tenant\TenantContext;
 use Cake\Core\Configure;
 use Cake\Core\Plugin;
 use Cake\Event\EventInterface;
@@ -251,6 +252,7 @@ class QueuedJobsTable extends BaseTable
 		if ($data !== null && !is_array($data)) {
 			throw new InvalidArgumentException('Data must be `array|null`, implement `' . FromArrayToArrayInterface::class . '` or provide a `toArray()` method');
 		}
+		$data = $this->withTenantContext($data);
 
 		$queuedJob = [
 			'job_task' => $this->jobTask($jobTask),
@@ -265,6 +267,33 @@ class QueuedJobsTable extends BaseTable
 		$queuedJob = $this->newEntity($queuedJob);
 
 		return $this->saveOrFail($queuedJob);
+	}
+
+	/**
+	 * Add ambient tenant identity to job payloads so workers can verify context.
+	 *
+	 * @param array<string, mixed>|null $data Job data
+	 * @return array<string, mixed>|null
+	 */
+	protected function withTenantContext(?array $data): ?array
+	{
+		$context = TenantContext::getCurrent();
+		if ($context === null) {
+			return $data;
+		}
+
+		$data ??= [];
+		$data['__tenant_context'] = [
+			'id' => $context->id,
+			'slug' => $context->slug,
+			'displayName' => $context->displayName,
+			'status' => $context->status,
+			'schemaVersion' => $context->schemaVersion,
+			'primaryHost' => $context->primaryHost,
+			'resolvedHost' => $context->resolvedHost,
+		];
+
+		return $data;
 	}
 
 	/**

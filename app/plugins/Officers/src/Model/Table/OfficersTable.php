@@ -6,7 +6,6 @@ namespace Officers\Model\Table;
 
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
 use Cake\Validation\Validator;
 use App\KMP\StaticHelpers;

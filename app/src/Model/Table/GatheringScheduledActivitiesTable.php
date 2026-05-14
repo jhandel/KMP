@@ -7,7 +7,6 @@ use App\KMP\TimezoneHelper;
 use Cake\I18n\DateTime;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 
 /**
@@ -31,7 +30,7 @@ use Cake\Validation\Validator;
  * @method \App\Model\Entity\GatheringScheduledActivity|false save(\Cake\Datasource\EntityInterface $entity, array $options = [])
  * @method \App\Model\Entity\GatheringScheduledActivity saveOrFail(\Cake\Datasource\EntityInterface $entity, array $options = [])
  */
-class GatheringScheduledActivitiesTable extends Table
+class GatheringScheduledActivitiesTable extends BaseTable
 {
     /**
      * Initialize method

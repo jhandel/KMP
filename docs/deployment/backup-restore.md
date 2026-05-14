@@ -14,6 +14,12 @@ Protect your KMP data with automated and on-demand backups.
 
 ## Creating Backups
 
+### Multi-Tenant Backups
+
+Managed multi-tenant environments back up tenant databases independently. Run backup commands under an explicit tenant context and verify the generated backup path includes the tenant slug. The platform registry datastore should have its own operational backup schedule because it contains tenant routing/provisioning metadata, not member data.
+
+Restore one tenant at a time and confirm the target tenant database before importing data. Never restore tenant data into the platform datastore.
+
 ### Using the Management Tool
 
 ```bash

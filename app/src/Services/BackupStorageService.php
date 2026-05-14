@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\Tenant\TenantContext;
 use Aws\S3\S3Client;
 use AzureOss\FlysystemAzureBlobStorage\AzureBlobStorageAdapter;
 use AzureOss\Storage\Blob\BlobServiceClient;
@@ -38,6 +39,7 @@ class BackupStorageService
      */
     public function write(string $filename, string $data): void
     {
+        $filename = $this->tenantPath($filename);
         try {
             $this->filesystem->write($filename, $data);
         } catch (UnableToWriteFile $e) {
@@ -58,6 +60,8 @@ class BackupStorageService
      */
     public function read(string $filename): string
     {
+        $filename = $this->tenantPath($filename);
+
         return $this->filesystem->read($filename);
     }
 
@@ -66,6 +70,7 @@ class BackupStorageService
      */
     public function delete(string $filename): void
     {
+        $filename = $this->tenantPath($filename);
         $this->filesystem->delete($filename);
     }
 
@@ -74,6 +79,8 @@ class BackupStorageService
      */
     public function exists(string $filename): bool
     {
+        $filename = $this->tenantPath($filename);
+
         return $this->filesystem->fileExists($filename);
     }
 
@@ -85,7 +92,8 @@ class BackupStorageService
     public function listFiles(): array
     {
         $files = [];
-        $listing = $this->filesystem->listContents('', false);
+        $prefix = $this->tenantStoragePrefix();
+        $listing = $this->filesystem->listContents(rtrim($prefix, '/'), $prefix !== '');
         foreach ($listing as $item) {
             if ($item->isFile()) {
                 $files[] = $item->path();
@@ -102,6 +110,39 @@ class BackupStorageService
     public function getAdapterType(): string
     {
         return $this->adapter;
+    }
+
+    /**
+     * Build a tenant-specific backup path/filename.
+     */
+    public function buildBackupFilename(?int $timestamp = null): string
+    {
+        $context = TenantContext::getCurrent();
+        $time = date('Ymd-His', $timestamp ?? time());
+        $basename = $context === null
+            ? "kmp-backup-{$time}.kmpbackup"
+            : sprintf('kmp-backup-%s-%s.kmpbackup', $this->safeTenantSlug($context->slug), $time);
+
+        return $this->tenantPath($basename);
+    }
+
+    /**
+     * Return current tenant metadata for backup records/payloads.
+     *
+     * @return array<string, mixed>
+     */
+    public function getTenantMetadata(): array
+    {
+        $context = TenantContext::getCurrent();
+        if ($context === null) {
+            return [];
+        }
+
+        return [
+            'tenant_id' => $context->id,
+            'tenant_slug' => $context->slug,
+            'tenant_display_name' => $context->displayName,
+        ];
     }
 
     /**
@@ -199,5 +240,43 @@ class BackupStorageService
 
         $adapter = new LocalFilesystemAdapter($backupDir);
         $this->filesystem = new FlysystemFilesystem($adapter);
+    }
+
+    /**
+     * Apply the active tenant namespace to a backup storage path.
+     */
+    private function tenantPath(string $filename): string
+    {
+        $filename = ltrim(str_replace('\\', '/', $filename), '/');
+        $prefix = $this->tenantStoragePrefix();
+        if ($prefix === '' || str_starts_with($filename, $prefix)) {
+            return $filename;
+        }
+
+        return $prefix . $filename;
+    }
+
+    /**
+     * Return the tenant storage namespace prefix, or empty string in legacy mode.
+     */
+    private function tenantStoragePrefix(): string
+    {
+        $context = TenantContext::getCurrent();
+        if ($context === null) {
+            return '';
+        }
+
+        return 'tenants/' . $this->safeTenantSlug($context->slug) . '/';
+    }
+
+    /**
+     * Normalize a tenant slug for object/file paths.
+     */
+    private function safeTenantSlug(string $slug): string
+    {
+        $safe = strtolower(preg_replace('/[^a-zA-Z0-9_-]+/', '-', $slug) ?? '');
+        $safe = trim($safe, '-_');
+
+        return $safe !== '' ? $safe : 'tenant';
     }
 }

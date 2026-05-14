@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\Model\Entity\ActiveWindowBaseEntity;
+use App\Services\WorkflowEngine\DefaultWorkflowEngine;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Services\WorkflowEngine\WorkflowDefinitionFinderTrait;
 use Cake\Command\Command;
@@ -11,6 +12,7 @@ use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
 use Cake\Console\ConsoleOptionParser;
 use Cake\Core\App;
+use Cake\Core\Container;
 use Cake\Core\Plugin;
 use Cake\I18n\FrozenTime;
 use Cake\Log\Log;
@@ -35,6 +37,8 @@ use Throwable;
 class SyncActiveWindowStatusesCommand extends Command
 {
     use WorkflowDefinitionFinderTrait;
+    use TenantAwareCommandTrait;
+
     /**
      * Injected dispatcher — null means createTriggerDispatcher() will be called.
      *
@@ -60,8 +64,8 @@ class SyncActiveWindowStatusesCommand extends Command
      */
     protected function createTriggerDispatcher(): TriggerDispatcher
     {
-        $container = \Cake\Core\Container::create();
-        $engine = new \App\Services\WorkflowEngine\DefaultWorkflowEngine($container);
+        $container = Container::create();
+        $engine = new DefaultWorkflowEngine($container);
 
         return new TriggerDispatcher($engine);
     }
@@ -79,6 +83,7 @@ class SyncActiveWindowStatusesCommand extends Command
             'default' => false,
             'help' => 'Preview changes without saving updates to the database.',
         ]);
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -91,6 +96,22 @@ class SyncActiveWindowStatusesCommand extends Command
      * @return int
      */
     public function execute(Arguments $args, ConsoleIo $io): int
+    {
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): int => $this->executeForTenant($args, $io),
+        );
+    }
+
+    /**
+     * Execute command with an already configured tenant connection.
+     *
+     * @param \Cake\Console\Arguments $args Console arguments instance.
+     * @param \Cake\Console\ConsoleIo $io Console IO instance.
+     * @return int
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): int
     {
         $dryRun = (bool)$args->getOption('dry-run');
 
@@ -145,7 +166,10 @@ class SyncActiveWindowStatusesCommand extends Command
                 }
 
                 $dispatcher = $dispatcher ?? ($this->triggerDispatcher ?? $this->createTriggerDispatcher());
-                $io->info(sprintf('Active "active-window-sync" workflow found for kingdom: %s. Dispatching...', $kingdom->name));
+                $io->info(sprintf(
+                    'Active "active-window-sync" workflow found for kingdom: %s. Dispatching...',
+                    $kingdom->name,
+                ));
 
                 $results = $dispatcher->dispatch('ActiveWindow.SyncTriggered', [
                     'triggered_at' => date('c'),
@@ -160,7 +184,11 @@ class SyncActiveWindowStatusesCommand extends Command
                     }
                 }
 
-                $io->success(sprintf('Workflow dispatched for %s (started %d workflow(s)).', $kingdom->name, $successCount));
+                $io->success(sprintf(
+                    'Workflow dispatched for %s (started %d workflow(s)).',
+                    $kingdom->name,
+                    $successCount,
+                ));
                 $dispatched = true;
             }
 
@@ -199,7 +227,7 @@ class SyncActiveWindowStatusesCommand extends Command
             }
 
             return $dispatched;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('SyncActiveWindowStatusesCommand: Workflow dispatch failed: ' . $e->getMessage());
             $io->warning('Workflow dispatch failed, falling back to legacy logic.');
 

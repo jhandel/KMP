@@ -128,6 +128,36 @@ return function (RouteBuilder $routes): void {
             "action" => "index",
         ]);
 
+        $builder->scope('/platform-admin', function (RouteBuilder $builder): void {
+            $builder->connect('/', ['controller' => 'PlatformAdmin', 'action' => 'index']);
+            $builder->connect('/login', ['controller' => 'PlatformAdmin', 'action' => 'login']);
+            $builder->connect('/logout', ['controller' => 'PlatformAdmin', 'action' => 'logout']);
+            $builder->connect('/change-password', ['controller' => 'PlatformAdmin', 'action' => 'changePassword']);
+            $builder->connect('/tenants/create', ['controller' => 'PlatformAdmin', 'action' => 'createTenant']);
+            $builder->connect('/tenants/{slug}', ['controller' => 'PlatformAdmin', 'action' => 'viewTenant'])
+                ->setPass(['slug'])
+                ->setPatterns(['slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]']);
+            $builder->connect(
+                '/tenants/{slug}/status/{status}',
+                ['controller' => 'PlatformAdmin', 'action' => 'setTenantStatus'],
+            )
+                ->setPass(['slug', 'status'])
+                ->setPatterns([
+                    'slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]',
+                    'status' => 'active|disabled|maintenance|failed|provisioning',
+                ]);
+            $builder->connect('/tenants/{slug}/backup', ['controller' => 'PlatformAdmin', 'action' => 'createBackup'])
+                ->setPass(['slug'])
+                ->setPatterns(['slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]']);
+            $builder->connect('/tenants/{slug}/restore', ['controller' => 'PlatformAdmin', 'action' => 'restoreBackup'])
+                ->setPass(['slug'])
+                ->setPatterns(['slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]']);
+            $builder->connect('/tenants/{slug}/secrets', ['controller' => 'PlatformAdmin', 'action' => 'updateTenantSecrets'])
+                ->setPass(['slug'])
+                ->setPatterns(['slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]']);
+            $builder->connect('/audit', ['controller' => 'PlatformAdmin', 'action' => 'audit']);
+        });
+
         /**
          * Homepage Route
          * 

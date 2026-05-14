@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Queue\Command;
 
+use App\Command\TenantAwareCommandTrait;
 use Cake\Command\Command;
 use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
@@ -11,6 +12,8 @@ use Queue\Console\Io;
 use Queue\Queue\TaskFinder;
 
 class AddCommand extends Command {
+
+	use TenantAwareCommandTrait;
 
 	/**
 	 * @inheritDoc
@@ -36,6 +39,7 @@ class AddCommand extends Command {
 		$parser->setDescription(
 			'Adds a job into the queue. Only tasks that implement AddInterface can be added through CLI.',
 		);
+		$this->addTenantOptions($parser);
 
 		return $parser;
 	}
@@ -47,27 +51,31 @@ class AddCommand extends Command {
 	 * @return int|null|void
 	 */
 	public function execute(Arguments $args, ConsoleIo $io) {
-		$tasks = $this->getTasks();
+		return $this->runTenantAware($args, $io, function (Arguments $args, ConsoleIo $io): int {
+			$tasks = $this->getTasks();
 
-		$taskName = $args->getArgument('task');
-		if (!$taskName) {
-			$io->out(count($tasks) . ' tasks available:');
-			foreach ($tasks as $task => $className) {
-				$io->out(' - ' . $task);
+			$taskName = $args->getArgument('task');
+			if (!$taskName) {
+				$io->out(count($tasks) . ' tasks available:');
+				foreach ($tasks as $task => $className) {
+					$io->out(' - ' . $task);
+				}
+
+				return static::CODE_SUCCESS;
 			}
 
-			return;
-		}
+			if (!array_key_exists($taskName, $tasks)) {
+				$io->abort('Not a supported task.');
+			}
 
-		if (!array_key_exists($taskName, $tasks)) {
-			$io->abort('Not a supported task.');
-		}
+			/** @var class-string<\Queue\Queue\AddInterface> $taskClass */
+			$taskClass = $tasks[$taskName];
+			/** @var \Queue\Queue\AddInterface $task */
+			$task = new $taskClass(new Io($io));
+			$task->add($args->getArgument('data'));
 
-		/** @var class-string<\Queue\Queue\AddInterface> $taskClass */
-		$taskClass = $tasks[$taskName];
-		/** @var \Queue\Queue\AddInterface $task */
-		$task = new $taskClass(new Io($io));
-		$task->add($args->getArgument('data'));
+			return static::CODE_SUCCESS;
+		});
 	}
 
 	/**

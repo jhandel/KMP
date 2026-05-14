@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace App\Model\Table;
 
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 
 /**
@@ -22,7 +21,7 @@ use Cake\Validation\Validator;
  * @method \App\Model\Entity\GatheringType|false save(\Cake\Datasource\EntityInterface $entity, array $options = [])
  * @method \App\Model\Entity\GatheringType saveOrFail(\Cake\Datasource\EntityInterface $entity, array $options = [])
  */
-class GatheringTypesTable extends Table
+class GatheringTypesTable extends BaseTable
 {
     /**
      * Initialize method

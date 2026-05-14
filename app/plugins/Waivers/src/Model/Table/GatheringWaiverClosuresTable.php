@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 namespace Waivers\Model\Table;
 
+use App\Model\Table\BaseTable;
 use Cake\I18n\DateTime;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 use Waivers\Model\Entity\GatheringWaiverClosure;
 
@@ -20,7 +20,7 @@ use Waivers\Model\Entity\GatheringWaiverClosure;
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $ClosedByMembers
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $ReadyToCloseByMembers
  */
-class GatheringWaiverClosuresTable extends Table
+class GatheringWaiverClosuresTable extends BaseTable
 {
     /**
      * Initialize method

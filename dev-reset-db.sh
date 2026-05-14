@@ -34,7 +34,13 @@ if ! docker compose ps --status running | grep -q "kmp-app"; then
 fi
 
 # Get database credentials from compose
-DB_NAME="${MYSQL_DB_NAME:-KMP_DEV}"
+TENANT_SLUG="${DEV_TENANT_SLUG:-localdev}"
+PLATFORM_ADMIN_SEED_EMAIL="${PLATFORM_ADMIN_SEED_EMAIL:-platform-admin@localhost.test}"
+if [ "$PLATFORM_ADMIN_SEED_EMAIL" = "platform-admin@localhost" ]; then
+    PLATFORM_ADMIN_SEED_EMAIL="platform-admin@localhost.test"
+fi
+DB_NAME="${TENANT_DB_DATABASE:-${MYSQL_DB_NAME:-KMP_DEV}}"
+PLATFORM_DB_NAME="${PLATFORM_DB_DATABASE:-KMP_PLATFORM}"
 DB_USER="${MYSQL_USERNAME:-KMPSQLDEV}"
 DB_PASS="${MYSQL_PASSWORD:-P@ssw0rd}"
 
@@ -44,8 +50,10 @@ DROP DATABASE IF EXISTS ${DB_NAME};
 CREATE DATABASE ${DB_NAME} COLLATE utf8_unicode_ci;
 DROP DATABASE IF EXISTS ${DB_NAME}_test;
 CREATE DATABASE ${DB_NAME}_test COLLATE utf8_unicode_ci;
+CREATE DATABASE IF NOT EXISTS ${PLATFORM_DB_NAME} COLLATE utf8_unicode_ci;
 GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'%';
 GRANT ALL PRIVILEGES ON ${DB_NAME}_test.* TO '${DB_USER}'@'%';
+GRANT ALL PRIVILEGES ON ${PLATFORM_DB_NAME}.* TO '${DB_USER}'@'%';
 FLUSH PRIVILEGES;
 EOF
 
@@ -65,6 +73,23 @@ fi
 
 echo "[4/5] Running updateDatabase..."
 docker compose exec -T app bin/cake updateDatabase || echo "  (updateDatabase command may not exist yet)"
+
+echo "[post] Preparing platform tenant registry..."
+docker compose exec -T app bin/cake platform:migrate
+docker compose exec -T app bin/cake platform_admin:seed --email="${PLATFORM_ADMIN_SEED_EMAIL}"
+docker compose exec -T app bin/cake tenant:create "${TENANT_SLUG}" \
+    --display-name="Local Development" \
+    --primary-host=localhost \
+    --alias=127.0.0.1 \
+    --alias=kmp.localhost \
+    --database-name="${DB_NAME}" \
+    --host="${TENANT_DB_HOST:-db}" \
+    --username="${DB_USER}" \
+    --secret-reference=env:TENANT_DB_PASSWORD \
+    --email-config-json='{"transport":{"host":"mailpit","port":1025,"username":"","tls":false},"email":{"from":"noreply@localhost"}}' \
+    --storage-adapter=local \
+    --storage-config-json='{"local":{"path":"/var/www/html/tmp/tenant-storage/localdev"}}' \
+    --activate
 
 echo "[5/5] Resetting all member passwords to TestPassword..."
 docker compose exec -T app php -r '

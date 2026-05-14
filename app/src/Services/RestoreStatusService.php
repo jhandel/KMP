@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\Tenant\TenantContext;
 use Cake\Cache\Cache;
 use DateTimeImmutable;
 use DateTimeInterface;
@@ -37,7 +38,7 @@ class RestoreStatusService
             'expires_at' => $expiresAt,
         ];
 
-        if (!Cache::add(self::LOCK_KEY, array_merge($lockPayload, $context), self::CACHE_CONFIG)) {
+        if (!Cache::add($this->cacheKey(self::LOCK_KEY), array_merge($lockPayload, $context), self::CACHE_CONFIG)) {
             return false;
         }
 
@@ -64,7 +65,7 @@ class RestoreStatusService
      */
     public function releaseLock(): void
     {
-        Cache::delete(self::LOCK_KEY, self::CACHE_CONFIG);
+        Cache::delete($this->cacheKey(self::LOCK_KEY), self::CACHE_CONFIG);
     }
 
     /**
@@ -97,7 +98,7 @@ class RestoreStatusService
      */
     public function markCompleted(string $message, array $context = []): void
     {
-        Cache::delete(self::LOCK_KEY, self::CACHE_CONFIG);
+        Cache::delete($this->cacheKey(self::LOCK_KEY), self::CACHE_CONFIG);
         $now = $this->nowIso();
         $status = $this->readStatus();
 
@@ -123,7 +124,7 @@ class RestoreStatusService
      */
     public function markFailed(string $message, array $context = []): void
     {
-        Cache::delete(self::LOCK_KEY, self::CACHE_CONFIG);
+        Cache::delete($this->cacheKey(self::LOCK_KEY), self::CACHE_CONFIG);
         $now = $this->nowIso();
         $status = $this->readStatus();
 
@@ -161,7 +162,7 @@ class RestoreStatusService
                 )
             ) {
                 $now = $this->nowIso();
-                Cache::delete(self::LOCK_KEY, self::CACHE_CONFIG);
+                Cache::delete($this->cacheKey(self::LOCK_KEY), self::CACHE_CONFIG);
                 $status['locked'] = false;
                 $status['status'] = 'failed';
                 $status['phase'] = 'stalled';
@@ -244,7 +245,7 @@ class RestoreStatusService
      */
     private function readStatus(): array
     {
-        $status = Cache::read(self::STATUS_KEY, self::CACHE_CONFIG);
+        $status = Cache::read($this->cacheKey(self::STATUS_KEY), self::CACHE_CONFIG);
         if (!is_array($status)) {
             return $this->defaultStatus();
         }
@@ -257,13 +258,13 @@ class RestoreStatusService
      */
     private function readActiveLock(): ?array
     {
-        $lock = Cache::read(self::LOCK_KEY, self::CACHE_CONFIG);
+        $lock = Cache::read($this->cacheKey(self::LOCK_KEY), self::CACHE_CONFIG);
         if (!is_array($lock)) {
             return null;
         }
 
         if ($this->isExpired((string)($lock['expires_at'] ?? ''))) {
-            Cache::delete(self::LOCK_KEY, self::CACHE_CONFIG);
+            Cache::delete($this->cacheKey(self::LOCK_KEY), self::CACHE_CONFIG);
 
             return null;
         }
@@ -286,7 +287,12 @@ class RestoreStatusService
      */
     private function writeStatus(array $status): void
     {
-        Cache::write(self::STATUS_KEY, $status, self::CACHE_CONFIG);
+        Cache::write($this->cacheKey(self::STATUS_KEY), $status, self::CACHE_CONFIG);
+    }
+
+    private function cacheKey(string $key): string
+    {
+        return TenantContext::cacheKey($key);
     }
 
     /**

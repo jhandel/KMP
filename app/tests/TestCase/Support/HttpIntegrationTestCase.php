@@ -26,5 +26,11 @@ abstract class HttpIntegrationTestCase extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->ensureTestTenantForSession();
+        $this->configRequest([
+            'headers' => [
+                'Host' => 'localhost',
+            ],
+        ]);
     }
 }

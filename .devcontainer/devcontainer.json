@@ -11,6 +11,7 @@
 	},
 	"containerEnv": {
 		"MYSQL_DEV_DB_NAME": "KMP_DEV",
+		"MYSQL_DEV_PLATFORM_DB_NAME": "KMP_PLATFORM",
 		"MYSQL_DEV_USERNAME": "KMPSQLDEV",
 		"MYSQL_DEV_PASSWORD": "P@ssw0rd",
 		"EMAIL_DEV_SMTP_HOST": "localhost",

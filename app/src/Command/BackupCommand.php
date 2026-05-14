@@ -21,6 +21,8 @@ use Exception;
  */
 class BackupCommand extends Command
 {
+    use TenantAwareCommandTrait;
+
     /**
      * Get the default command name.
      *
@@ -60,7 +62,8 @@ class BackupCommand extends Command
                 'boolean' => true,
             ])
             ->addOption('ignore-schema-mismatch', [
-                'help' => 'Restore even if the backup migration fingerprint does not match the current schema. Use with caution.',
+                'help' => 'Restore even if the backup migration fingerprint does not match the current schema. '
+                    . 'Use with caution.',
                 'boolean' => true,
             ])
             ->addOption('fail-on-not-valid-fk', [
@@ -68,6 +71,7 @@ class BackupCommand extends Command
                 'boolean' => true,
                 'default' => true,
             ]);
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -80,6 +84,22 @@ class BackupCommand extends Command
      * @return ?int
      */
     public function execute(Arguments $args, ConsoleIo $io): ?int
+    {
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): ?int => $this->executeForTenant($args, $io),
+        );
+    }
+
+    /**
+     * Execute backup action with an already configured tenant connection.
+     *
+     * @param \Cake\Console\Arguments $args
+     * @param \Cake\Console\ConsoleIo $io
+     * @return ?int
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): ?int
     {
         $action = $args->getArgument('action');
 
@@ -116,14 +136,17 @@ class BackupCommand extends Command
         $storage = new BackupStorageService();
         $backupsTable = $this->fetchTable('Backups');
 
-        $filename = 'kmp-backup-' . date('Ymd-His') . '.kmpbackup';
+        $filename = $storage->buildBackupFilename();
         $io->out("Creating backup: {$filename}");
+        $tenantMetadata = $storage->getTenantMetadata();
 
         $backup = $backupsTable->newEntity([
             'filename' => $filename,
             'storage_type' => $storage->getAdapterType(),
             'status' => 'running',
-            'notes' => 'CLI backup',
+            'notes' => empty($tenantMetadata)
+                ? 'CLI backup'
+                : sprintf('CLI backup for tenant %s', $tenantMetadata['tenant_slug']),
         ]);
         $backupsTable->save($backup);
 

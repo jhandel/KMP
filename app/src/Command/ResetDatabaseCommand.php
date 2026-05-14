@@ -17,6 +17,8 @@ use PDO;
  */
 class ResetDatabaseCommand extends Command
 {
+    use TenantAwareCommandTrait;
+
     /**
      * Hook method for defining this command's option parser.
      *
@@ -27,6 +29,7 @@ class ResetDatabaseCommand extends Command
     public function buildOptionParser(ConsoleOptionParser $parser): ConsoleOptionParser
     {
         $parser = parent::buildOptionParser($parser);
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -40,6 +43,22 @@ class ResetDatabaseCommand extends Command
      */
     public function execute(Arguments $args, ConsoleIo $io): ?int
     {
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): ?int => $this->executeForTenant($args, $io),
+        );
+    }
+
+    /**
+     * Execute reset with an already configured tenant connection.
+     *
+     * @param \Cake\Console\Arguments $args The command arguments.
+     * @param \Cake\Console\ConsoleIo $io The console io
+     * @return int|null|void The exit code or null for success
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): ?int
+    {
         //Database reset is only valid in Dev.. SUPER dangerous in production!!!
         $isDebug = StaticHelpers::getAppSetting('debug', 'false');
         if (!$isDebug && $isDebug !== 'false') {
@@ -48,7 +67,7 @@ class ResetDatabaseCommand extends Command
             return null;
         }
 
-        $db = ConnectionManager::get('default');
+        $db = ConnectionManager::get('tenant');
         $driver = $db->getDriver();
         $driverClass = get_class($driver);
         //Get the string after the last / and turn it all lowercase to get the driver name

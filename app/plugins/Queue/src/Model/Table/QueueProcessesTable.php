@@ -8,7 +8,6 @@ use Cake\Core\Configure;
 use Cake\I18n\DateTime;
 use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\ORM\Query\SelectQuery;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 use Queue\Model\ProcessEndingException;
 use Queue\Queue\Config;

@@ -11,6 +11,13 @@ sudo rm -f /etc/apache2/sites-available/000-default.conf
 sed "s|{{REPO_PATH}}|$REPO_PATH|g" /opt/templates/apache-vhost.template > /tmp/000-default.conf
 sudo mv /tmp/000-default.conf /etc/apache2/sites-available/000-default.conf
 
+TENANT_SLUG="${DEV_TENANT_SLUG:-localdev}"
+TENANT_DISPLAY_NAME="${DEV_TENANT_DISPLAY_NAME:-Local Development}"
+TENANT_DB_NAME="${MYSQL_DEV_TENANT_DB_NAME:-$MYSQL_DEV_DB_NAME}"
+TENANT_TEST_DB_NAME="${MYSQL_DEV_TENANT_TEST_DB_NAME:-${TENANT_DB_NAME}_test}"
+PLATFORM_DB_NAME="${MYSQL_DEV_PLATFORM_DB_NAME:-${MYSQL_DEV_DB_NAME}_platform}"
+PLATFORM_TEST_DB_NAME="${MYSQL_DEV_PLATFORM_TEST_DB_NAME:-${PLATFORM_DB_NAME}_test}"
+
 # Start MariaDB
 echo "Starting MariaDB..."
 sudo service mariadb start
@@ -18,10 +25,13 @@ sudo service mariadb start
 # Setup MySQL databases and user
 echo "Setting up MySQL databases..."
 sudo mysql <<EOFMYSQL
-    CREATE USER '$(echo $MYSQL_DEV_USERNAME)'@'localhost' IDENTIFIED BY '$(echo $MYSQL_DEV_PASSWORD)'; 
+    CREATE USER IF NOT EXISTS '$(echo $MYSQL_DEV_USERNAME)'@'localhost' IDENTIFIED BY '$(echo $MYSQL_DEV_PASSWORD)';
+    ALTER USER '$(echo $MYSQL_DEV_USERNAME)'@'localhost' IDENTIFIED BY '$(echo $MYSQL_DEV_PASSWORD)';
     GRANT ALL PRIVILEGES ON *.* TO '$(echo $MYSQL_DEV_USERNAME)'@'localhost' WITH GRANT OPTION;
-    CREATE DATABASE IF NOT EXISTS $(echo $MYSQL_DEV_DB_NAME) collate utf8_unicode_ci ;
-    CREATE DATABASE IF NOT EXISTS $(echo $MYSQL_DEV_DB_NAME)_test collate utf8_unicode_ci ;
+    CREATE DATABASE IF NOT EXISTS $(echo $TENANT_DB_NAME) collate utf8_unicode_ci ;
+    CREATE DATABASE IF NOT EXISTS $(echo $TENANT_TEST_DB_NAME) collate utf8_unicode_ci ;
+    CREATE DATABASE IF NOT EXISTS $(echo $PLATFORM_DB_NAME) collate utf8_unicode_ci ;
+    CREATE DATABASE IF NOT EXISTS $(echo $PLATFORM_TEST_DB_NAME) collate utf8_unicode_ci ;
     flush privileges;
 EOFMYSQL
 
@@ -49,18 +59,56 @@ BEGIN
 END
 \$\$;
 EOFPG
-sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '${MYSQL_DEV_DB_NAME}'" | grep -q 1 || \
-    sudo -u postgres createdb -O "${MYSQL_DEV_USERNAME}" "${MYSQL_DEV_DB_NAME}"
-sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '${MYSQL_DEV_DB_NAME}_test'" | grep -q 1 || \
-    sudo -u postgres createdb -O "${MYSQL_DEV_USERNAME}" "${MYSQL_DEV_DB_NAME}_test"
+sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '${TENANT_DB_NAME}'" | grep -q 1 || \
+    sudo -u postgres createdb -O "${MYSQL_DEV_USERNAME}" "${TENANT_DB_NAME}"
+sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '${TENANT_TEST_DB_NAME}'" | grep -q 1 || \
+    sudo -u postgres createdb -O "${MYSQL_DEV_USERNAME}" "${TENANT_TEST_DB_NAME}"
+sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '${PLATFORM_DB_NAME}'" | grep -q 1 || \
+    sudo -u postgres createdb -O "${MYSQL_DEV_USERNAME}" "${PLATFORM_DB_NAME}"
+sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '${PLATFORM_TEST_DB_NAME}'" | grep -q 1 || \
+    sudo -u postgres createdb -O "${MYSQL_DEV_USERNAME}" "${PLATFORM_TEST_DB_NAME}"
 
 # Create environment configuration
 echo "Creating environment configuration..."
 sudo rm -f $(echo $REPO_PATH)/app/config/.env
 cat > /tmp/.env <<EOF
+# Legacy/local compatibility values. Tenant-aware runtime uses TENANT_DB_*.
 export MYSQL_USERNAME='$MYSQL_DEV_USERNAME'
 export MYSQL_PASSWORD='$MYSQL_DEV_PASSWORD'
-export MYSQL_DB_NAME='$MYSQL_DEV_DB_NAME'
+export MYSQL_DB_NAME='$TENANT_DB_NAME'
+export MYSQL_HOST='localhost'
+export MYSQL_PORT='3306'
+
+# Platform registry datastore: global tenant metadata only.
+export PLATFORM_DB_HOST='localhost'
+export PLATFORM_DB_PORT='3306'
+export PLATFORM_DB_USERNAME='$MYSQL_DEV_USERNAME'
+export PLATFORM_DB_PASSWORD='$MYSQL_DEV_PASSWORD'
+export PLATFORM_DB_DATABASE='$PLATFORM_DB_NAME'
+export PLATFORM_DATABASE_URL=''
+export PLATFORM_SECRET_KEY='local-development-platform-secret-key-change-me'
+export PLATFORM_SECRET_KEY_VERSION='v1'
+
+# Default/template tenant datastore used before host resolution and by dev tools.
+export TENANT_DB_HOST='localhost'
+export TENANT_DB_PORT='3306'
+export TENANT_DB_USERNAME='$MYSQL_DEV_USERNAME'
+export TENANT_DB_PASSWORD='$MYSQL_DEV_PASSWORD'
+export TENANT_DB_DATABASE='$TENANT_DB_NAME'
+export TENANT_DATABASE_URL=''
+
+# Tenant service secret references used by platform tenant_service_configs.
+export LOCALDEV_SMTP_PASSWORD='$EMAIL_DEV_SMTP_PASSWORD'
+
+# Platform admin console uses a dedicated host. Localhost platform-admin URLs
+# redirect there in dev so accidental tenant-host access is self-correcting.
+export PLATFORM_ADMIN_HOSTS='admin.localhost'
+export PLATFORM_ADMIN_REDIRECT_FROM_HOSTS='localhost,127.0.0.1'
+export PLATFORM_ADMIN_SEED_EMAIL='platform-admin@localhost.test'
+export PLATFORM_ADMIN_SEED_DISPLAY_NAME='Local Platform Admin'
+export PLATFORM_ADMIN_SEED_PASSWORD=''
+export PLATFORM_SMTP_PASSWORD='$EMAIL_DEV_SMTP_PASSWORD'
+
 export EMAIL_SMTP_HOST='$EMAIL_DEV_SMTP_HOST'
 export EMAIL_SMTP_PORT='$EMAIL_DEV_SMTP_PORT'
 export EMAIL_SMTP_USERNAME='$EMAIL_DEV_SMTP_USERNAME'
@@ -72,8 +120,10 @@ export AZURE_STORAGE_CONNECTION_STRING='GO GET THIS FROM AZURE PORTAL'
 # same major version used by Azure Database for PostgreSQL Flex in deploy/).
 # reset_dev_database.sh and app/config/app_local.php both honour DATABASE_URL.
 # -----------------------------------------------------------------------------
-# export DATABASE_URL='postgres://$MYSQL_DEV_USERNAME:$MYSQL_DEV_PASSWORD@127.0.0.1:5432/$MYSQL_DEV_DB_NAME'
-# export DATABASE_TEST_URL='postgres://$MYSQL_DEV_USERNAME:$MYSQL_DEV_PASSWORD@127.0.0.1:5432/${MYSQL_DEV_DB_NAME}_test'
+# export PLATFORM_DATABASE_URL='postgres://$MYSQL_DEV_USERNAME:$MYSQL_DEV_PASSWORD@127.0.0.1:5432/$PLATFORM_DB_NAME'
+# export TENANT_DATABASE_URL='postgres://$MYSQL_DEV_USERNAME:$MYSQL_DEV_PASSWORD@127.0.0.1:5432/$TENANT_DB_NAME'
+# export DATABASE_URL="\$TENANT_DATABASE_URL"
+# export DATABASE_TEST_URL='postgres://$MYSQL_DEV_USERNAME:$MYSQL_DEV_PASSWORD@127.0.0.1:5432/$TENANT_TEST_DB_NAME'
 EOF
 sudo mv /tmp/.env $(echo $REPO_PATH)/app/config/.env
 
@@ -140,7 +190,7 @@ fi
 
 # Define the cron job schedule and command
 cron_schedule="*/2 * * * *"
-cron_command="cd $(echo $REPO_PATH)/app && bin/cake queue run -q"
+cron_command="cd $(echo $REPO_PATH)/app && bin/cake queue run -q --tenant=$TENANT_SLUG"
 cron_job="$cron_schedule $cron_command"
 
 # Check if the cron job already exists

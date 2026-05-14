@@ -15,6 +15,8 @@ declare(strict_types=1);
  * @license   https://opensource.org/licenses/mit-license.php MIT License
  */
 
+use App\Model\Entity\Tenant;
+use App\Services\Tenant\TenantProvisioningService;
 use App\Test\TestCase\Support\SeedManager;
 use Cake\Core\Configure;
 use Cake\Database\SchemaCache;
@@ -78,6 +80,8 @@ ConnectionManager::setConfig('test_debug_kit', [
 
 ConnectionManager::alias('test_debug_kit', 'debug_kit');
 ConnectionManager::alias('test', 'default');
+ConnectionManager::alias('test', 'platform');
+ConnectionManager::alias('test', 'tenant');
 
 // Ensure tmp and logs directories exist and are writable for tests
 foreach ([LOGS, TMP, TMP . 'cache', TMP . 'sessions', TMP . 'tests'] as $dir) {
@@ -111,9 +115,41 @@ foreach (['Queue', 'Officers', 'Activities', 'Awards', 'Waivers'] as $plugin) {
     (new Migrations())->migrate(['connection' => 'test', 'plugin' => $plugin]);
 }
 
+(new Migrations())->migrate([
+    'connection' => 'test',
+    'source' => 'PlatformMigrations',
+]);
+(new SchemaCache($conn))->clear();
+$testConfig = (array)ConnectionManager::getConfig('test');
+(new TenantProvisioningService())->createOrUpdateTenant([
+    'slug' => 'test',
+    'display_name' => 'Test Tenant',
+    'status' => Tenant::STATUS_ACTIVE,
+    'primary_host' => 'localhost',
+    'aliases' => ['127.0.0.1'],
+    'path_prefix' => null,
+    'database_name' => (string)($testConfig['database'] ?? 'test'),
+    'database_url' => null,
+    'driver' => (string)($testConfig['driver'] ?? 'Cake\\Database\\Driver\\Mysql'),
+    'host' => (string)($testConfig['host'] ?? 'localhost'),
+    'port' => $testConfig['port'] ?? null,
+    'username' => (string)($testConfig['username'] ?? ''),
+    'secret_reference' => null,
+    'password_env' => null,
+    'email_config_json' => null,
+    'email_secret_reference' => null,
+    'storage_config_json' => json_encode([
+        'local' => [
+            'path' => TMP . 'uploaded',
+        ],
+    ], JSON_THROW_ON_ERROR),
+    'storage_adapter' => 'local',
+    'storage_secret_reference' => null,
+]);
+TableRegistry::getTableLocator()->clear();
+
 // On Postgres (no MySQL seed dump), we also need to seed essential AppSettings.
 if (SeedManager::isPostgres('test')) {
-
     // Seed essential AppSettings that tests expect
     $conn = ConnectionManager::get('test');
     $now = date('Y-m-d H:i:s');

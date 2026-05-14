@@ -29,6 +29,8 @@ use Exception;
  */
 class MigrateAwardEventsCommand extends Command
 {
+    use TenantAwareCommandTrait;
+
     /**
      * @var \Cake\Console\ConsoleIo
      */
@@ -54,6 +56,7 @@ class MigrateAwardEventsCommand extends Command
                 'boolean' => true,
                 'default' => false,
             ]);
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -66,6 +69,22 @@ class MigrateAwardEventsCommand extends Command
      * @return int|null The exit code or null for success
      */
     public function execute(Arguments $args, ConsoleIo $io): ?int
+    {
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): ?int => $this->executeForTenant($args, $io),
+        );
+    }
+
+    /**
+     * Execute migration with an already configured tenant connection.
+     *
+     * @param \Cake\Console\Arguments $args The command arguments.
+     * @param \Cake\Console\ConsoleIo $io The console io
+     * @return int|null The exit code or null for success
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): ?int
     {
         $this->io = $io;
         $this->dryRun = $args->getOption('dry-run');

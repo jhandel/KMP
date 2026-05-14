@@ -11,6 +11,7 @@ use App\KMP\GridColumns\MembersGridColumns;
 use App\KMP\GridColumns\VerifyQueueGridColumns;
 use App\KMP\StaticHelpers;
 use App\Mailer\QueuedMailerAwareTrait;
+use App\Middleware\TenantSessionMiddleware;
 use App\Model\Entity\Member;
 use App\Services\CsvExportService;
 use App\Services\ImpersonationService;
@@ -20,6 +21,7 @@ use App\Services\MemberRegistrationService;
 use App\Services\MemberSearchService;
 use App\Services\QuickLoginDeviceService;
 use App\Services\ServiceResult;
+use App\Services\Tenant\TenantContext;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use Authentication\PasswordHasher\DefaultPasswordHasher;
 use Cake\Datasource\Exception\RecordNotFoundException;
@@ -1937,6 +1939,7 @@ class MembersController extends AppController
                     $user = $this->Members->get(
                         $authentication->getIdentity()->getIdentifier(),
                     );
+                    $this->writeTenantSessionContext();
                     $redirectTarget = $this->resolvePostLoginRedirectTarget();
                     $quickSetupResponse = $this->maybeQueueQuickLoginPinSetup($user, $redirectTarget);
                     $this->Flash->success('Welcome ' . $user->sca_name . '!');
@@ -2292,9 +2295,23 @@ class MembersController extends AppController
 
         $this->markQuickPinLoginSuccess($member);
         $this->Authentication->setIdentity($member);
+        $this->writeTenantSessionContext();
         $this->Flash->success('Welcome ' . $member->sca_name . '!');
 
         return $this->redirectAfterSuccessfulLogin();
+    }
+
+    /**
+     * Persist the resolved tenant identity in the current web session after login.
+     *
+     * @return void
+     */
+    private function writeTenantSessionContext(): void
+    {
+        $context = $this->request->getAttribute('tenantContext');
+        if ($context instanceof TenantContext) {
+            TenantSessionMiddleware::writeTenantSession($this->request->getSession(), $context);
+        }
     }
 
     /**

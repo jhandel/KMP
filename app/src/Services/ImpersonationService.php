@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Model\Entity\Member;
+use App\Services\Tenant\TenantContext;
 use Cake\Cache\Cache;
 use Cake\Http\Session;
 use Cake\I18n\FrozenTime;
@@ -159,8 +160,8 @@ class ImpersonationService
         $session->delete('viewMode');
 
         foreach ($memberIds as $memberId) {
-            Cache::delete('member_permissions' . $memberId, 'member_permissions');
-            Cache::delete('permissions_policies' . $memberId, 'member_permissions');
+            Cache::delete(TenantContext::cacheKey('member_permissions' . $memberId), 'member_permissions');
+            Cache::delete(TenantContext::cacheKey('permissions_policies' . $memberId), 'member_permissions');
         }
     }
 }

@@ -1,20 +1,21 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Command;
 
 use App\Model\Entity\WorkflowDefinition;
+use App\Services\WorkflowEngine\DefaultWorkflowEngine;
 use App\Services\WorkflowEngine\TriggerDispatcher;
-use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use Cake\Command\Command;
 use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
 use Cake\Console\ConsoleOptionParser;
+use Cake\Core\Container;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
 use Cron\CronExpression;
+use Throwable;
 
 /**
  * CLI command to check and dispatch scheduled workflow triggers.
@@ -27,6 +28,8 @@ use Cron\CronExpression;
  */
 class WorkflowSchedulerCommand extends Command
 {
+    use TenantAwareCommandTrait;
+
     /**
      * @inheritDoc
      */
@@ -43,7 +46,7 @@ class WorkflowSchedulerCommand extends Command
         $parser = parent::buildOptionParser($parser);
 
         $parser->setDescription(
-            'Check scheduled workflows and dispatch any that are due to run.'
+            'Check scheduled workflows and dispatch any that are due to run.',
         );
 
         $parser->addOption('dry-run', [
@@ -59,6 +62,7 @@ class WorkflowSchedulerCommand extends Command
             'default' => false,
             'help' => 'Force all scheduled workflows to run regardless of their schedule.',
         ]);
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -71,6 +75,22 @@ class WorkflowSchedulerCommand extends Command
      * @return int Exit code
      */
     public function execute(Arguments $args, ConsoleIo $io): int
+    {
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): int => $this->executeForTenant($args, $io),
+        );
+    }
+
+    /**
+     * Execute the scheduler command for the configured tenant connection.
+     *
+     * @param \Cake\Console\Arguments $args Console arguments
+     * @param \Cake\Console\ConsoleIo $io Console IO
+     * @return int Exit code
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): int
     {
         $dryRun = (bool)$args->getOption('dry-run');
         $force = (bool)$args->getOption('force');
@@ -285,7 +305,7 @@ class WorkflowSchedulerCommand extends Command
             ));
 
             return 'dispatched';
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error(sprintf(
                 'WorkflowScheduler: Failed to dispatch %s: %s',
                 $definition->slug,
@@ -337,8 +357,8 @@ class WorkflowSchedulerCommand extends Command
      */
     protected function createTriggerDispatcher(): TriggerDispatcher
     {
-        $container = \Cake\Core\Container::create();
-        $engine = new \App\Services\WorkflowEngine\DefaultWorkflowEngine($container);
+        $container = Container::create();
+        $engine = new DefaultWorkflowEngine($container);
 
         return new TriggerDispatcher($engine);
     }

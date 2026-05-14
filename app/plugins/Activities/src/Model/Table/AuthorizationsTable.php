@@ -6,7 +6,6 @@ namespace Activities\Model\Table;
 
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 use Activities\Model\Entity\Authorization;
 use App\KMP\StaticHelpers;

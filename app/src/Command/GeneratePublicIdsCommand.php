@@ -22,6 +22,8 @@ use RuntimeException;
  */
 class GeneratePublicIdsCommand extends Command
 {
+    use TenantAwareCommandTrait;
+
     /**
      * Hook method for defining this command's option parser.
      *
@@ -57,6 +59,7 @@ class GeneratePublicIdsCommand extends Command
                 'help' => 'Show what would be done without making changes',
                 'boolean' => true,
             ]);
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -69,6 +72,22 @@ class GeneratePublicIdsCommand extends Command
      * @return int|null Exit code
      */
     public function execute(Arguments $args, ConsoleIo $io): ?int
+    {
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): ?int => $this->executeForTenant($args, $io),
+        );
+    }
+
+    /**
+     * Execute command with an already configured tenant connection.
+     *
+     * @param \Cake\Console\Arguments $args Arguments
+     * @param \Cake\Console\ConsoleIo $io Console IO
+     * @return int|null Exit code
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): ?int
     {
         $tableNames = $args->getArgument('tables');
         $processAll = $args->getOption('all');
@@ -91,7 +110,7 @@ class GeneratePublicIdsCommand extends Command
             $io->warning('DRY RUN MODE - No changes will be made');
         }
 
-        $connection = ConnectionManager::get('default');
+        $connection = ConnectionManager::get('tenant');
 
         // Determine which tables to process
         if ($processAll) {

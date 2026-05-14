@@ -5,7 +5,6 @@ namespace App\Model\Table;
 
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 
 /**
@@ -30,7 +29,7 @@ use Cake\Validation\Validator;
  * @method iterable<\App\Model\Entity\Document>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\Document>|false deleteMany(iterable $entities, array $options = [])
  * @method iterable<\App\Model\Entity\Document>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\Document> deleteManyOrFail(iterable $entities, array $options = [])
  */
-class DocumentsTable extends Table
+class DocumentsTable extends BaseTable
 {
     /**
      * Initialize method

@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\Tenant\TenantContext;
 use Cake\Cache\Cache;
+use Cake\Database\Connection;
 use Cake\Database\Driver\Postgres;
 use Cake\Database\Schema\TableSchemaInterface;
 use Cake\Datasource\ConnectionManager;
@@ -66,6 +68,42 @@ class BackupService
     }
 
     /**
+     * Return the connection that contains tenant data for backup/restore.
+     */
+    private function backupConnection(): Connection
+    {
+        return TenantContext::getCurrent() !== null
+            ? ConnectionManager::get('tenant')
+            : ConnectionManager::get('default');
+    }
+
+    /**
+     * Prevent restoring a tenant-tagged backup into the wrong active tenant.
+     *
+     * @param array<string, mixed> $meta Backup metadata
+     */
+    private function assertBackupTenantMatches(array $meta): void
+    {
+        $context = TenantContext::getCurrent();
+        if ($context === null) {
+            return;
+        }
+
+        $backupTenant = $meta['tenant'] ?? null;
+        if (!is_array($backupTenant) || empty($backupTenant['slug'])) {
+            return;
+        }
+
+        if ((string)$backupTenant['slug'] !== $context->slug) {
+            throw new RuntimeException(sprintf(
+                'Backup belongs to tenant "%s" and cannot be restored into tenant "%s".',
+                (string)$backupTenant['slug'],
+                $context->slug,
+            ));
+        }
+    }
+
+    /**
      * Snapshot migration state for fingerprinting a backup.
      *
      * Returns a map of phinxlog-table-name → array of {version, migration_name}
@@ -77,7 +115,7 @@ class BackupService
      */
     public function getMigrationFingerprint(): array
     {
-        $connection = ConnectionManager::get('default');
+        $connection = $this->backupConnection();
         $schemaCollection = $connection->getSchemaCollection();
         $fingerprint = [];
         foreach ($schemaCollection->listTables() as $tableName) {
@@ -120,7 +158,7 @@ class BackupService
      */
     public function export(string $encryptionKey): array
     {
-        $connection = ConnectionManager::get('default');
+        $connection = $this->backupConnection();
         $schemaCollection = $connection->getSchemaCollection();
         $allTables = $schemaCollection->listTables();
 
@@ -133,6 +171,7 @@ class BackupService
 
         $migrationFingerprint = $this->getMigrationFingerprint();
 
+        $tenantContext = TenantContext::getCurrent();
         $payload = [
             'meta' => [
                 'version' => 1,
@@ -143,6 +182,13 @@ class BackupService
             ],
             'tables' => [],
         ];
+        if ($tenantContext !== null) {
+            $payload['meta']['tenant'] = [
+                'id' => $tenantContext->id,
+                'slug' => $tenantContext->slug,
+                'display_name' => $tenantContext->displayName,
+            ];
+        }
 
         $totalRows = 0;
 
@@ -232,6 +278,8 @@ class BackupService
             throw new RuntimeException('Invalid backup file structure');
         }
 
+        $this->assertBackupTenantMatches($payload['meta']);
+
         // Guard against schema drift: compare migration state. Older backups
         // (v1 without a fingerprint) are always allowed so this doesn't break
         // existing backup files.
@@ -264,7 +312,7 @@ class BackupService
             'rows_processed' => 0,
         ]);
 
-        $connection = ConnectionManager::get('default');
+        $connection = $this->backupConnection();
         $schemaCollection = $connection->getSchemaCollection();
         $driver = $connection->getDriver();
         $isPostgres = $driver instanceof Postgres;

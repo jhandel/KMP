@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Waivers\Model\Table;
 
+use App\Model\Table\BaseTable;
 use Cake\I18n\Date;
 use Cake\I18n\DateTime;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 
 /**
@@ -34,7 +34,7 @@ use Cake\Validation\Validator;
  * @method iterable<\Waivers\Model\Entity\GatheringWaiver>|\Cake\Datasource\ResultSetInterface<\Waivers\Model\Entity\GatheringWaiver>|false deleteMany(iterable $entities, array $options = [])
  * @method iterable<\Waivers\Model\Entity\GatheringWaiver>|\Cake\Datasource\ResultSetInterface<\Waivers\Model\Entity\GatheringWaiver> deleteManyOrFail(iterable $entities, array $options = [])
  */
-class GatheringWaiversTable extends Table
+class GatheringWaiversTable extends BaseTable
 {
     /**
      * Initialize method

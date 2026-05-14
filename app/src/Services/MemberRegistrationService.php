@@ -5,6 +5,7 @@ namespace App\Services;
 
 use App\KMP\StaticHelpers;
 use App\Model\Entity\Member;
+use App\Services\Tenant\TenantContext;
 use Cake\I18n\DateTime;
 use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\Routing\Router;
@@ -64,15 +65,15 @@ class MemberRegistrationService
             ];
         }
 
-        $storageLoc = WWW_ROOT . '../images/uploaded/';
+        [$storageLoc, $relativePrefix] = $this->membershipCardStorageLocation();
         $fileName = StaticHelpers::generateToken(10);
         StaticHelpers::ensureDirectoryExists($storageLoc, 0755);
-        $file->moveTo(WWW_ROOT . '../images/uploaded/' . $fileName);
+        $file->moveTo($storageLoc . $fileName);
         $fileResult = StaticHelpers::saveScaledImage($fileName, 500, 700, $storageLoc, $storageLoc);
         if (!$fileResult) {
             return ['success' => false, 'message' => (string)__('Error saving image, please try again.')];
         }
-        $fileName = substr($fileResult, strrpos($fileResult, '/') + 1);
+        $fileName = $relativePrefix . substr($fileResult, strrpos($fileResult, '/') + 1);
 
         return ['success' => true, 'fileName' => $fileName];
     }
@@ -109,17 +110,37 @@ class MemberRegistrationService
             return ['success' => false, 'message' => (string)__('File content does not match an allowed image type.')];
         }
 
-        $storageLoc = WWW_ROOT . '../images/uploaded/';
+        [$storageLoc, $relativePrefix] = $this->membershipCardStorageLocation();
         $fileName = StaticHelpers::generateToken(10);
         StaticHelpers::ensureDirectoryExists($storageLoc, 0755);
-        $file->moveTo(WWW_ROOT . '../images/uploaded/' . $fileName);
+        $file->moveTo($storageLoc . $fileName);
         $fileResult = StaticHelpers::saveScaledImage($fileName, 500, 700, $storageLoc, $storageLoc);
         if (!$fileResult) {
             return ['success' => false, 'message' => (string)__('Error saving image, please try again.')];
         }
-        $fileName = substr($fileResult, strrpos($fileResult, '/') + 1);
+        $fileName = $relativePrefix . substr($fileResult, strrpos($fileResult, '/') + 1);
 
         return ['success' => true, 'fileName' => $fileName];
+    }
+
+    /**
+     * Return absolute and relative storage prefixes for membership card uploads.
+     *
+     * @return array{0:string,1:string}
+     */
+    private function membershipCardStorageLocation(): array
+    {
+        $relativePrefix = '';
+        $context = TenantContext::getCurrent();
+        if ($context !== null) {
+            $safeSlug = strtolower(preg_replace('/[^a-zA-Z0-9_-]+/', '-', $context->slug) ?? '');
+            $safeSlug = trim($safeSlug, '-_') ?: 'tenant';
+            $relativePrefix = 'tenants/' . $safeSlug . '/';
+        }
+
+        $storageLoc = WWW_ROOT . '../images/uploaded/' . $relativePrefix;
+
+        return [$storageLoc, $relativePrefix];
     }
 
     /**

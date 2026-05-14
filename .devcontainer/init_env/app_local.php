@@ -1,24 +1,35 @@
 <?php
+declare(strict_types=1);
+
+use App\Mailer\Transport\AzureCommunicationTransport;
+use App\Mailer\Transport\ResendApiTransport;
+use App\Mailer\Transport\SendGridApiTransport;
+use Cake\Database\Connection;
+use Cake\Database\Driver\Mysql;
+
 /*
  * Local configuration file to provide any overrides to your app.php configuration.
  * Copy and save this file as app_local.php and make changes as required.
  * Note: It is not recommended to commit files with credentials such as app_local.php
  * into source code version control.
  */
-$databaseUrl = env('DATABASE_URL', null);
-$databaseTestUrl = env('DATABASE_TEST_URL', null);
+$databaseUrl = env('DATABASE_URL') ?: null;
+$databaseTestUrl = env('DATABASE_TEST_URL') ?: null;
+$platformDatabaseUrl = env('PLATFORM_DATABASE_URL') ?: null;
+$tenantDatabaseUrl = env('TENANT_DATABASE_URL') ?: $databaseUrl;
 $isPostgresUrl = str_starts_with(strtolower((string)$databaseUrl), 'postgres');
+$isTenantPostgresUrl = str_starts_with(strtolower((string)$tenantDatabaseUrl), 'postgres');
 $mysqlSsl = filter_var(env('MYSQL_SSL', false), FILTER_VALIDATE_BOOLEAN);
 
 // Build PDO connection flags based on driver and SSL requirements
 $pdoFlags = [];
 if ($isPostgresUrl) {
-    $pdoFlags[\PDO::ATTR_EMULATE_PREPARES] = true;
+    $pdoFlags[PDO::ATTR_EMULATE_PREPARES] = true;
 } elseif ($mysqlSsl) {
-    $pdoFlags[\PDO::MYSQL_ATTR_SSL_CA] = env('MYSQL_SSL_CA', '');
-    $pdoFlags[\PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = filter_var(
+    $pdoFlags[PDO::MYSQL_ATTR_SSL_CA] = env('MYSQL_SSL_CA', '');
+    $pdoFlags[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = filter_var(
         env('MYSQL_SSL_VERIFY', false),
-        FILTER_VALIDATE_BOOLEAN
+        FILTER_VALIDATE_BOOLEAN,
     );
 }
 
@@ -37,6 +48,17 @@ return [
     'DebugKit' => [
         'ignoreAuthorization' => true,
         'variablesPanelMaxDepth' => 10,
+    ],
+
+    'PlatformAdmin' => [
+        'hosts' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string)env('PLATFORM_ADMIN_HOSTS', 'admin.localhost')),
+        ))),
+        'redirectFromHosts' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string)env('PLATFORM_ADMIN_REDIRECT_FROM_HOSTS', 'localhost,127.0.0.1')),
+        ))),
     ],
 
     /*
@@ -58,7 +80,9 @@ return [
      */
     'Datasources' => [
         'default' => [
-            'host' => env('MYSQL_HOST', 'localhost'),
+            'className' => Connection::class,
+            'driver' => Mysql::class,
+            'host' => env('TENANT_DB_HOST', env('MYSQL_HOST', 'localhost')),
             /*
              * CakePHP will use the default DB port based on the driver selected
              * MySQL on MAMP uses port 8889, MAMP users will want to uncomment
@@ -66,10 +90,10 @@ return [
              */
             //'port' => 'non_standard_port_number',
 
-            'username' => env('MYSQL_USERNAME'),
-            'password' => env('MYSQL_PASSWORD'),
+            'username' => env('TENANT_DB_USERNAME', env('MYSQL_USERNAME')),
+            'password' => env('TENANT_DB_PASSWORD', env('MYSQL_PASSWORD')),
 
-            'database' => env('MYSQL_DB_NAME'),
+            'database' => env('TENANT_DB_DATABASE', env('MYSQL_DB_NAME')),
             /*
              * If not using the default 'public' schema with the PostgreSQL driver
              * set it here.
@@ -79,7 +103,31 @@ return [
             /*
              * You can use a DSN string to set the entire configuration
              */
-            'url' => $databaseUrl,
+            'url' => $tenantDatabaseUrl,
+            'flags' => $pdoFlags,
+        ],
+
+        'platform' => [
+            'className' => Connection::class,
+            'driver' => Mysql::class,
+            'host' => env('PLATFORM_DB_HOST', 'localhost'),
+            'port' => env('PLATFORM_DB_PORT', 3306),
+            'username' => env('PLATFORM_DB_USERNAME', env('MYSQL_USERNAME')),
+            'password' => env('PLATFORM_DB_PASSWORD', env('MYSQL_PASSWORD')),
+            'database' => env('PLATFORM_DB_DATABASE', 'KMP_PLATFORM'),
+            'url' => $platformDatabaseUrl,
+            'flags' => $pdoFlags,
+        ],
+
+        'tenant' => [
+            'className' => Connection::class,
+            'driver' => Mysql::class,
+            'host' => env('TENANT_DB_HOST', env('MYSQL_HOST', 'localhost')),
+            'port' => env('TENANT_DB_PORT', env('MYSQL_PORT', 3306)),
+            'username' => env('TENANT_DB_USERNAME', env('MYSQL_USERNAME')),
+            'password' => env('TENANT_DB_PASSWORD', env('MYSQL_PASSWORD')),
+            'database' => env('TENANT_DB_DATABASE', env('MYSQL_DB_NAME')),
+            'url' => $tenantDatabaseUrl,
             'flags' => $pdoFlags,
         ],
 
@@ -87,7 +135,9 @@ return [
          * The test connection is used during the test suite.
          */
         'test' => [
-            'host' => 'localhost',
+            'className' => Connection::class,
+            'driver' => Mysql::class,
+            'host' => env('TENANT_DB_HOST', env('MYSQL_HOST', 'localhost')),
             /*
              * CakePHP will use the default DB port based on the driver selected
              * MySQL on MAMP uses port 8889, MAMP users will want to uncomment
@@ -95,10 +145,10 @@ return [
              */
             //'port' => 'non_standard_port_number',
 
-            'username' => env('MYSQL_USERNAME'),
-            'password' => env('MYSQL_PASSWORD'),
+            'username' => env('TENANT_DB_USERNAME', env('MYSQL_USERNAME')),
+            'password' => env('TENANT_DB_PASSWORD', env('MYSQL_PASSWORD')),
 
-            'database' => env('MYSQL_DB_NAME') . '_test',
+            'database' => env('TENANT_TEST_DB_DATABASE', env('TENANT_DB_DATABASE', env('MYSQL_DB_NAME')) . '_test'),
             /*
              * If not using the default 'public' schema with the PostgreSQL driver
              * set it here.
@@ -108,7 +158,7 @@ return [
             /*
              * You can use a DSN string to set the entire configuration
              */
-            'url' => $databaseTestUrl ?? ($isPostgresUrl ? $databaseUrl : null),
+            'url' => $databaseTestUrl ?? ($isTenantPostgresUrl ? $tenantDatabaseUrl : null),
         ],
     ],
 
@@ -122,16 +172,16 @@ return [
     'EmailTransport' => [
         'default' => match (strtolower(env('EMAIL_DRIVER', 'smtp'))) {
             'azure' => [
-                'className' => \App\Mailer\Transport\AzureCommunicationTransport::class,
+                'className' => AzureCommunicationTransport::class,
                 'connectionString' => env('AZURE_COMMUNICATION_CONNECTION_STRING'),
                 'apiVersion' => env('AZURE_COMMUNICATION_API_VERSION', '2023-03-31'),
             ],
             'sendgrid' => [
-                'className' => \App\Mailer\Transport\SendGridApiTransport::class,
+                'className' => SendGridApiTransport::class,
                 'apiKey' => env('EMAIL_API_KEY'),
             ],
             'resend' => [
-                'className' => \App\Mailer\Transport\ResendApiTransport::class,
+                'className' => ResendApiTransport::class,
                 'apiKey' => env('EMAIL_API_KEY'),
             ],
             default => [

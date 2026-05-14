@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Test\TestCase\Model\Table;
 
 use App\Model\Table\AppSettingsTable;
+use App\Services\Tenant\TenantContext;
 use App\Test\TestCase\BaseTestCase;
 use Cake\Cache\Cache;
 use Cake\Datasource\EntityInterface;
@@ -50,10 +51,25 @@ class AppSettingsTableTest extends BaseTestCase
     protected function tearDown(): void
     {
         unset($this->AppSettings);
+        TenantContext::clearCurrent();
         // Clear cache after each test
         Cache::clear();
 
         parent::tearDown();
+    }
+
+    public function testAppSettingCacheKeysAreTenantPrefixedWhenContextIsActive(): void
+    {
+        $context = new TenantContext(42, 'tenant-a', 'Tenant A', 'active', null, null, 'tenant-a.example.org');
+        TenantContext::setCurrent($context);
+        $key = 'test.tenant.cache.' . time() . rand(1000, 9999);
+
+        $this->assertTrue($this->AppSettings->updateSetting($key, 'string', 'TENANT-VALUE', false));
+
+        $this->assertSame('TENANT-VALUE', Cache::read(TenantContext::cacheKey('app_setting_' . $key), 'default'));
+        $this->assertNull(Cache::read('app_setting_' . $key, 'default'));
+
+        $this->AppSettings->deleteSetting($key, true);
     }
 
     /**

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Waivers\Model\Table;
 
+use App\Model\Table\BaseTable;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 
 /**
@@ -28,7 +28,7 @@ use Cake\Validation\Validator;
  * @method iterable<\Waivers\Model\Entity\GatheringActivityWaiver>|\Cake\Datasource\ResultSetInterface<\Waivers\Model\Entity\GatheringActivityWaiver>|false deleteMany(iterable $entities, array $options = [])
  * @method iterable<\Waivers\Model\Entity\GatheringActivityWaiver>|\Cake\Datasource\ResultSetInterface<\Waivers\Model\Entity\GatheringActivityWaiver> deleteManyOrFail(iterable $entities, array $options = [])
  */
-class GatheringActivityWaiversTable extends Table
+class GatheringActivityWaiversTable extends BaseTable
 {
     /**
      * Initialize method

@@ -8,7 +8,6 @@ use Cake\Datasource\EntityInterface;
 use Cake\Event\EventInterface;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 
 /**
@@ -28,7 +27,7 @@ use Cake\Validation\Validator;
  * @method \App\Model\Entity\GatheringStaff|false save(\Cake\Datasource\EntityInterface $entity, array $options = [])
  * @method \App\Model\Entity\GatheringStaff saveOrFail(\Cake\Datasource\EntityInterface $entity, array $options = [])
  */
-class GatheringStaffTable extends Table
+class GatheringStaffTable extends BaseTable
 {
     /**
      * Initialize method

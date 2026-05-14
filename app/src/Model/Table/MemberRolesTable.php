@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Model\Table;
 
+use App\Services\Tenant\TenantContext;
 use Cake\Cache\Cache;
 use Cake\ORM\RulesChecker;
 use Cake\Validation\Validator;
@@ -86,16 +87,16 @@ class MemberRolesTable extends BaseTable
     {
         parent::afterSave($event, $entity, $options);
         $memberId = $entity->member_id;
-        Cache::delete('permissions_policies' . $memberId, 'member_permissions');
-        Cache::delete('member_permissions' . $memberId, 'member_permissions');
+        Cache::delete(TenantContext::cacheKey('permissions_policies' . $memberId), 'member_permissions');
+        Cache::delete(TenantContext::cacheKey('member_permissions' . $memberId), 'member_permissions');
     }
 
     public function afterDelete($event, $entity, $options): void
     {
         parent::afterDelete($event, $entity, $options);
         $memberId = $entity->member_id;
-        Cache::delete('permissions_policies' . $memberId, 'member_permissions');
-        Cache::delete('member_permissions' . $memberId, 'member_permissions');
+        Cache::delete(TenantContext::cacheKey('permissions_policies' . $memberId), 'member_permissions');
+        Cache::delete(TenantContext::cacheKey('member_permissions' . $memberId), 'member_permissions');
     }
 
     /**

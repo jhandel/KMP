@@ -25,6 +25,7 @@ layout: default
 | **3.6 [Seed Documentation](3.6-seed-documentation.md)** | Data seeding framework and patterns |
 | **3.7 [Active Window Sync](3.7-active-window-sync.md)** | Scheduled status maintenance for ActiveWindow entities |
 | **3.8 [Youth Age-Up](3.8-youth-age-up.md)** | Automated transition of minor accounts to adult statuses |
+| **3.9 [Multi-Tenancy Architecture](3.9-multi-tenancy.md)** | Host-based tenancy, platform registry, tenant databases, and operations |
 | **4. [Core Modules](4-core-modules.md)** | |
 | **4.1 [Member Lifecycle](4.1-member-lifecycle.md)** | Complete member lifecycle and data flow documentation |
 | **4.1.1 [MembersTable API Reference](4.1.1-members-table-reference.md)** | MembersTable model API and query methods |

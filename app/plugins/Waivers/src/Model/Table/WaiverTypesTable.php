@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Waivers\Model\Table;
 
+use App\Model\Table\BaseTable;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 
 /**
@@ -29,7 +29,7 @@ use Cake\Validation\Validator;
  * @method iterable<\Waivers\Model\Entity\WaiverType>|\Cake\Datasource\ResultSetInterface<\Waivers\Model\Entity\WaiverType>|false deleteMany(iterable $entities, array $options = [])
  * @method iterable<\Waivers\Model\Entity\WaiverType>|\Cake\Datasource\ResultSetInterface<\Waivers\Model\Entity\WaiverType> deleteManyOrFail(iterable $entities, array $options = [])
  */
-class WaiverTypesTable extends Table
+class WaiverTypesTable extends BaseTable
 {
     /**
      * Initialize method

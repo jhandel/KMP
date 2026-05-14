@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Queue\Queue;
 
+use App\Services\Tenant\TenantContext;
+use App\Services\Tenant\TenantContextAccessor;
 use Cake\Console\CommandInterface;
 use Cake\Core\Configure;
 use Cake\Core\ContainerInterface;
@@ -200,10 +202,12 @@ class Processor {
 		$taskName = $queuedJob->job_task;
 
 		$return = $failureMessage = null;
+		$temporaryTenantContext = false;
 		try {
 			$this->time = time();
 
 			$data = $queuedJob->data;
+			$temporaryTenantContext = $this->restoreTenantContext($data);
 			$task = $this->loadTask($taskName);
 			$traits = class_uses($task);
 			if ($this->container && $traits && in_array(ServicesTrait::class, $traits, true)) {
@@ -223,16 +227,80 @@ class Processor {
 		}
 
 		if ($return === false) {
-			$this->QueuedJobs->markJobFailed($queuedJob, $failureMessage);
-			$failedStatus = $this->QueuedJobs->getFailedStatus($queuedJob, $this->getTaskConf());
-			$this->log('job ' . $queuedJob->job_task . ', id ' . $queuedJob->id . ' failed and ' . $failedStatus, $pid);
-			$this->io->out('Job did not finish, ' . $failedStatus . ' after try ' . $queuedJob->attempts . '.');
+			try {
+				$this->QueuedJobs->markJobFailed($queuedJob, $failureMessage);
+				$failedStatus = $this->QueuedJobs->getFailedStatus($queuedJob, $this->getTaskConf());
+				$this->log('job ' . $queuedJob->job_task . ', id ' . $queuedJob->id . ' failed and ' . $failedStatus, $pid);
+				$this->io->out('Job did not finish, ' . $failedStatus . ' after try ' . $queuedJob->attempts . '.');
+			} finally {
+				$this->clearTemporaryTenantContext($temporaryTenantContext);
+			}
 
 			return;
 		}
 
-		$this->QueuedJobs->markJobDone($queuedJob);
+		try {
+			$this->QueuedJobs->markJobDone($queuedJob);
+		} finally {
+			$this->clearTemporaryTenantContext($temporaryTenantContext);
+		}
 		$this->io->out('Job Finished.');
+	}
+
+	/**
+	 * Restore or verify tenant context embedded in the job payload.
+	 *
+	 * @param mixed $data Job data
+	 * @return bool Whether a temporary ambient context was created
+	 */
+	protected function restoreTenantContext(mixed &$data): bool {
+		if (!is_array($data) || empty($data['__tenant_context']) || !is_array($data['__tenant_context'])) {
+			return false;
+		}
+
+		$tenant = $data['__tenant_context'];
+		unset($data['__tenant_context']);
+		$current = TenantContext::getCurrent();
+		if ($current instanceof TenantContext) {
+			if ((int)$tenant['id'] !== $current->id || (string)$tenant['slug'] !== $current->slug) {
+				throw new QueueException(sprintf(
+					'Job tenant %s cannot run in worker tenant %s. Start a worker for the matching tenant.',
+					(string)$tenant['slug'],
+					$current->slug,
+				));
+			}
+
+			return false;
+		}
+
+		$context = new TenantContext(
+			(int)$tenant['id'],
+			(string)$tenant['slug'],
+			(string)($tenant['displayName'] ?? $tenant['slug']),
+			(string)($tenant['status'] ?? 'active'),
+			isset($tenant['schemaVersion']) ? (string)$tenant['schemaVersion'] : null,
+			isset($tenant['primaryHost']) ? (string)$tenant['primaryHost'] : null,
+			(string)($tenant['resolvedHost'] ?? $tenant['primaryHost'] ?? $tenant['slug']),
+		);
+		TenantContext::setCurrent($context);
+		TenantContextAccessor::set($context);
+
+		return true;
+	}
+
+	/**
+	 * Clear context created only from a job payload after status persistence.
+	 *
+	 * @param bool $temporaryTenantContext Whether context was created here
+	 * @return void
+	 */
+	protected function clearTemporaryTenantContext(bool $temporaryTenantContext): void {
+		if (!$temporaryTenantContext) {
+			return;
+		}
+
+		TenantContextAccessor::set(null);
+		TenantContext::clearCurrent();
 	}
 
 	/**

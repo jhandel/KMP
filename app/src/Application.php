@@ -48,9 +48,15 @@ namespace App;
 
 // Authentication usings
 
+use App\Controller\ApprovalsController;
+use App\Controller\WorkflowDefinitionsController;
+use App\Controller\WorkflowInstancesController;
 use App\KMP\KmpIdentityInterface;
 // Add this line
 use App\KMP\StaticHelpers;
+use App\Middleware\PlatformAdminHostMiddleware;
+use App\Middleware\TenantResolutionMiddleware;
+use App\Middleware\TenantSessionMiddleware;
 // Authorization usings
 use App\Policy\ControllerResolver;
 use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
@@ -71,6 +77,9 @@ use App\Services\MemberRegistrationService;
 use App\Services\MemberSearchService;
 use App\Services\NavigationRegistry;
 use App\Services\QuickLoginDeviceService;
+use App\Services\Tenant\TenantConnectionFactory;
+use App\Services\Tenant\TenantRegistry;
+use App\Services\Tenant\TenantResolver;
 use App\Services\ViewCellRegistry;
 use App\Services\WarrantManager\DefaultWarrantManager;
 use App\Services\WarrantManager\WarrantManagerInterface;
@@ -78,19 +87,17 @@ use App\Services\WorkflowEngine\Actions\CoreActions;
 use App\Services\WorkflowEngine\Conditions\CoreConditions;
 use App\Services\WorkflowEngine\DefaultWorkflowApprovalManager;
 use App\Services\WorkflowEngine\DefaultWorkflowEngine;
+use App\Services\WorkflowEngine\DefaultWorkflowVersionManager;
 use App\Services\WorkflowEngine\ExpressionEvaluator;
 use App\Services\WorkflowEngine\Providers\MembersWorkflowActions;
 use App\Services\WorkflowEngine\Providers\MembersWorkflowConditions;
+use App\Services\WorkflowEngine\Providers\WarrantWorkflowActions;
 use App\Services\WorkflowEngine\StateMachine\StateMachineHandler;
 use App\Services\WorkflowEngine\TriggerDispatcher;
 use App\Services\WorkflowEngine\WorkflowApprovalManagerInterface;
 use App\Services\WorkflowEngine\WorkflowEngineInterface;
-use App\Services\WorkflowEngine\DefaultWorkflowVersionManager;
-use App\Services\WorkflowEngine\Providers\WarrantWorkflowActions;
 use App\Services\WorkflowEngine\WorkflowVersionManagerInterface;
-use App\Controller\WorkflowDefinitionsController;
-use App\Controller\WorkflowInstancesController;
-use App\Controller\ApprovalsController;
+use App\Services\WorkflowRegistry\WorkflowPluginLoader;
 use Authentication\AuthenticationService;
 use Authentication\AuthenticationServiceInterface;
 use Authentication\AuthenticationServiceProviderInterface;
@@ -104,6 +111,7 @@ use Authorization\Middleware\AuthorizationMiddleware;
 use Authorization\Policy\OrmResolver;
 use Authorization\Policy\ResolverCollection;
 use Cake\Cache\Cache;
+use Cake\Controller\ComponentRegistry;
 use Cake\Core\Configure;
 use Cake\Core\ContainerInterface;
 use Cake\Datasource\FactoryLocator;
@@ -112,6 +120,7 @@ use Cake\Http\BaseApplication;
 use Cake\Http\Middleware\BodyParserMiddleware;
 use Cake\Http\Middleware\CsrfProtectionMiddleware;
 use Cake\Http\MiddlewareQueue;
+use Cake\Http\ServerRequest;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\Locator\TableLocator;
@@ -253,7 +262,7 @@ class Application extends BaseApplication implements
         );
 
         // Load workflow providers from plugins and core
-        \App\Services\WorkflowRegistry\WorkflowPluginLoader::loadFromPlugins($this->getPlugins());
+        WorkflowPluginLoader::loadFromPlugins($this->getPlugins());
 
         // Version-based application configuration management
         // This system allows automatic updates to application settings when KMP is upgraded
@@ -499,7 +508,24 @@ class Application extends BaseApplication implements
                 ]),
             )
 
-            // 5. Routing Middleware - URL to controller/action mapping
+            // 5. Platform admin host gate - reject platform console routes on tenant hosts
+            ->add(new PlatformAdminHostMiddleware(
+                (array)Configure::read('PlatformAdmin.hosts'),
+                (array)Configure::read('PlatformAdmin.redirectFromHosts'),
+            ))
+
+            // 6. Tenant Resolution - configure request-scoped tenant connection before ORM/auth access
+            ->add(new TenantResolutionMiddleware(
+                new TenantResolver(
+                    new TenantRegistry(),
+                    Configure::read('Tenancy.requiredSchemaVersion'),
+                ),
+                new TenantConnectionFactory(),
+                (bool)Configure::read('Tenancy.allowSingleTenantFallback'),
+                (array)Configure::read('Tenancy.skipPathPrefixes'),
+            ))
+
+            // 7. Routing Middleware - URL to controller/action mapping
             // For large applications, consider enabling route caching in production
             // See: https://github.com/CakeDC/cakephp-cached-routing
             ->add(new RoutingMiddleware($this))
@@ -563,6 +589,9 @@ class Application extends BaseApplication implements
             // 8. Authentication Middleware - User login and session management
             // Must be added after routing and body parser to access request data
             ->add(new AuthenticationMiddleware($this))
+
+            // 8a. Tenant Session Middleware - reject authenticated sessions from another tenant
+            ->add(new TenantSessionMiddleware((array)Configure::read('Tenancy.skipPathPrefixes')))
 
             // 9. Authorization Middleware - Permission checking and access control
             // Enforces policy-based authorization on all requests
@@ -656,8 +685,8 @@ class Application extends BaseApplication implements
         // Register WarrantManager for warrant lifecycle management
         // Depends on ActiveWindowManager, TriggerDispatcher, ApprovalManager, and WorkflowEngine
         $container->add(
-            WarrantManagerInterface::class,        // Interface for dependency injection
-            DefaultWarrantManager::class,          // Concrete implementation
+            WarrantManagerInterface::class, // Interface for dependency injection
+            DefaultWarrantManager::class, // Concrete implementation
         )->addArguments([
             ActiveWindowManagerInterface::class,
             TriggerDispatcher::class,
@@ -743,27 +772,27 @@ class Application extends BaseApplication implements
         // Register WorkflowDefinitionsController for constructor injection
         $container->add(WorkflowDefinitionsController::class)
             ->addArguments([
-                \Cake\Http\ServerRequest::class,
+                ServerRequest::class,
                 WorkflowEngineInterface::class,
                 WorkflowVersionManagerInterface::class,
-                \Cake\Controller\ComponentRegistry::class,
+                ComponentRegistry::class,
             ]);
 
         // Register WorkflowInstancesController for constructor injection
         $container->add(WorkflowInstancesController::class)
             ->addArguments([
-                \Cake\Http\ServerRequest::class,
+                ServerRequest::class,
                 WorkflowEngineInterface::class,
-                \Cake\Controller\ComponentRegistry::class,
+                ComponentRegistry::class,
             ]);
 
         // Register ApprovalsController for constructor injection
         $container->add(ApprovalsController::class)
             ->addArguments([
-                \Cake\Http\ServerRequest::class,
+                ServerRequest::class,
                 WorkflowEngineInterface::class,
                 WorkflowApprovalManagerInterface::class,
-                \Cake\Controller\ComponentRegistry::class,
+                ComponentRegistry::class,
             ]);
     }
 

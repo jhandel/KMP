@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Queue\Command;
 
+use App\Command\TenantAwareCommandTrait;
 use Cake\Command\Command;
 use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
@@ -17,6 +18,8 @@ use Queue\Queue\Config;
  */
 class WorkerCommand extends Command {
 
+	use TenantAwareCommandTrait;
+
 	protected QueueProcessesTable $QueueProcesses;
 
 	/**
@@ -28,7 +31,6 @@ class WorkerCommand extends Command {
 	 * @return void
 	 */
 	public function initialize(): void {
-		$this->QueueProcesses = $this->fetchTable('Queue.QueueProcesses');
 	}
 
 	/**
@@ -56,6 +58,7 @@ class WorkerCommand extends Command {
 		$parser->setDescription(
 			'Display, end or kill running workers.',
 		);
+		$this->addTenantOptions($parser);
 
 		return $parser;
 	}
@@ -67,45 +70,48 @@ class WorkerCommand extends Command {
 	 * @return int|null|void
 	 */
 	public function execute(Arguments $args, ConsoleIo $io) {
-		$action = $args->getArgument('action');
-		if (!$action) {
-			$io->out('Please use with [action] [PID] added.');
-			$io->out('Actions are:');
-			$io->out('- end: Gracefully end a worker/process, use "all"/"server" for all');
-			$io->out('- kill: Kill a worker/process, use "all"/"server" for all');
-			$io->out('- clean: ');
-			$io->out();
+		return $this->runTenantAware($args, $io, function (Arguments $args, ConsoleIo $io): int {
+			$this->QueueProcesses = $this->fetchTable('Queue.QueueProcesses');
+			$action = $args->getArgument('action');
+			if (!$action) {
+				$io->out('Please use with [action] [PID] added.');
+				$io->out('Actions are:');
+				$io->out('- end: Gracefully end a worker/process, use "all"/"server" for all');
+				$io->out('- kill: Kill a worker/process, use "all"/"server" for all');
+				$io->out('- clean: ');
+				$io->out();
 
-			/** @var array<\Queue\Model\Entity\QueueProcess> $processes */
-			$processes = $this->QueueProcesses->find()
-				->orderByDesc('modified')
-				->limit(10)->all()->toArray();
-			if ($processes) {
-				$io->out('Last jobs are:');
-			} else {
-				$io->out('No workers/processes found');
+				/** @var array<\Queue\Model\Entity\QueueProcess> $processes */
+				$processes = $this->QueueProcesses->find()
+					->orderByDesc('modified')
+					->limit(10)->all()->toArray();
+				if ($processes) {
+					$io->out('Last jobs are:');
+				} else {
+					$io->out('No workers/processes found');
+				}
+
+				foreach ($processes as $worker) {
+					$io->out('- [' . $worker->pid . '] ' . $worker->server . ':' . $worker->workerkey . ' (' . ($worker->terminate ? 'scheduled to terminate' : 'running') . ')');
+					$io->out('  Last run: ' . $worker->modified);
+				}
+
+				return static::CODE_ERROR;
 			}
 
-			foreach ($processes as $worker) {
-				$io->out('- [' . $worker->pid . '] ' . $worker->server . ':' . $worker->workerkey . ' (' . ($worker->terminate ? 'scheduled to terminate' : 'running') . ')');
-				$io->out('  Last run: ' . $worker->modified);
+			if (!in_array($action, ['end', 'kill', 'clean'], true)) {
+				$io->abort('No such action');
+			}
+			$pid = $args->getArgument('pid');
+			if (!$pid && $action !== 'clean') {
+				$io->abort('PID must be given, or "all" used for all.');
+			}
+			if ($action === 'clean' && $pid) {
+				$io->abort('Clean action does not have a 2nd argument.');
 			}
 
-			return static::CODE_ERROR;
-		}
-
-		if (!in_array($action, ['end', 'kill', 'clean'], true)) {
-			$io->abort('No such action');
-		}
-		$pid = $args->getArgument('pid');
-		if (!$pid && $action !== 'clean') {
-			$io->abort('PID must be given, or "all" used for all.');
-		}
-		if ($action === 'clean' && $pid) {
-			$io->abort('Clean action does not have a 2nd argument.');
-		}
-
-		return $this->$action($io, $pid);
+			return $this->$action($io, $pid);
+		});
 	}
 
 	/**

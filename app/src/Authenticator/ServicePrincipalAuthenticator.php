@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Authenticator;
 
 use App\Model\Entity\ServicePrincipalToken;
+use App\Services\Tenant\TenantContext;
 use Authentication\Authenticator\AbstractAuthenticator;
 use Authentication\Authenticator\Result;
 use Authentication\Authenticator\ResultInterface;
@@ -50,6 +51,14 @@ class ServicePrincipalAuthenticator extends AbstractAuthenticator
      */
     public function authenticate(ServerRequestInterface $request): ResultInterface
     {
+        if (!$request->getAttribute('tenantContext') instanceof TenantContext) {
+            return new Result(
+                null,
+                Result::FAILURE_OTHER,
+                ['Tenant context is required for API authentication'],
+            );
+        }
+
         // 1. Extract Bearer token from Authorization header
         $token = $this->extractToken($request);
         if ($token === null) {

@@ -311,6 +311,29 @@ return [
         ],
     ],
 
+    "Tenancy" => [
+        "requiredSchemaVersion" => env("TENANT_REQUIRED_SCHEMA_VERSION", null),
+        "allowSingleTenantFallback" => filter_var(
+            env("TENANT_ALLOW_SINGLE_TENANT_FALLBACK", env("DEBUG", false) ? "true" : "false"),
+            FILTER_VALIDATE_BOOLEAN,
+        ),
+        "skipPathPrefixes" => ["/health", "/platform-admin"],
+    ],
+
+    "PlatformAdmin" => [
+        "hosts" => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string)env('PLATFORM_ADMIN_HOSTS', 'admin.localhost')),
+        ))),
+        "redirectFromHosts" => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string)env(
+                'PLATFORM_ADMIN_REDIRECT_FROM_HOSTS',
+                env('DEBUG', false) ? 'localhost,127.0.0.1' : '',
+            )),
+        ))),
+    ],
+
     /** @see docs/2-configuration.md#database-configuration and docs/8.1-environment-setup.md#database-configuration */
     "Datasources" => [
         /**
@@ -343,7 +366,7 @@ return [
             "database" => env("DB_DATABASE", env("MYSQL_DB_NAME", "kmp")),
 
             /** @var string|null Complete database DSN URL */
-            "url" => env("DATABASE_URL", null),
+            "url" => env("DATABASE_URL") ?: null,
 
             /** @var bool Use persistent connections (false for better resource management) */
             "persistent" => false,
@@ -368,6 +391,53 @@ return [
 
             /** @var array Database initialization commands */
             //'init' => ['SET GLOBAL innodb_stats_on_metadata = 0'],
+        ],
+
+        /**
+         * Platform Database Connection
+         *
+         * Global registry for tenant metadata and provisioning state. This must
+         * be a separate datastore from every tenant database.
+         */
+        "platform" => [
+            "className" => Connection::class,
+            "driver" => Mysql::class,
+            "host" => env("PLATFORM_DB_HOST", "localhost"),
+            "port" => env("PLATFORM_DB_PORT", 3306),
+            "username" => env("PLATFORM_DB_USERNAME", "root"),
+            "password" => env("PLATFORM_DB_PASSWORD", ""),
+            "database" => env("PLATFORM_DB_DATABASE", "kmp_platform"),
+            "url" => env("PLATFORM_DATABASE_URL") ?: null,
+            "persistent" => false,
+            "timezone" => "UTC",
+            "flags" => [],
+            "cacheMetadata" => true,
+            "log" => false,
+            "quoteIdentifiers" => false,
+        ],
+
+        /**
+         * Tenant Database Connection
+         *
+         * Per-tenant application data connection. Middleware/provisioning will
+         * swap this named connection later; default values preserve current
+         * single-tenant behavior without mutating the default connection.
+         */
+        "tenant" => [
+            "className" => Connection::class,
+            "driver" => Mysql::class,
+            "host" => env("TENANT_DB_HOST", env("DB_HOST", env("MYSQL_HOST", "localhost"))),
+            "port" => env("TENANT_DB_PORT", env("DB_PORT", env("MYSQL_PORT", 3306))),
+            "username" => env("TENANT_DB_USERNAME", env("DB_USERNAME", env("MYSQL_USERNAME", "root"))),
+            "password" => env("TENANT_DB_PASSWORD", env("DB_PASSWORD", env("MYSQL_PASSWORD", ""))),
+            "database" => env("TENANT_DB_DATABASE", env("DB_DATABASE", env("MYSQL_DB_NAME", "kmp"))),
+            "url" => env("TENANT_DATABASE_URL") ?: (env("DATABASE_URL") ?: null),
+            "persistent" => false,
+            "timezone" => "UTC",
+            "flags" => [],
+            "cacheMetadata" => true,
+            "log" => false,
+            "quoteIdentifiers" => false,
         ],
 
         /**
@@ -400,7 +470,7 @@ return [
             "database" => env("DB_DATABASE", env("MYSQL_DB_NAME", "kmp")) . "_test",
 
             /** @var string|null Complete test database DSN URL */
-            "url" => env("DATABASE_TEST_URL", env("DATABASE_URL", null)),
+            "url" => env("DATABASE_TEST_URL") ?: (env("DATABASE_URL") ?: null),
 
             /** @var bool Use persistent connections */
             "persistent" => false,

@@ -13,6 +13,7 @@ use Cake\Event\EventManager;
 use Cake\I18n\FrozenTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
+use Throwable;
 
 /**
  * CLI command to synchronize stored member warrantable flags.
@@ -27,6 +28,8 @@ use Cake\ORM\TableRegistry;
  */
 class SyncMemberWarrantableStatusesCommand extends Command
 {
+    use TenantAwareCommandTrait;
+
     /**
      * @inheritDoc
      */
@@ -40,6 +43,7 @@ class SyncMemberWarrantableStatusesCommand extends Command
             'default' => false,
             'help' => 'Preview warrantable status changes without saving to the database.',
         ]);
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -52,6 +56,22 @@ class SyncMemberWarrantableStatusesCommand extends Command
      * @return int
      */
     public function execute(Arguments $args, ConsoleIo $io): int
+    {
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): int => $this->executeForTenant($args, $io),
+        );
+    }
+
+    /**
+     * Execute command with an already configured tenant connection.
+     *
+     * @param \Cake\Console\Arguments $args Console arguments instance.
+     * @param \Cake\Console\ConsoleIo $io Console IO instance.
+     * @return int
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): int
     {
         $dryRun = (bool)$args->getOption('dry-run');
         $now = FrozenTime::now();
@@ -198,7 +218,7 @@ class SyncMemberWarrantableStatusesCommand extends Command
             EventManager::instance()->dispatch($event);
 
             $io->info('Dispatched Members.WarrantableSyncTriggered event.');
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('SyncMemberWarrantableStatuses: Event dispatch failed: ' . $e->getMessage());
             $io->warning('Failed to dispatch WarrantableSyncTriggered event: ' . $e->getMessage());
         }

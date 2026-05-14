@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Test\TestCase\Services;
 
 use App\Services\BackupStorageService;
+use App\Services\Tenant\TenantContext;
 use App\Test\TestCase\BaseTestCase;
 use Exception;
 
@@ -15,6 +16,7 @@ class BackupStorageServiceTest extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        TenantContext::clearCurrent();
         $this->skipIfPostgres();
 
         try {
@@ -38,6 +40,7 @@ class BackupStorageServiceTest extends BaseTestCase
                 }
             }
         }
+        TenantContext::clearCurrent();
         parent::tearDown();
     }
 
@@ -165,5 +168,28 @@ class BackupStorageServiceTest extends BaseTestCase
         // In dev environment without cloud config, should default to local
         $type = $this->service->getAdapterType();
         $this->assertEquals('local', $type);
+    }
+
+    public function testTenantContextPrefixesBackupStoragePaths(): void
+    {
+        TenantContext::setCurrent(new TenantContext(
+            42,
+            'Tenant A',
+            'Tenant A',
+            'active',
+            null,
+            'tenant-a.example.org',
+            'tenant-a.example.org',
+        ));
+        $filename = 'tenant_backup_' . uniqid() . '.sql';
+        $expectedPath = 'tenants/tenant-a/' . $filename;
+        $this->trackFile($expectedPath);
+
+        $this->service->write($filename, 'tenant data');
+
+        $this->assertTrue($this->service->exists($filename));
+        $this->assertSame('tenant data', $this->service->read($filename));
+        $this->assertContains($expectedPath, $this->service->listFiles());
+        $this->assertStringStartsWith('tenants/tenant-a/kmp-backup-tenant-a-', $this->service->buildBackupFilename());
     }
 }

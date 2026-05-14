@@ -6,8 +6,10 @@ namespace App\Test\TestCase\Services;
 use App\Model\Entity\Document;
 use App\Services\DocumentService;
 use App\Services\ServiceResult;
+use App\Services\Tenant\TenantContext;
 use App\Test\TestCase\BaseTestCase;
 use Exception;
+use ReflectionMethod;
 
 class DocumentServiceTest extends BaseTestCase
 {
@@ -16,6 +18,7 @@ class DocumentServiceTest extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        TenantContext::clearCurrent();
         $this->skipIfPostgres();
 
         try {
@@ -23,6 +26,12 @@ class DocumentServiceTest extends BaseTestCase
         } catch (Exception $e) {
             $this->markTestSkipped('DocumentService initialization failed: ' . $e->getMessage());
         }
+    }
+
+    protected function tearDown(): void
+    {
+        TenantContext::clearCurrent();
+        parent::tearDown();
     }
 
     public function testInstantiation(): void
@@ -173,5 +182,25 @@ class DocumentServiceTest extends BaseTestCase
 
         $response = $this->service->getDocumentInlineResponse($doc);
         $this->assertNull($response);
+    }
+
+    public function testTenantContextPrefixesNewDocumentStoragePath(): void
+    {
+        TenantContext::setCurrent(new TenantContext(
+            43,
+            'Tenant Docs',
+            'Tenant Docs',
+            'active',
+            null,
+            'tenant-docs.example.org',
+            'tenant-docs.example.org',
+        ));
+
+        $method = new ReflectionMethod(DocumentService::class, 'tenantStoragePath');
+        $method->setAccessible(true);
+
+        $path = $method->invoke($this->service, 'member-profile-photos/doc_123.jpg');
+
+        $this->assertSame('tenants/tenant-docs/member-profile-photos/doc_123.jpg', $path);
     }
 }

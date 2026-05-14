@@ -37,6 +37,28 @@ Complete reference for all KMP deployment configuration options.
 | `MYSQL_PASSWORD` | — | Database password (required) |
 | `MYSQL_ROOT_PASSWORD` | — | Database root password (required for VPC) |
 
+### Multi-Tenant Databases
+
+Managed multi-tenant deployments use a separate platform datastore plus one database per tenant.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PLATFORM_DB_HOST` | `localhost` | Platform registry database host |
+| `PLATFORM_DB_PORT` | `3306` | Platform registry database port |
+| `PLATFORM_DB_USERNAME` | `root` | Platform registry database username |
+| `PLATFORM_DB_PASSWORD` | — | Platform registry database password |
+| `PLATFORM_DB_DATABASE` | `kmp_platform` | Platform registry database name |
+| `PLATFORM_DATABASE_URL` | — | Optional complete DSN for the platform registry |
+| `TENANT_DB_HOST` | falls back to legacy DB host | Optional default/template tenant database host before a tenant is resolved |
+| `TENANT_DB_DATABASE` | falls back to legacy DB name | Optional default/template tenant database name for local development and `tenant:create` defaults |
+| `TENANT_DATABASE_URL` | falls back to `DATABASE_URL` | Optional default/template tenant DSN for local development |
+
+`PLATFORM_*` settings must identify a datastore that is separate from every tenant database. The application intentionally does not fall back from `platform` to `DB_DATABASE`, `MYSQL_DB_NAME`, or `DATABASE_URL`.
+
+`TENANT_DB_*` settings are not one setting per tenant. They are only a generic default connection used before tenant resolution and as defaults for provisioning commands. Each real tenant's database metadata is stored in the platform datastore (`tenant_database_configs`) and can point at a per-tenant secret reference such as `env:ANSTEORRA_DB_PASSWORD`, `env:OUTLANDS_DB_PASSWORD`, or an external vault key.
+
+The same rule applies to tenant-specific email and storage values. Shared `.env` keys such as `EMAIL_SMTP_PASSWORD`, `AZURE_STORAGE_CONNECTION_STRING`, or `AWS_SECRET_ACCESS_KEY` are deployment defaults. Tenant production values should be stored as `tenant_service_configs` metadata in the platform datastore with tenant-specific secret references such as `env:ANSTEORRA_SMTP_PASSWORD` or `env:ANSTEORRA_AZURE_STORAGE_CONNECTION_STRING`.
+
 ### Email (SMTP)
 
 | Variable | Default | Description |

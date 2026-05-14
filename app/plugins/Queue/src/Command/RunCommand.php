@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Queue\Command;
 
+use App\Command\TenantAwareCommandTrait;
 use Cake\Command\Command;
 use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
@@ -18,6 +19,8 @@ use Queue\Queue\Processor;
  * Main execution of queued jobs.
  */
 class RunCommand extends Command {
+
+	use TenantAwareCommandTrait;
 
 	/**
 	 * @var \Cake\Core\ContainerInterface
@@ -70,6 +73,7 @@ class RunCommand extends Command {
 			'help' => 'Type (comma separated list possible)',
 			'default' => null,
 		]);
+		$this->addTenantOptions($parser);
 
 		$parser->setDescription(
 			'Simple and minimalistic job queue (or deferred-task) system.'
@@ -105,11 +109,13 @@ class RunCommand extends Command {
 	 * @return int
 	 */
 	public function execute(Arguments $args, ConsoleIo $io): int {
-		$logger = $this->getLogger($args);
-		$io = new Io($io);
-		$processor = new Processor($io, $logger, $this->container);
+		return $this->runTenantAware($args, $io, function (Arguments $args, ConsoleIo $io): int {
+			$logger = $this->getLogger($args);
+			$io = new Io($io);
+			$processor = new Processor($io, $logger, $this->container);
 
-		return $processor->run($args->getOptions());
+			return $processor->run($args->getOptions());
+		});
 	}
 
 }

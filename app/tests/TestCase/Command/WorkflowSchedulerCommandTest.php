@@ -1,13 +1,9 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Command;
 
 use App\Model\Entity\WorkflowDefinition;
-use App\Services\ServiceResult;
-use App\Services\WorkflowEngine\TriggerDispatcher;
-use App\Services\WorkflowEngine\WorkflowEngineInterface;
 use App\Test\TestCase\BaseTestCase;
 use Cake\Console\TestSuite\ConsoleIntegrationTestTrait;
 use Cake\I18n\DateTime;
@@ -31,6 +27,30 @@ class WorkflowSchedulerCommandTest extends BaseTestCase
         $this->defTable = TableRegistry::getTableLocator()->get('WorkflowDefinitions');
         $this->versionsTable = TableRegistry::getTableLocator()->get('WorkflowVersions');
         $this->schedulesTable = TableRegistry::getTableLocator()->get('WorkflowSchedules');
+        $this->clearSchedulerTestWorkflows();
+    }
+
+    /**
+     * Remove scheduler test workflows because the command scans every active
+     * scheduled workflow in the tenant database.
+     *
+     * @return void
+     */
+    private function clearSchedulerTestWorkflows(): void
+    {
+        $definitions = $this->defTable->find()
+            ->select(['id'])
+            ->where(['slug LIKE' => 'sched-%'])
+            ->all()
+            ->extract('id')
+            ->toList();
+        if ($definitions === []) {
+            return;
+        }
+
+        $this->schedulesTable->deleteAll(['workflow_definition_id IN' => $definitions]);
+        $this->versionsTable->deleteAll(['workflow_definition_id IN' => $definitions]);
+        $this->defTable->deleteAll(['id IN' => $definitions]);
     }
 
     /**
@@ -258,8 +278,6 @@ class WorkflowSchedulerCommandTest extends BaseTestCase
             ->first();
 
         $this->assertNotNull($schedule);
-        $firstRunAt = $schedule->last_run_at;
-
         // Second run — should skip because just ran
         $this->exec('workflow_scheduler --dry-run');
 

@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace App\Model\Table;
 
-use Cake\ORM\Table;
 use Cake\Validation\Validator;
 
 /**
@@ -12,7 +11,7 @@ use Cake\Validation\Validator;
  * @method \App\Model\Entity\Backup newEmptyEntity()
  * @method \App\Model\Entity\Backup get(mixed $primaryKey, array|string $finder = 'all', \Psr\SimpleCache\CacheInterface|string|null $cache = null, \Closure|string|null $cacheKey = null, mixed ...$args)
  */
-class BackupsTable extends Table
+class BackupsTable extends BaseTable
 {
     /**
      * Set up this component.

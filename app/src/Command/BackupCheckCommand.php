@@ -21,6 +21,8 @@ use Exception;
  */
 class BackupCheckCommand extends Command
 {
+    use TenantAwareCommandTrait;
+
     /**
      * Get the default command name.
      *
@@ -40,6 +42,7 @@ class BackupCheckCommand extends Command
     protected function buildOptionParser(ConsoleOptionParser $parser): ConsoleOptionParser
     {
         $parser->setDescription('Check backup schedule and create backup if due');
+        $this->addTenantOptions($parser);
 
         return $parser;
     }
@@ -52,6 +55,22 @@ class BackupCheckCommand extends Command
      * @return ?int
      */
     public function execute(Arguments $args, ConsoleIo $io): ?int
+    {
+        return $this->runTenantAware(
+            $args,
+            $io,
+            fn(Arguments $args, ConsoleIo $io): ?int => $this->executeForTenant($args, $io),
+        );
+    }
+
+    /**
+     * Execute backup check with an already configured tenant connection.
+     *
+     * @param \Cake\Console\Arguments $args
+     * @param \Cake\Console\ConsoleIo $io
+     * @return ?int
+     */
+    private function executeForTenant(Arguments $args, ConsoleIo $io): ?int
     {
         $appSettings = $this->fetchTable('AppSettings');
         $schedule = $appSettings->getAppSetting('Backup.schedule', 'disabled', 'string', false);
@@ -96,14 +115,17 @@ class BackupCheckCommand extends Command
         $storage = new BackupStorageService();
         $backupService = new BackupService();
 
-        $filename = 'kmp-backup-' . date('Ymd-His') . '.kmpbackup';
+        $filename = $storage->buildBackupFilename();
         $io->out("Scheduled backup: {$filename}");
+        $tenantMetadata = $storage->getTenantMetadata();
 
         $backup = $backupsTable->newEntity([
             'filename' => $filename,
             'storage_type' => $storage->getAdapterType(),
             'status' => 'running',
-            'notes' => "Scheduled ({$schedule})",
+            'notes' => empty($tenantMetadata)
+                ? "Scheduled ({$schedule})"
+                : sprintf('Scheduled (%s) for tenant %s', $schedule, $tenantMetadata['tenant_slug']),
         ]);
         $backupsTable->save($backup);
 

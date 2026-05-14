@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Test\TestCase\Services;
 
 use App\Services\BackupService;
+use App\Services\Tenant\TenantContext;
 use Cake\TestSuite\TestCase;
 use ReflectionMethod;
 use RuntimeException;
@@ -13,6 +14,12 @@ use RuntimeException;
  */
 class BackupServiceTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        TenantContext::clearCurrent();
+        parent::tearDown();
+    }
+
     public function testRestorePostgresForeignKeysUsesSavepointForValidateFailures(): void
     {
         $service = new BackupService();
@@ -80,5 +87,30 @@ class BackupServiceTest extends TestCase
             'ALTER TABLE "awards_recommendations_events" ADD CONSTRAINT "awards_recommendations_events_recommendation_id_fkey" FOREIGN KEY (recommendation_id) REFERENCES awards_recommendations(id) NOT VALID',
             $connection->queries,
         );
+    }
+
+    public function testTenantTaggedBackupCannotRestoreIntoDifferentTenant(): void
+    {
+        TenantContext::setCurrent(new TenantContext(
+            50,
+            'tenant-b',
+            'Tenant B',
+            'active',
+            null,
+            'tenant-b.example.org',
+            'tenant-b.example.org',
+        ));
+        $service = new BackupService();
+
+        $method = new ReflectionMethod(BackupService::class, 'assertBackupTenantMatches');
+        $method->setAccessible(true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Backup belongs to tenant "tenant-a"');
+        $method->invoke($service, [
+            'tenant' => [
+                'slug' => 'tenant-a',
+            ],
+        ]);
     }
 }

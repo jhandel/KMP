@@ -5,6 +5,7 @@ namespace App\Test\TestCase;
 
 use App\Test\TestCase\Support\SeedManager;
 use Cake\Datasource\ConnectionManager;
+use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
 
 /**
@@ -142,6 +143,7 @@ abstract class BaseTestCase extends TestCase
     {
         parent::setUp();
         $this->startTransaction();
+        $this->ensureSyntheticTestMembers();
     }
 
     /**
@@ -219,6 +221,121 @@ abstract class BaseTestCase extends TestCase
         if (SeedManager::isPostgres('test')) {
             $this->markTestSkipped($reason);
         }
+    }
+
+    /**
+     * Ensure conventional synthetic member ids exist for tests that fetch by constant id.
+     *
+     * @return void
+     */
+    protected function ensureSyntheticTestMembers(): void
+    {
+        $connection = ConnectionManager::get('test');
+        $membersTable = TableRegistry::getTableLocator()->get('Members');
+        foreach ($this->syntheticTestMemberRows() as $memberId => $data) {
+            $idExists = (int)$connection
+                ->execute('SELECT COUNT(*) FROM members WHERE id = ?', [$memberId])
+                ->fetchColumn(0);
+            if ($idExists > 0) {
+                $connection->execute(
+                    'UPDATE members SET deleted = NULL, email_address = ?, status = ?, membership_expires_on = ?, warrantable = ? WHERE id = ?',
+                    [
+                        $data['email_address'],
+                        $data['status'],
+                        $data['membership_expires_on'],
+                        (int)$data['warrantable'],
+                        $memberId,
+                    ],
+                );
+                continue;
+            }
+            $emailExists = (int)$connection
+                ->execute('SELECT COUNT(*) FROM members WHERE email_address = ?', [$data['email_address']])
+                ->fetchColumn(0);
+            if ($emailExists > 0) {
+                $connection->execute(
+                    'DELETE FROM members WHERE email_address = ? AND id <> ?',
+                    [$data['email_address'], $memberId],
+                );
+            }
+            $member = $membersTable->newEntity($data);
+            $member->set('id', $memberId, ['guard' => false]);
+            $membersTable->saveOrFail($member, ['checkRules' => false]);
+        }
+    }
+
+    /**
+     * Synthetic members used by authorization and workflow tests.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function syntheticTestMemberRows(): array
+    {
+        return [
+            self::TEST_MEMBER_AGATHA_ID => $this->syntheticTestMemberRow(
+                'Agatha Local MoAS Demoer',
+                'Agatha',
+                'Demoer',
+                'agatha@ampdemo.com',
+                2000,
+            ),
+            self::TEST_MEMBER_BRYCE_ID => $this->syntheticTestMemberRow(
+                'Bryce Local Seneschal Demoer',
+                'Bryce',
+                'Demoer',
+                'bryce@ampdemo.com',
+                2001,
+            ),
+            self::TEST_MEMBER_DEVON_ID => $this->syntheticTestMemberRow(
+                'Devon Regional Armored Demoer',
+                'Devon',
+                'Demoer',
+                'devon@ampdemo.com',
+                2002,
+                false,
+            ),
+            self::TEST_MEMBER_EIRIK_ID => $this->syntheticTestMemberRow(
+                'Eirik Kingdom Seneschal Demoer',
+                'Eirik',
+                'Demoer',
+                'eirik@ampdemo.com',
+                2004,
+            ),
+        ];
+    }
+
+    /**
+     * Build a synthetic member row.
+     *
+     * @return array<string, mixed>
+     */
+    private function syntheticTestMemberRow(
+        string $scaName,
+        string $firstName,
+        string $lastName,
+        string $email,
+        int $birthYear,
+        bool $warrantable = true,
+    ): array {
+        return [
+            'password' => 'TestPassword',
+            'sca_name' => $scaName,
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'street_address' => '1 Test Way',
+            'city' => 'Testville',
+            'state' => 'TS',
+            'zip' => '00000',
+            'phone_number' => '555-0100',
+            'email_address' => $email,
+            'status' => 'verified',
+            'membership_expires_on' => '2100-01-01',
+            'warrantable' => $warrantable,
+            'birth_month' => 1,
+            'birth_year' => $birthYear,
+            'created_by' => 1,
+            'modified_by' => 1,
+        ];
     }
 
     // ==================================================

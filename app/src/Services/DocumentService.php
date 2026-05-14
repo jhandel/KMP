@@ -5,6 +5,7 @@ namespace App\Services;
 
 use App\Model\Entity\Document;
 use App\Model\Table\DocumentsTable;
+use App\Services\Tenant\TenantContext;
 use Aws\S3\S3Client;
 use AzureOss\FlysystemAzureBlobStorage\AzureBlobStorageAdapter;
 use AzureOss\Storage\Blob\BlobServiceClient;
@@ -421,6 +422,44 @@ class DocumentService
     }
 
     /**
+     * Sanitize and tenant-prefix a newly-created storage path.
+     */
+    private function tenantStoragePath(string $path): string
+    {
+        $path = $this->sanitizePath($path);
+        $prefix = $this->tenantStoragePrefix();
+        if ($prefix === '' || str_starts_with($path, $prefix)) {
+            return $path;
+        }
+
+        return $prefix . $path;
+    }
+
+    /**
+     * Return the tenant storage namespace prefix, or empty string in legacy mode.
+     */
+    private function tenantStoragePrefix(): string
+    {
+        $context = TenantContext::getCurrent();
+        if ($context === null) {
+            return '';
+        }
+
+        return 'tenants/' . $this->safeTenantSlug($context->slug) . '/';
+    }
+
+    /**
+     * Normalize a tenant slug for object/file paths.
+     */
+    private function safeTenantSlug(string $slug): string
+    {
+        $safe = strtolower(preg_replace('/[^a-zA-Z0-9_-]+/', '-', $slug) ?? '');
+        $safe = trim($safe, '-_');
+
+        return $safe !== '' ? $safe : 'tenant';
+    }
+
+    /**
      * Create a document from an uploaded file
      *
      * This method handles the complete document creation workflow:
@@ -471,7 +510,9 @@ class DocumentService
 
         // Generate storage path
         $storedFilename = $this->generateUniqueFilename($extension);
-        $relativePath = $this->sanitizePath($subDirectory ? $subDirectory . '/' . $storedFilename : $storedFilename);
+        $relativePath = $this->tenantStoragePath(
+            $subDirectory ? $subDirectory . '/' . $storedFilename : $storedFilename,
+        );
 
         // Get file stream for efficient processing
         try {

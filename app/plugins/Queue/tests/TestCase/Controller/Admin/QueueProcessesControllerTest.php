@@ -35,6 +35,7 @@ class QueueProcessesControllerTest extends TestCase
 		parent::setUp();
 
 		$this->disableErrorHandlerMiddleware();
+		$this->configRequest(['headers' => ['Host' => 'localhost']]);
 		$this->authenticateAsSuperUser();
 		$this->enableCsrfToken();
 		$this->enableSecurityToken();

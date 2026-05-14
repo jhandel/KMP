@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Model\Table;
 
+use App\Services\Tenant\TenantContext;
 use Cake\Cache\Cache;
 use Cake\Datasource\EntityInterface;
 use Cake\Log\Log;
@@ -137,7 +138,7 @@ class AppSettingsTable extends BaseTable
     public function getSetting(string $name): mixed
     {
         $isSensitive = $this->isSensitiveSetting($name);
-        $cacheKey = 'app_setting_' . $name;
+        $cacheKey = TenantContext::cacheKey('app_setting_' . $name);
         $setting = $isSensitive ? null : Cache::read($cacheKey, 'default');
 
         if ($setting === null) {
@@ -203,7 +204,7 @@ class AppSettingsTable extends BaseTable
         }
         if ($this->save($setting)) {
             if (!$this->isSensitiveSetting($name)) {
-                $cacheKey = 'app_setting_' . $name;
+                $cacheKey = TenantContext::cacheKey('app_setting_' . $name);
                 Cache::write($cacheKey, $this->resolveValueForRead($effectiveType, $setting->value), 'default');
             }
 
@@ -231,7 +232,7 @@ class AppSettingsTable extends BaseTable
             }
             if ($this->delete($setting)) {
                 if (!$this->isSensitiveSetting($name)) {
-                    $cacheKey = 'app_setting_' . $name;
+                    $cacheKey = TenantContext::cacheKey('app_setting_' . $name);
                     Cache::delete($cacheKey, 'default');
                 }
 

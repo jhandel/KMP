@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Queue\Test\TestCase\Model\Table;
 
+use App\Services\Tenant\TenantContext;
 use Cake\Core\Configure;
 use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
@@ -57,9 +58,32 @@ class QueuedJobsTableTest extends TestCase
 	 */
 	public function tearDown(): void
 	{
+		TenantContext::clearCurrent();
 		parent::tearDown();
 
 		Configure::delete('Queue.skipExistenceCheck');
+	}
+
+	/**
+	 * @return void
+	 */
+	public function testCreateJobPersistsTenantContext(): void
+	{
+		TenantContext::setCurrent(new TenantContext(
+			7,
+			'tenant-alpha',
+			'Tenant Alpha',
+			'active',
+			'2026-01-01',
+			'alpha.example.test',
+			'alpha.example.test',
+		));
+
+		$job = $this->QueuedJobs->createJob('Foo', ['some' => 'data']);
+
+		$this->assertSame('data', $job->data['some']);
+		$this->assertSame(7, $job->data['__tenant_context']['id']);
+		$this->assertSame('tenant-alpha', $job->data['__tenant_context']['slug']);
 	}
 
 	/**

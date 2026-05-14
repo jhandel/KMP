@@ -14,6 +14,19 @@ KMP uses pre-built Docker images published to `ghcr.io/jhandel/kmp`. Updating is
 
 No building, compiling, or dependency installation is needed on your server.
 
+## Multi-Tenant Migration Order
+
+Managed multi-tenant deployments must keep platform registry migrations separate from tenant application migrations:
+
+```bash
+cd app
+bin/cake platform:migrate
+bin/cake tenant:migrate --all-tenants
+bin/cake tenant:doctor --all-tenants
+```
+
+`platform:migrate` runs only `config/PlatformMigrations/` on the `platform` datasource. `tenant:migrate` runs normal app and plugin migrations against each tenant database. Do not run platform registry migrations through `update_database` or against a tenant database.
+
 ## Using `kmp update`
 
 The simplest way to update:

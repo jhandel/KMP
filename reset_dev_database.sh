@@ -39,10 +39,11 @@ fi
 
 echo "[reset_dev_database] Starting reset process..."
 
-# Decide engine. Prefer DATABASE_URL when set.
+# Decide engine. Prefer TENANT_DATABASE_URL/DATABASE_URL when set.
 DB_ENGINE="mysql"
-if [ -n "${DATABASE_URL-}" ]; then
-	case "$(echo "${DATABASE_URL}" | tr '[:upper:]' '[:lower:]')" in
+TENANT_URL="${TENANT_DATABASE_URL:-${DATABASE_URL-}}"
+if [ -n "${TENANT_URL-}" ]; then
+	case "$(echo "${TENANT_URL}" | tr '[:upper:]' '[:lower:]')" in
 		postgres*|pgsql*)
 			DB_ENGINE="postgres"
 			;;
@@ -78,10 +79,10 @@ else
 	: "${MYSQL_PASSWORD:?Environment variable MYSQL_PASSWORD is required}"
 	: "${MYSQL_DB_NAME:?Environment variable MYSQL_DB_NAME is required}"
 
-	DB_USER="$MYSQL_USERNAME"
-	DB_PASS="$MYSQL_PASSWORD"
-	DB_NAME="$MYSQL_DB_NAME"
-	DB_HOST="${MYSQL_HOST:-localhost}"
+	DB_USER="${TENANT_DB_USERNAME:-$MYSQL_USERNAME}"
+	DB_PASS="${TENANT_DB_PASSWORD:-$MYSQL_PASSWORD}"
+	DB_NAME="${TENANT_DB_DATABASE:-$MYSQL_DB_NAME}"
+	DB_HOST="${TENANT_DB_HOST:-${MYSQL_HOST:-localhost}}"
 
 	echo "[1/4] Resetting database schema (bin/cake resetDatabase)..."
 	bin/cake resetDatabase
@@ -98,6 +99,43 @@ else
 	echo "[4/4] Updating database (bin/cake updateDatabase)..."
 	bin/cake updateDatabase
 fi
+
+echo "[post] Preparing platform tenant registry..."
+TENANT_SLUG="${DEV_TENANT_SLUG:-localdev}"
+TENANT_DISPLAY_NAME="${DEV_TENANT_DISPLAY_NAME:-Local Development}"
+PLATFORM_ADMIN_SEED_EMAIL="${PLATFORM_ADMIN_SEED_EMAIL:-platform-admin@localhost.test}"
+if [ "$PLATFORM_ADMIN_SEED_EMAIL" = "platform-admin@localhost" ]; then
+	PLATFORM_ADMIN_SEED_EMAIL="platform-admin@localhost.test"
+fi
+TENANT_DB_NAME="${TENANT_DB_DATABASE:-${MYSQL_DB_NAME:-KMP_DEV}}"
+TENANT_DB_HOST="${TENANT_DB_HOST:-${MYSQL_HOST:-localhost}}"
+TENANT_DB_USER="${TENANT_DB_USERNAME:-${MYSQL_USERNAME:-}}"
+TENANT_DB_DRIVER='Cake\Database\Driver\Mysql'
+TENANT_CREATE_DB_ARGS=(--database-name="$TENANT_DB_NAME" --host="$TENANT_DB_HOST")
+if [ "$DB_ENGINE" = "postgres" ]; then
+	TENANT_DB_DRIVER='Cake\Database\Driver\Postgres'
+	TENANT_CREATE_DB_ARGS=(--database-name="$TENANT_DB_NAME" --host="${TENANT_DB_HOST:-127.0.0.1}" --port="${TENANT_DB_PORT:-5432}")
+	if [ -n "${TENANT_DATABASE_URL-}" ]; then
+		TENANT_CREATE_DB_ARGS=(--database-url="$TENANT_DATABASE_URL")
+	fi
+fi
+
+bin/cake platform:migrate
+bin/cake platform_admin:seed --email="$PLATFORM_ADMIN_SEED_EMAIL"
+bin/cake tenant:create "$TENANT_SLUG" \
+	--display-name="$TENANT_DISPLAY_NAME" \
+	--primary-host=localhost \
+	--alias=127.0.0.1 \
+	--alias=kmp.localhost \
+	--driver="$TENANT_DB_DRIVER" \
+	"${TENANT_CREATE_DB_ARGS[@]}" \
+	--username="$TENANT_DB_USER" \
+	--secret-reference=env:TENANT_DB_PASSWORD \
+	--email-config-json='{"transport":{"host":"localhost","port":1025,"username":"testuser","tls":false},"email":{"from":"noreply@localhost"}}' \
+	--email-secret-reference=env:LOCALDEV_SMTP_PASSWORD \
+	--storage-adapter=local \
+	--storage-config-json='{"local":{"path":"tmp/tenant-storage/localdev"}}' \
+	--activate
 
 echo "[post] Setting ALL member passwords to TestPassword via ORM..."
 php -r '

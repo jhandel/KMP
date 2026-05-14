@@ -11,6 +11,15 @@ KMP is moving to a managed multi-tenant hosting model. The standalone installer 
 | `bin/cake kmp_install` | Retired for new deployments |
 | Self-hosted guides below | Archived reference |
 
+## Managed Multi-Tenant Operations
+
+New managed environments use host-based tenants and two separate database roles:
+
+- `platform` stores global tenant registry/provisioning metadata only.
+- `tenant` points at the selected tenant database for normal KMP data.
+
+Before onboarding tenants, run `bin/cake platform:migrate` against the independent platform datastore. Do not point `PLATFORM_DATABASE_URL` or `PLATFORM_DB_DATABASE` at a tenant application database. See [Multi-Tenancy Architecture](../3.9-multi-tenancy.md) for tenant onboarding, migration, queue worker, and backup procedures.
+
 ## Legacy Self-Hosted Platforms
 
 | Platform | Type | Database | SSL | Difficulty |

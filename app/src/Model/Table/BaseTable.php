@@ -15,8 +15,11 @@ declare(strict_types=1);
 namespace App\Model\Table;
 
 use App\Services\ImpersonationService;
+use App\Services\Tenant\TenantContext;
+use ArrayObject;
 use Cake\Cache\Cache;
 use Cake\Datasource\EntityInterface;
+use Cake\Event\EventInterface;
 use Cake\Log\Log;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\Table;
@@ -26,6 +29,16 @@ use Throwable;
 
 class BaseTable extends Table
 {
+    /**
+     * Tenant application tables use the request-scoped tenant connection.
+     *
+     * @return string
+     */
+    public static function defaultConnectionName(): string
+    {
+        return 'tenant';
+    }
+
     /** @var array<array{string, string}> Static cache entries to clear on save */
     protected const CACHES_TO_CLEAR = [];
 
@@ -43,13 +56,13 @@ class BaseTable extends Table
      * @param \ArrayObject $options Save options
      * @return void
      */
-    public function afterSave($event, $entity, $options): void
+    public function afterSave(EventInterface $event, EntityInterface $entity, ArrayObject $options): void
     {
         // Phase 1: Clear static cache entries
         if (!empty($this::CACHES_TO_CLEAR)) {
             foreach ($this::CACHES_TO_CLEAR as $cache) {
                 // Each cache entry: [cache_key, cache_config]
-                Cache::delete($cache[0], $cache[1]);
+                Cache::delete(TenantContext::cacheKey($cache[0]), $cache[1]);
             }
         }
 
@@ -58,7 +71,7 @@ class BaseTable extends Table
             foreach ($this::ID_CACHES_TO_CLEAR as $cache) {
                 // Each cache entry: [prefix, cache_config]
                 // Combines prefix with entity ID: prefix{entity_id}
-                Cache::delete($cache[0] . $entity->id, $cache[1]);
+                Cache::delete(TenantContext::cacheKey($cache[0] . $entity->id), $cache[1]);
             }
         }
 
@@ -80,19 +93,19 @@ class BaseTable extends Table
      * @param \ArrayObject $options Delete options
      * @return void
      */
-    public function afterDelete($event, $entity, $options): void
+    public function afterDelete(EventInterface $event, EntityInterface $entity, ArrayObject $options): void
     {
         // Phase 1: Clear static cache entries
         if (!empty($this::CACHES_TO_CLEAR)) {
             foreach ($this::CACHES_TO_CLEAR as $cache) {
-                Cache::delete($cache[0], $cache[1]);
+                Cache::delete(TenantContext::cacheKey($cache[0]), $cache[1]);
             }
         }
 
         // Phase 2: Clear entity-ID-based cache entries
         if (!empty($this::ID_CACHES_TO_CLEAR)) {
             foreach ($this::ID_CACHES_TO_CLEAR as $cache) {
-                Cache::delete($cache[0] . $entity->id, $cache[1]);
+                Cache::delete(TenantContext::cacheKey($cache[0] . $entity->id), $cache[1]);
             }
         }
 

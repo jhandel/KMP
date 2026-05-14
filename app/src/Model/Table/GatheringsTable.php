@@ -8,7 +8,6 @@ use Cake\Datasource\EntityInterface;
 use Cake\Event\EventInterface;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
-use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
 use Cake\Validation\Validator;
 use DateTimeZone;
@@ -35,7 +34,7 @@ use Exception;
  * @method \App\Model\Entity\Gathering|false save(\Cake\Datasource\EntityInterface $entity, array $options = [])
  * @method \App\Model\Entity\Gathering saveOrFail(\Cake\Datasource\EntityInterface $entity, array $options = [])
  */
-class GatheringsTable extends Table
+class GatheringsTable extends BaseTable
 {
     /**
      * Initialize method

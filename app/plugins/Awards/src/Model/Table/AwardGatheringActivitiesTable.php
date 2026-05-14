@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Awards\Model\Table;
 
-use Cake\ORM\Table;
+use App\Model\Table\BaseTable;
 use Cake\Validation\Validator;
 use Cake\ORM\RulesChecker;
 
@@ -27,7 +27,7 @@ use Cake\ORM\RulesChecker;
  * @method \Awards\Model\Entity\AwardGatheringActivity|false save(\Cake\Datasource\EntityInterface $entity, array $options = [])
  * @method \Awards\Model\Entity\AwardGatheringActivity saveOrFail(\Cake\Datasource\EntityInterface $entity, array $options = [])
  */
-class AwardGatheringActivitiesTable extends Table
+class AwardGatheringActivitiesTable extends BaseTable
 {
     /**
      * Configure table metadata, behaviors, and associations for the AwardGatheringActivities table.
