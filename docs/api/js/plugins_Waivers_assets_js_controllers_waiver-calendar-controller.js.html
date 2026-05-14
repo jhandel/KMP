@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: plugins/Waivers/assets/js/controllers/waiver-calendar-controller.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: plugins/Waivers/assets/js/controllers/waiver-calendar-controller.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { Controller } from "@hotwired/stimulus"
+
+/**
+ * Waiver Calendar Controller
+ *
+ * Renders a monthly calendar showing gatherings color-coded by waiver status.
+ * Red = no waivers, Yellow = partial, Green = complete, Blue = closed.
+ *
+ * Values:
+ * - url: API endpoint for calendar data
+ *
+ * Targets:
+ * - calendar: Container for the calendar grid
+ * - monthLabel: Displays current month/year
+ * - prevBtn: Previous month button
+ * - nextBtn: Next month button
+ */
+class WaiverCalendarController extends Controller {
+    static targets = ["calendar", "monthLabel", "prevBtn", "nextBtn"]
+    static values = { url: String }
+
+    connect() {
+        const now = new Date()
+        this.year = now.getFullYear()
+        this.month = now.getMonth() + 1
+        this.loadMonth()
+    }
+
+    prevMonth() {
+        this.month--
+        if (this.month &lt; 1) {
+            this.month = 12
+            this.year--
+        }
+        this.loadMonth()
+    }
+
+    nextMonth() {
+        this.month++
+        if (this.month > 12) {
+            this.month = 1
+            this.year++
+        }
+        this.loadMonth()
+    }
+
+    async loadMonth() {
+        const sep = this.urlValue.includes('?') ? '&amp;' : '?'
+        const url = `${this.urlValue}${sep}year=${this.year}&amp;month=${this.month}`
+
+        try {
+            const response = await fetch(url, {
+                headers: { 'Accept': 'application/json' }
+            })
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`)
+            }
+            const data = await response.json()
+            this.monthLabelTarget.textContent = data.monthName
+            this.renderCalendar(data)
+        } catch (error) {
+            console.error('Failed to load calendar data:', error)
+            this.calendarTarget.innerHTML =
+                '&lt;div class="alert alert-danger">Failed to load calendar data.&lt;/div>'
+        }
+    }
+
+    renderCalendar(data) {
+        const year = data.year
+        const month = data.month
+        const firstDay = new Date(year, month - 1, 1)
+        const lastDay = new Date(year, month, 0)
+        const daysInMonth = lastDay.getDate()
+        const startDow = firstDay.getDay() // 0=Sun
+
+        // Build event lookup by date (only show on start_date to avoid clutter)
+        const eventsByDate = {}
+        for (const evt of data.events) {
+            const key = evt.start_date
+            if (!eventsByDate[key]) eventsByDate[key] = []
+            eventsByDate[key].push(evt)
+        }
+
+        const today = new Date()
+        const todayKey = this.dateKey(today)
+
+        let html = '&lt;div class="waiver-calendar-grid">'
+
+        // Day headers
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+        for (const name of dayNames) {
+            html += `&lt;div class="waiver-calendar-header">${name}&lt;/div>`
+        }
+
+        // Leading empty cells from previous month
+        const prevMonth = new Date(year, month - 1, 0)
+        const prevDays = prevMonth.getDate()
+        for (let i = startDow - 1; i >= 0; i--) {
+            const day = prevDays - i
+            html += `&lt;div class="waiver-calendar-day other-month">&lt;span class="waiver-calendar-day-number">${day}&lt;/span>&lt;/div>`
+        }
+
+        // Current month days
+        for (let d = 1; d &lt;= daysInMonth; d++) {
+            const dateObj = new Date(year, month - 1, d)
+            const key = this.dateKey(dateObj)
+            const isToday = key === todayKey
+            const classes = ['waiver-calendar-day']
+            if (isToday) classes.push('today')
+
+            html += `&lt;div class="${classes.join(' ')}">&lt;span class="waiver-calendar-day-number">${d}&lt;/span>`
+
+            const dayEvents = eventsByDate[key] || []
+            for (const evt of dayEvents) {
+                html += this.renderEvent(evt)
+            }
+
+            html += '&lt;/div>'
+        }
+
+        // Trailing empty cells
+        const totalCells = startDow + daysInMonth
+        const remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7)
+        for (let i = 1; i &lt;= remaining; i++) {
+            html += `&lt;div class="waiver-calendar-day other-month">&lt;span class="waiver-calendar-day-number">${i}&lt;/span>&lt;/div>`
+        }
+
+        html += '&lt;/div>'
+        this.calendarTarget.innerHTML = html
+    }
+
+    renderEvent(evt) {
+        const statusColors = {
+            missing: '#dc3545',
+            partial: '#ffc107',
+            complete: '#198754',
+            closed: '#0d6efd'
+        }
+        const color = statusColors[evt.status] || '#6c757d'
+        const multiDayClass = evt.multi_day ? ' multi-day' : ''
+        const title = `${evt.name} (${evt.branch})`
+
+        let badges = ''
+
+        if (evt.status === 'closed') {
+            badges += '&lt;span class="badge bg-primary">&lt;i class="bi bi-lock-fill">&lt;/i> Closed&lt;/span>'
+        } else {
+            if (evt.uploaded > 0) {
+                badges += `&lt;span class="badge bg-success">${evt.uploaded} Uploaded&lt;/span>`
+            }
+            if (evt.exempted > 0) {
+                badges += `&lt;span class="badge bg-info">${evt.exempted} Exempted&lt;/span>`
+            }
+            if (evt.pending > 0) {
+                badges += `&lt;span class="badge bg-warning text-dark">${evt.pending} Pending&lt;/span>`
+            }
+            if (evt.ready_to_close) {
+                badges += '&lt;span class="badge bg-info">&lt;i class="bi bi-check2-square">&lt;/i> Ready to Close&lt;/span>'
+            }
+            if (evt.uploaded === 0 &amp;&amp; evt.exempted === 0 &amp;&amp; evt.pending === 0) {
+                badges += '&lt;span class="badge bg-danger">No Waivers&lt;/span>'
+            }
+        }
+
+        return `&lt;a href="${this.escapeHtml(evt.url)}" class="waiver-calendar-item${multiDayClass}" style="background-color: ${color}22; border-left-color: ${color};" title="${this.escapeHtml(title)}">` +
+            `&lt;div class="fw-bold">${this.escapeHtml(evt.name)}&lt;/div>` +
+            `&lt;div class="text-muted small text-truncate">${this.escapeHtml(evt.branch)}&lt;/div>` +
+            `&lt;div class="waiver-calendar-badges">${badges}&lt;/div>` +
+            `&lt;/a>`
+    }
+
+    dateKey(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    escapeHtml(str) {
+        const div = document.createElement('div')
+        div.textContent = str
+        return div.innerHTML
+    }
+}
+
+if (!window.Controllers) {
+    window.Controllers = {};
+}
+window.Controllers["waiver-calendar"] = WaiverCalendarController;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

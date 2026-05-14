@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: assets/js/controllers/approval-reassign-controller.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: assets/js/controllers/approval-reassign-controller.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { Controller } from "@hotwired/stimulus"
+
+/**
+ * Approval Reassign Controller
+ *
+ * Handles the admin reassignment modal form logic.
+ * Loads the eligible approver list for the selected approval
+ * and submits the reassignment with an optional reason.
+ */
+class ApprovalReassignController extends Controller {
+    static targets = ["approvalId", "reason", "submitBtn"]
+    static values = {
+        approvalId: Number,
+        eligibleUrl: String,
+    }
+
+    connect() {
+        this._updateSubmitState()
+    }
+
+    configure(data) {
+        this.approvalIdValue = data.id || 0
+        this.eligibleUrlValue = data.eligibleUrl || ''
+
+        // Set hidden field
+        if (this.hasApprovalIdTarget) {
+            this.approvalIdTarget.value = this.approvalIdValue
+        }
+
+        // Reset reason
+        if (this.hasReasonTarget) {
+            this.reasonTarget.value = ''
+        }
+
+        // Update autocomplete URL
+        const acEl = this.element.querySelector('[data-controller="ac"]')
+        if (acEl &amp;&amp; this.eligibleUrlValue) {
+            acEl.setAttribute('data-ac-url-value', this.eligibleUrlValue)
+            // Clear previous selection
+            const hiddenInput = acEl.querySelector('[data-ac-target="hidden"]')
+            if (hiddenInput) hiddenInput.value = ''
+            const textInput = acEl.querySelector('[data-ac-target="input"]')
+            if (textInput) textInput.value = ''
+        }
+
+        this._updateSubmitState()
+    }
+
+    onApproverChange() {
+        this._updateSubmitState()
+    }
+
+    _updateSubmitState() {
+        if (!this.hasSubmitBtnTarget) return
+        const acEl = this.element.querySelector('[data-controller="ac"]')
+        const hiddenInput = acEl?.querySelector('[data-ac-target="hidden"]')
+        this.submitBtnTarget.disabled = !hiddenInput?.value
+    }
+}
+
+if (!window.Controllers) {
+    window.Controllers = {}
+}
+window.Controllers["approval-reassign"] = ApprovalReassignController
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

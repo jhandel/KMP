@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: assets/js/controllers/my-rsvps-controller.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: assets/js/controllers/my-rsvps-controller.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import MobileControllerBase from "./mobile-controller-base";
+import rsvpCacheService from "../services/rsvp-cache-service.js";
+
+/**
+ * My RSVPs Controller
+ * 
+ * Handles RSVP editing using the attendance modal on the My RSVPs page.
+ */
+class MyRsvpsController extends MobileControllerBase {
+    static targets = ["modal", "modalBody", "actionButtons", "upcomingList", "pastList", "pastEmptyState", "upcomingCount", "pastCount"];
+
+    onConnect() {
+        this.modal = null;
+        this.currentGatheringId = null;
+        
+        // Initialize RSVP cache service
+        rsvpCacheService.init().catch(err => {
+            console.warn('[MyRsvps] Failed to init RSVP cache:', err);
+        });
+        
+        // Filter out past events on the client side (safety net for timezone edge cases)
+        this.filterPastEvents();
+        
+        // Update button states based on online status
+        this.updateOnlineButtons();
+        
+        // Set up modal event listener
+        if (this.hasModalTarget) {
+            this.modalTarget.addEventListener('hidden.bs.modal', () => {
+                this.onModalHidden();
+            });
+        }
+    }
+
+    /**
+     * Filter out events that have ended based on client's local date.
+     * Moves them to the past tab and updates badge counts.
+     */
+    filterPastEvents() {
+        if (!this.hasUpcomingListTarget) return;
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+        
+        const cards = this.upcomingListTarget.querySelectorAll('.mobile-event-card[data-end-date]');
+        let movedCount = 0;
+        
+        cards.forEach(card => {
+            const endDate = card.dataset.endDate;
+            if (endDate &amp;&amp; endDate &lt; todayStr) {
+                // This event has ended - move it to past tab
+                movedCount++;
+                console.log(`[MyRsvps] Moving past event to Past tab (end: ${endDate}, today: ${todayStr})`);
+                
+                // Transform the card for past display
+                this.transformCardForPast(card);
+                
+                // Move to past list
+                if (this.hasPastListTarget) {
+                    // Remove empty state if present
+                    if (this.hasPastEmptyStateTarget) {
+                        this.pastEmptyStateTarget.remove();
+                    }
+                    // Insert at beginning of past list (most recent first)
+                    this.pastListTarget.insertBefore(card, this.pastListTarget.firstChild);
+                } else {
+                    // No past list target, just hide it
+                    card.style.display = 'none';
+                }
+            }
+        });
+        
+        if (movedCount > 0) {
+            console.log(`[MyRsvps] Moved ${movedCount} events from Upcoming to Past`);
+            
+            // Update badge counts
+            this.updateBadgeCounts();
+            
+            // Check if all upcoming events are now gone
+            const remainingUpcoming = this.upcomingListTarget.querySelectorAll('.mobile-event-card');
+            if (remainingUpcoming.length === 0) {
+                // Show empty state message
+                this.upcomingListTarget.innerHTML = `
+                    &lt;div class="card empty-state-card">
+                        &lt;div class="card-body text-center py-5">
+                            &lt;i class="bi bi-calendar-check d-block fs-1 mb-3" style="color: var(--section-rsvps);">&lt;/i>
+                            &lt;h3 class="h5 mb-2">No Upcoming RSVPs&lt;/h3>
+                            &lt;p class="text-muted mb-4">
+                                You haven't RSVPed to any upcoming gatherings yet.
+                            &lt;/p>
+                            &lt;a href="/gatherings/mobile-calendar" class="btn btn-primary online-only-btn">
+                                &lt;i class="bi bi-calendar me-2">&lt;/i>Browse Calendar
+                            &lt;/a>
+                        &lt;/div>
+                    &lt;/div>
+                `;
+            }
+        }
+    }
+
+    /**
+     * Transform a card from upcoming style to past style
+     */
+    transformCardForPast(card) {
+        // Remove 'attending' class and add 'past' class
+        card.classList.remove('attending');
+        card.classList.add('past');
+        
+        // Change the success check icon to muted
+        const checkIcon = card.querySelector('.bi-check-circle-fill.text-success');
+        if (checkIcon) {
+            checkIcon.classList.remove('bi-check-circle-fill', 'text-success');
+            checkIcon.classList.add('bi-check-circle', 'text-muted');
+        }
+        
+        // Remove action buttons row
+        const actionsRow = card.querySelector('.mobile-event-actions-row');
+        if (actionsRow) {
+            actionsRow.remove();
+        }
+    }
+
+    /**
+     * Update the badge counts for both tabs
+     */
+    updateBadgeCounts() {
+        // Count visible upcoming cards
+        if (this.hasUpcomingCountTarget &amp;&amp; this.hasUpcomingListTarget) {
+            const upcomingCards = this.upcomingListTarget.querySelectorAll('.mobile-event-card:not(.past)');
+            const count = upcomingCards.length;
+            this.upcomingCountTarget.textContent = count;
+            this.upcomingCountTarget.hidden = count === 0;
+        }
+        
+        // Count past cards
+        if (this.hasPastCountTarget &amp;&amp; this.hasPastListTarget) {
+            const pastCards = this.pastListTarget.querySelectorAll('.mobile-event-card');
+            const count = pastCards.length;
+            this.pastCountTarget.textContent = count;
+            this.pastCountTarget.hidden = count === 0;
+        }
+    }
+
+    /**
+     * Called when connection state changes
+     */
+    onConnectionStateChanged(isOnline) {
+        this.updateOnlineButtons();
+    }
+
+    /**
+     * Update online-only buttons based on connection state
+     */
+    updateOnlineButtons() {
+        const buttons = this.element.querySelectorAll('.online-only-btn');
+        buttons.forEach(btn => {
+            if (navigator.onLine) {
+                btn.classList.remove('disabled');
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+                btn.removeAttribute('aria-disabled');
+            } else {
+                btn.classList.add('disabled');
+                btn.style.opacity = '0.5';
+                btn.style.pointerEvents = 'none';
+                btn.setAttribute('aria-disabled', 'true');
+            }
+        });
+    }
+
+    /**
+     * Edit RSVP - load attendance modal
+     */
+    async editRsvp(event) {
+        // Don't allow editing when offline
+        if (!navigator.onLine) {
+            alert('You need to be online to edit RSVPs.');
+            return;
+        }
+        
+        const button = event.currentTarget;
+        const gatheringId = button.dataset.gatheringId;
+        const attendanceId = button.dataset.attendanceId;
+        
+        this.currentGatheringId = gatheringId;
+        
+        // Show modal with loading state
+        this.modalBodyTarget.innerHTML = `
+            &lt;div class="text-center py-4">
+                &lt;div class="spinner-border text-primary" role="status">
+                    &lt;span class="visually-hidden">Loading...&lt;/span>
+                &lt;/div>
+            &lt;/div>
+        `;
+        
+        // Initialize and show modal
+        if (!this.modal) {
+            this.modal = new bootstrap.Modal(this.modalTarget);
+        }
+        this.modal.show();
+        
+        try {
+            // Load attendance modal content
+            const url = `/gatherings/attendance-modal/${gatheringId}?attendance_id=${attendanceId}`;
+            const response = await fetch(url, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load: ${response.status}`);
+            }
+            
+            const html = await response.text();
+            this.modalBodyTarget.innerHTML = html;
+            
+            // Set up form handlers
+            this.setupFormHandlers();
+            
+        } catch (error) {
+            console.error('Error loading RSVP form:', error);
+            this.modalBodyTarget.innerHTML = `
+                &lt;div class="alert alert-danger">
+                    &lt;i class="bi bi-exclamation-triangle me-2">&lt;/i>
+                    Failed to load RSVP form. Please try again.
+                &lt;/div>
+            `;
+        }
+    }
+
+    /**
+     * Set up form submission handlers
+     */
+    setupFormHandlers() {
+        // Main attendance form
+        const form = this.modalBodyTarget.querySelector('#attendanceModalForm');
+        if (form) {
+            form.addEventListener('submit', (e) => this.handleFormSubmit(e));
+        }
+        
+        // Delete form
+        const deleteForm = this.modalBodyTarget.querySelector('form[id^="deleteAttendanceForm_"]');
+        if (deleteForm) {
+            deleteForm.addEventListener('submit', (e) => this.handleDeleteSubmit(e));
+        }
+    }
+
+    /**
+     * Handle main form submission
+     */
+    async handleFormSubmit(event) {
+        event.preventDefault();
+        
+        const form = event.target;
+        const formData = new FormData(form);
+        const submitButton = form.querySelector('button[type="submit"]');
+        
+        // Disable submit button
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '&lt;span class="spinner-border spinner-border-sm me-2">&lt;/span>Saving...';
+        }
+        
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            if (response.ok || response.redirected) {
+                // Update RSVP cache
+                if (this.currentGatheringId) {
+                    rsvpCacheService.updateCachedRsvp(this.currentGatheringId, {
+                        share_with_kingdom: formData.get('share_with_kingdom') === '1',
+                        share_with_hosting_group: formData.get('share_with_hosting_group') === '1',
+                        share_with_crown: formData.get('share_with_crown') === '1',
+                        public_note: formData.get('public_note') || ''
+                    }).catch(err => console.warn('[MyRsvps] Failed to update RSVP cache:', err));
+                }
+                
+                // Success - close modal and reload page
+                this.modal.hide();
+                window.location.reload();
+            } else {
+                throw new Error(`Request failed: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Error submitting form:', error);
+            
+            // Re-enable submit button
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = '&lt;i class="bi bi-check-circle me-2">&lt;/i>Save Changes';
+            }
+            
+            // Show error
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-danger mt-3';
+            alertDiv.innerHTML = '&lt;i class="bi bi-exclamation-triangle me-2">&lt;/i>Failed to save. Please try again.';
+            form.appendChild(alertDiv);
+        }
+    }
+
+    /**
+     * Handle delete form submission
+     */
+    async handleDeleteSubmit(event) {
+        event.preventDefault();
+        
+        if (!confirm('Are you sure you want to cancel your RSVP?')) {
+            return;
+        }
+        
+        const form = event.target;
+        const formData = new FormData(form);
+        const submitButton = form.querySelector('button[type="submit"]');
+        
+        // Disable submit button
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '&lt;span class="spinner-border spinner-border-sm me-2">&lt;/span>Cancelling...';
+        }
+        
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            if (response.ok || response.redirected) {
+                // Remove from cache
+                if (this.currentGatheringId) {
+                    rsvpCacheService.removeCachedRsvp(this.currentGatheringId)
+                        .catch(err => console.warn('[MyRsvps] Failed to remove from RSVP cache:', err));
+                }
+                
+                // Success - close modal and reload page
+                this.modal.hide();
+                window.location.reload();
+            } else {
+                throw new Error(`Request failed: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Error deleting attendance:', error);
+            
+            // Re-enable submit button
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = '&lt;i class="bi bi-trash me-2">&lt;/i>Cancel RSVP';
+            }
+            
+            alert('Failed to cancel RSVP. Please try again.');
+        }
+    }
+
+    /**
+     * Handle modal hidden event
+     */
+    onModalHidden() {
+        // Reset modal content
+        if (this.hasModalBodyTarget) {
+            this.modalBodyTarget.innerHTML = `
+                &lt;div class="text-center py-4">
+                    &lt;div class="spinner-border text-primary" role="status">
+                        &lt;span class="visually-hidden">Loading...&lt;/span>
+                    &lt;/div>
+                &lt;/div>
+            `;
+        }
+        this.currentGatheringId = null;
+    }
+
+    onDisconnect() {
+        if (this.modal) {
+            this.modal.dispose();
+            this.modal = null;
+        }
+    }
+}
+
+// Register controller
+if (!window.Controllers) {
+    window.Controllers = {};
+}
+window.Controllers["my-rsvps"] = MyRsvpsController;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

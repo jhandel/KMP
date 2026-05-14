@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: assets/js/controllers/mobile-controller-base.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: assets/js/controllers/mobile-controller-base.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { Controller } from "@hotwired/stimulus";
+
+/**
+ * MobileControllerBase - Shared base class for all mobile Stimulus controllers
+ * 
+ * Provides centralized online/offline state management, connection event handling,
+ * and utility methods for network requests with retry logic.
+ * 
+ * Features:
+ * - Single source of truth for online/offline state (static isOnline property)
+ * - Automatic connection listener registration/cleanup
+ * - fetchWithRetry() for network requests with exponential backoff
+ * - Connection state change notifications via onConnectionStateChanged()
+ * - Proper event handler cleanup on disconnect
+ * 
+ * Usage:
+ * class MyMobileController extends MobileControllerBase {
+ *     onConnectionStateChanged(isOnline) {
+ *         // React to connection changes
+ *     }
+ * }
+ */
+class MobileControllerBase extends Controller {
+    // Static properties - shared across all instances
+    static isOnline = navigator.onLine;
+    static connectionListeners = new Set();
+    static initialized = false;
+
+    /**
+     * Initialize static connection listeners once
+     * Sets up window online/offline event handlers
+     */
+    static initializeConnectionListeners() {
+        if (MobileControllerBase.initialized) return;
+        
+        window.addEventListener('online', () => {
+            MobileControllerBase.setOnlineState(true, true);
+        });
+        
+        window.addEventListener('offline', () => {
+            MobileControllerBase.setOnlineState(false, true);
+        });
+        
+        MobileControllerBase.initialized = true;
+    }
+
+    /**
+     * Set global online state and optionally notify listeners.
+     * @param {boolean} isOnline
+     * @param {boolean} notify
+     */
+    static setOnlineState(isOnline, notify = true) {
+        const normalized = Boolean(isOnline);
+        const changed = MobileControllerBase.isOnline !== normalized;
+        MobileControllerBase.isOnline = normalized;
+
+        if (notify &amp;&amp; changed) {
+            MobileControllerBase.notifyListeners(normalized);
+        }
+    }
+    
+    /**
+     * Sync static isOnline with current navigator.onLine state
+     * Called on each controller connect to handle page loads while offline
+     */
+    static syncOnlineState() {
+        const currentState = navigator.onLine;
+        MobileControllerBase.setOnlineState(currentState, false);
+    }
+
+    /**
+     * Notify all registered controllers of connection state change
+     * @param {boolean} isOnline - Current connection state
+     */
+    static notifyListeners(isOnline) {
+        MobileControllerBase.connectionListeners.forEach(controller => {
+            if (typeof controller.onConnectionStateChanged === 'function') {
+                try {
+                    controller.onConnectionStateChanged(isOnline);
+                } catch (error) {
+                    console.error('Error in onConnectionStateChanged:', error);
+                }
+            }
+        });
+    }
+
+    /**
+     * Initialize instance
+     * Sets up bound handler tracking map
+     */
+    initialize() {
+        // Ensure static listeners are set up
+        MobileControllerBase.initializeConnectionListeners();
+        
+        // Sync online state with current navigator.onLine (handles page loads while offline)
+        MobileControllerBase.syncOnlineState();
+        
+        // Map for tracking bound event handlers for cleanup
+        this._boundHandlers = new Map();
+    }
+
+    /**
+     * Connect controller to DOM
+     * Registers controller for connection state notifications
+     */
+    connect() {
+        // Sync online state again on connect (handles Turbo navigation while offline)
+        MobileControllerBase.syncOnlineState();
+        
+        // Register this controller for connection notifications
+        MobileControllerBase.connectionListeners.add(this);
+        
+        // Call subclass connect if defined
+        if (typeof this.onConnect === 'function') {
+            this.onConnect();
+        }
+    }
+
+    /**
+     * Disconnect controller from DOM
+     * Unregisters controller and cleans up event handlers
+     */
+    disconnect() {
+        // Unregister from connection notifications
+        MobileControllerBase.connectionListeners.delete(this);
+        
+        // Clear bound handlers map
+        this._boundHandlers.clear();
+        
+        // Call subclass disconnect if defined
+        if (typeof this.onDisconnect === 'function') {
+            this.onDisconnect();
+        }
+    }
+
+    /**
+     * Override in subclass to handle connection state changes
+     * @param {boolean} isOnline - Current connection state
+     */
+    onConnectionStateChanged(isOnline) {
+        // Override in subclass
+    }
+
+    /**
+     * Get current online status
+     * @returns {boolean} Current connection state
+     */
+    get online() {
+        return MobileControllerBase.isOnline;
+    }
+
+    /**
+     * Bind and track an event handler for later cleanup
+     * @param {string} name - Identifier for the handler
+     * @param {Function} handler - Function to bind
+     * @returns {Function} Bound handler
+     */
+    bindHandler(name, handler) {
+        const bound = handler.bind(this);
+        this._boundHandlers.set(name, bound);
+        return bound;
+    }
+
+    /**
+     * Get a previously bound handler
+     * @param {string} name - Handler identifier
+     * @returns {Function|undefined} Bound handler or undefined
+     */
+    getHandler(name) {
+        return this._boundHandlers.get(name);
+    }
+
+    /**
+     * Fetch with retry logic and exponential backoff
+     * 
+     * @param {string} url - URL to fetch
+     * @param {Object} options - Fetch options
+     * @param {number} retries - Number of retry attempts (default: 3)
+     * @param {number} timeout - Request timeout in ms (default: 10000)
+     * @returns {Promise&lt;Response>} Fetch response
+     */
+    async fetchWithRetry(url, options = {}, retries = 3, timeout = 10000) {
+        let lastError;
+        
+        for (let attempt = 0; attempt &lt;= retries; attempt++) {
+            try {
+                // Create abort controller for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
+                
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                        ...options.headers
+                    }
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return response;
+            } catch (error) {
+                lastError = error;
+                
+                // Don't retry on abort or if offline
+                if (error.name === 'AbortError' || !MobileControllerBase.isOnline) {
+                    throw error;
+                }
+                
+                // Exponential backoff: 1s, 2s, 4s...
+                if (attempt &lt; retries) {
+                    const delay = Math.pow(2, attempt) * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+        
+        throw lastError;
+    }
+
+    /**
+     * Dispatch a custom event with connection status
+     * @param {string} eventName - Event name to dispatch
+     * @param {Object} detail - Additional event detail
+     */
+    dispatchConnectionEvent(eventName, detail = {}) {
+        const event = new CustomEvent(eventName, {
+            bubbles: true,
+            detail: {
+                isOnline: MobileControllerBase.isOnline,
+                ...detail
+            }
+        });
+        this.element.dispatchEvent(event);
+    }
+}
+
+// Register controller globally
+if (!window.Controllers) {
+    window.Controllers = {};
+}
+window.Controllers["mobile-controller-base"] = MobileControllerBase;
+
+export default MobileControllerBase;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

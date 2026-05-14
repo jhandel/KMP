@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: assets/js/controllers/approval-detail-controller.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: assets/js/controllers/approval-detail-controller.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { Controller } from "@hotwired/stimulus"
+
+/**
+ * Expandable detail panel for approval rows in the Dataverse grid.
+ *
+ * Fetches rich context, progress, and response timeline from the
+ * approvalDetail API and renders an inline detail row beneath the
+ * clicked grid row.
+ */
+class ApprovalDetailController extends Controller {
+    static values = {
+        url: String,
+    }
+
+    connect() {
+        this._expandedRows = new Map()
+    }
+
+    disconnect() {
+        this._expandedRows.forEach((detailRow) => detailRow.remove())
+        this._expandedRows.clear()
+    }
+
+    async toggle(event) {
+        event.preventDefault()
+        event.stopPropagation()
+
+        const btn = event.currentTarget
+        const row = btn.closest("tr")
+        if (!row) return
+
+        const approvalId = this._getApprovalId(row)
+        if (!approvalId) return
+
+        if (this._expandedRows.has(approvalId)) {
+            this._collapse(approvalId, btn)
+        } else {
+            await this._expand(row, approvalId, btn)
+        }
+    }
+
+    // --- private helpers ---------------------------------------------------
+
+    _getApprovalId(row) {
+        const checkbox = row.querySelector("[data-row-id]")
+        if (checkbox) return checkbox.dataset.rowId
+
+        const dataAttr = row.dataset.id
+        if (dataAttr) return dataAttr
+
+        const cells = row.querySelectorAll("td")
+        for (const cell of cells) {
+            const input = cell.querySelector("input[type=hidden][name*=id]")
+            if (input) return input.value
+        }
+
+        const btn = row.querySelector("[data-outlet-btn-btn-data-value]")
+        if (btn) {
+            try {
+                const d = JSON.parse(btn.getAttribute("data-outlet-btn-btn-data-value"))
+                if (d.id) return String(d.id)
+            } catch (_) { /* ignore */ }
+        }
+
+        return null
+    }
+
+    async _expand(row, approvalId, btn) {
+        btn.disabled = true
+        const icon = btn.querySelector("i.bi")
+        if (icon) {
+            icon.classList.remove("bi-chevron-down")
+            icon.classList.add("bi-hourglass-split")
+        }
+
+        try {
+            const response = await fetch(this.urlValue + approvalId, {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+            })
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+            const data = await response.json()
+
+            const colspan = row.querySelectorAll("td").length
+            const detailRow = document.createElement("tr")
+            detailRow.classList.add("approval-detail-row")
+            detailRow.innerHTML = `&lt;td colspan="${colspan}" class="p-0 border-top-0">${this._renderDetail(data)}&lt;/td>`
+            row.after(detailRow)
+
+            this._expandedRows.set(approvalId, detailRow)
+
+            if (icon) {
+                icon.classList.remove("bi-hourglass-split")
+                icon.classList.add("bi-chevron-up")
+            }
+        } catch (err) {
+            console.error("Failed to load approval detail:", err)
+            if (icon) {
+                icon.classList.remove("bi-hourglass-split")
+                icon.classList.add("bi-chevron-down")
+            }
+        } finally {
+            btn.disabled = false
+        }
+    }
+
+    _collapse(approvalId, btn) {
+        const detailRow = this._expandedRows.get(approvalId)
+        if (detailRow) detailRow.remove()
+        this._expandedRows.delete(approvalId)
+
+        const icon = btn.querySelector("i.bi")
+        if (icon) {
+            icon.classList.remove("bi-chevron-up")
+            icon.classList.add("bi-chevron-down")
+        }
+    }
+
+    _escapeHtml(str) {
+        if (str == null) return ""
+        const div = document.createElement("div")
+        div.appendChild(document.createTextNode(String(str)))
+        return div.innerHTML
+    }
+
+    _renderDetail(data) {
+        const h = (v) => this._escapeHtml(v)
+        const ctx = data.context || {}
+        const prog = data.progress || {}
+        const responses = data.responses || []
+
+        let html = '&lt;div class="p-3 bg-light">'
+        html += '&lt;div class="row">'
+
+        // ---- Left column: context ----
+        html += '&lt;div class="col-md-6 mb-3 mb-md-0">'
+        html += `&lt;h6 class="mb-2">&lt;i class="bi ${h(ctx.icon)} me-1">&lt;/i>${h(ctx.title)}&lt;/h6>`
+        if (ctx.description) {
+            html += `&lt;p class="text-muted small mb-2">${h(ctx.description)}&lt;/p>`
+        }
+        if (ctx.fields &amp;&amp; ctx.fields.length) {
+            ctx.fields.forEach((f) => {
+                html += `&lt;div class="mb-1">&lt;strong class="small text-body-secondary">${h(f.label)}:&lt;/strong> &lt;span class="small">${h(f.value)}&lt;/span>&lt;/div>`
+            })
+        }
+        if (ctx.entityUrl) {
+            html += `&lt;a href="${h(ctx.entityUrl)}" class="btn btn-sm btn-outline-primary mt-2" data-turbo-frame="_top">&lt;i class="bi bi-box-arrow-up-right me-1">&lt;/i>View Entity&lt;/a>`
+        }
+        html += "&lt;/div>"
+
+        // ---- Right column: progress &amp; timeline ----
+        html += '&lt;div class="col-md-6">'
+
+        // Progress bar
+        html += '&lt;h6 class="mb-2">Approval Progress&lt;/h6>'
+        const required = prog.required || 0
+        const approved = prog.approved || 0
+        const rejected = prog.rejected || 0
+        const approvedPct = required > 0 ? Math.round((approved / required) * 100) : 0
+        const rejectedPct = required > 0 ? Math.round((rejected / required) * 100) : 0
+
+        html += '&lt;div class="progress mb-1" role="progressbar" style="height:20px;">'
+        if (approvedPct > 0) {
+            html += `&lt;div class="progress-bar bg-success" style="width:${approvedPct}%">${approved} approved&lt;/div>`
+        }
+        if (rejectedPct > 0) {
+            html += `&lt;div class="progress-bar bg-danger" style="width:${rejectedPct}%">${rejected} rejected&lt;/div>`
+        }
+        html += "&lt;/div>"
+        html += `&lt;p class="text-muted small mb-3">${approved} of ${required} required &amp;middot; Status: &lt;strong>${h(prog.status)}&lt;/strong>&lt;/p>`
+
+        // Response timeline
+        if (responses.length > 0) {
+            html += '&lt;h6 class="mb-2">Response Timeline&lt;/h6>'
+            html += '&lt;ul class="list-group list-group-flush small">'
+            responses.forEach((r) => {
+                const isApprove = r.decision === "approve"
+                const iconCls = isApprove ? "bi-check-circle-fill text-success" : "bi-x-circle-fill text-danger"
+                html += '&lt;li class="list-group-item bg-transparent px-0 py-1">'
+                html += `&lt;i class="bi ${iconCls} me-1">&lt;/i>`
+                html += `&lt;strong>${h(r.memberName)}&lt;/strong> &amp;mdash; ${h(r.decision)}`
+                if (r.comment) {
+                    html += ` &lt;em class="text-muted">&amp;ldquo;${h(r.comment)}&amp;rdquo;&lt;/em>`
+                }
+                html += ` &lt;span class="text-muted">(${h(r.respondedAt)})&lt;/span>`
+                html += "&lt;/li>"
+            })
+            html += "&lt;/ul>"
+        } else {
+            html += '&lt;p class="text-muted small fst-italic mb-0">No responses yet.&lt;/p>'
+        }
+
+        html += "&lt;/div>"
+        html += "&lt;/div>&lt;/div>"
+        return html
+    }
+}
+
+if (!window.Controllers) {
+    window.Controllers = {}
+}
+window.Controllers["approval-detail"] = ApprovalDetailController
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

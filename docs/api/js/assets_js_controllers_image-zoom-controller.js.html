@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: assets/js/controllers/image-zoom-controller.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: assets/js/controllers/image-zoom-controller.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { Controller } from "@hotwired/stimulus";
+
+/**
+ * Zoomable/pannable image controller for modal dialogs.
+ *
+ * Supports mouse-wheel zoom, click-drag pan, and touch pinch-zoom.
+ * Double-click resets to fit view.
+ *
+ * Targets:
+ * - image: The &lt;img> element to make zoomable
+ *
+ * Values:
+ * - minScale: minimum zoom (default 1)
+ * - maxScale: maximum zoom (default 8)
+ */
+class ImageZoom extends Controller {
+    static targets = ["image"];
+
+    static values = {
+        minScale: { type: Number, default: 1 },
+        maxScale: { type: Number, default: 8 },
+    };
+
+    connect() {
+        this.scale = 1;
+        this.translateX = 0;
+        this.translateY = 0;
+        this.dragging = false;
+        this.lastX = 0;
+        this.lastY = 0;
+        this.initialPinchDistance = null;
+        this.initialPinchScale = 1;
+
+        const container = this.element;
+        container.style.overflow = "hidden";
+        container.style.cursor = "grab";
+        container.style.touchAction = "none";
+
+        const img = this.imageTarget;
+        img.style.transformOrigin = "0 0";
+        img.style.transition = "none";
+        img.style.userSelect = "none";
+        img.style.webkitUserSelect = "none";
+        img.draggable = false;
+        this._onImageLoad = this._onImageLoad.bind(this);
+        img.addEventListener("load", this._onImageLoad);
+
+        this._onWheel = this._onWheel.bind(this);
+        this._onPointerDown = this._onPointerDown.bind(this);
+        this._onPointerMove = this._onPointerMove.bind(this);
+        this._onPointerUp = this._onPointerUp.bind(this);
+        this._onDblClick = this._onDblClick.bind(this);
+        this._onTouchStart = this._onTouchStart.bind(this);
+        this._onTouchMove = this._onTouchMove.bind(this);
+        this._onTouchEnd = this._onTouchEnd.bind(this);
+        this._onModalShown = this._onModalShown.bind(this);
+
+        this.modalElement = this.element.closest(".modal");
+        if (this.modalElement) {
+            this.modalElement.addEventListener("shown.bs.modal", this._onModalShown);
+        }
+
+        container.addEventListener("wheel", this._onWheel, { passive: false });
+        container.addEventListener("pointerdown", this._onPointerDown);
+        container.addEventListener("pointermove", this._onPointerMove);
+        container.addEventListener("pointerup", this._onPointerUp);
+        container.addEventListener("pointerleave", this._onPointerUp);
+        container.addEventListener("dblclick", this._onDblClick);
+        container.addEventListener("touchstart", this._onTouchStart, { passive: false });
+        container.addEventListener("touchmove", this._onTouchMove, { passive: false });
+        container.addEventListener("touchend", this._onTouchEnd);
+
+        this._applyTransform();
+    }
+
+    disconnect() {
+        const container = this.element;
+        this.imageTarget.removeEventListener("load", this._onImageLoad);
+        container.removeEventListener("wheel", this._onWheel);
+        container.removeEventListener("pointerdown", this._onPointerDown);
+        container.removeEventListener("pointermove", this._onPointerMove);
+        container.removeEventListener("pointerup", this._onPointerUp);
+        container.removeEventListener("pointerleave", this._onPointerUp);
+        container.removeEventListener("dblclick", this._onDblClick);
+        container.removeEventListener("touchstart", this._onTouchStart);
+        container.removeEventListener("touchmove", this._onTouchMove);
+        container.removeEventListener("touchend", this._onTouchEnd);
+        if (this.modalElement) {
+            this.modalElement.removeEventListener("shown.bs.modal", this._onModalShown);
+        }
+    }
+
+    _onWheel(e) {
+        e.preventDefault();
+        const rect = this.element.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left;
+        const cursorY = e.clientY - rect.top;
+
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        this._zoomAt(cursorX, cursorY, delta);
+    }
+
+    _onPointerDown(e) {
+        if (e.pointerType === "touch") return;
+        this.dragging = true;
+        this.lastX = e.clientX;
+        this.lastY = e.clientY;
+        this.element.style.cursor = "grabbing";
+        this.element.setPointerCapture(e.pointerId);
+    }
+
+    _onPointerMove(e) {
+        if (!this.dragging || e.pointerType === "touch") return;
+        const dx = e.clientX - this.lastX;
+        const dy = e.clientY - this.lastY;
+        this.lastX = e.clientX;
+        this.lastY = e.clientY;
+        this.translateX += dx;
+        this.translateY += dy;
+        this._clampTranslation();
+        this._applyTransform();
+    }
+
+    _onPointerUp(e) {
+        if (e.pointerType === "touch") return;
+        this.dragging = false;
+        this.element.style.cursor = "grab";
+    }
+
+    _onDblClick() {
+        this._resetView();
+    }
+
+    _onImageLoad() {
+        this._resetView();
+    }
+
+    _onModalShown() {
+        this._resetView();
+    }
+
+    _resetView() {
+        this.scale = 1;
+        this.translateX = 0;
+        this.translateY = 0;
+        this._applyTransform();
+    }
+
+    // Touch pinch-zoom
+    _onTouchStart(e) {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            this.initialPinchDistance = this._pinchDistance(e.touches);
+            this.initialPinchScale = this.scale;
+        } else if (e.touches.length === 1 &amp;&amp; this.scale > 1) {
+            e.preventDefault();
+            this.dragging = true;
+            this.lastX = e.touches[0].clientX;
+            this.lastY = e.touches[0].clientY;
+        }
+    }
+
+    _onTouchMove(e) {
+        if (e.touches.length === 2 &amp;&amp; this.initialPinchDistance) {
+            e.preventDefault();
+            const dist = this._pinchDistance(e.touches);
+            const ratio = dist / this.initialPinchDistance;
+            const newScale = Math.min(
+                this.maxScaleValue,
+                Math.max(this.minScaleValue, this.initialPinchScale * ratio)
+            );
+
+            const rect = this.element.getBoundingClientRect();
+            const cx = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
+            const cy = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
+
+            const scaleRatio = newScale / this.scale;
+            this.translateX = cx - scaleRatio * (cx - this.translateX);
+            this.translateY = cy - scaleRatio * (cy - this.translateY);
+            this.scale = newScale;
+            this._clampTranslation();
+            this._applyTransform();
+        } else if (e.touches.length === 1 &amp;&amp; this.dragging) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - this.lastX;
+            const dy = e.touches[0].clientY - this.lastY;
+            this.lastX = e.touches[0].clientX;
+            this.lastY = e.touches[0].clientY;
+            this.translateX += dx;
+            this.translateY += dy;
+            this._clampTranslation();
+            this._applyTransform();
+        }
+    }
+
+    _onTouchEnd(e) {
+        if (e.touches.length &lt; 2) {
+            this.initialPinchDistance = null;
+        }
+        if (e.touches.length === 0) {
+            this.dragging = false;
+        }
+    }
+
+    _pinchDistance(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    _zoomAt(cx, cy, factor) {
+        const newScale = Math.min(
+            this.maxScaleValue,
+            Math.max(this.minScaleValue, this.scale * factor)
+        );
+        const ratio = newScale / this.scale;
+        this.translateX = cx - ratio * (cx - this.translateX);
+        this.translateY = cy - ratio * (cy - this.translateY);
+        this.scale = newScale;
+        this._clampTranslation();
+        this._applyTransform();
+    }
+
+    _clampTranslation() {
+        const img = this.imageTarget;
+        const container = this.element;
+        const cw = container.clientWidth;
+        const ch = container.clientHeight;
+        if (!cw || !ch) {
+            return;
+        }
+
+        // Scaled image dimensions based on rendered size
+        const renderedW = img.clientWidth * this.scale;
+        const renderedH = img.clientHeight * this.scale;
+        const baseX = renderedW &lt; cw ? (cw - renderedW) / 2 : 0;
+        const baseY = renderedH &lt; ch ? (ch - renderedH) / 2 : 0;
+
+        if (renderedW &lt;= cw) {
+            this.translateX = 0;
+        } else {
+            const minX = cw - renderedW - baseX;
+            const maxX = -baseX;
+            this.translateX = Math.max(minX, Math.min(maxX, this.translateX));
+        }
+
+        if (renderedH &lt;= ch) {
+            this.translateY = 0;
+        } else {
+            const minY = ch - renderedH - baseY;
+            const maxY = -baseY;
+            this.translateY = Math.max(minY, Math.min(maxY, this.translateY));
+        }
+    }
+
+    _applyTransform() {
+        const container = this.element;
+        const cw = container.clientWidth;
+        const ch = container.clientHeight;
+        const renderedW = this.imageTarget.clientWidth * this.scale;
+        const renderedH = this.imageTarget.clientHeight * this.scale;
+        const baseX = renderedW &lt; cw ? (cw - renderedW) / 2 : 0;
+        const baseY = renderedH &lt; ch ? (ch - renderedH) / 2 : 0;
+
+        this.imageTarget.style.transform =
+            `translate(${baseX + this.translateX}px, ${baseY + this.translateY}px) scale(${this.scale})`;
+    }
+}
+
+if (!window.Controllers) {
+    window.Controllers = {};
+}
+window.Controllers["image-zoom"] = ImageZoom;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

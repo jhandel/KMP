@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: assets/js/controllers/workflow-variable-picker.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: assets/js/controllers/workflow-variable-picker.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * WorkflowVariablePicker
+ *
+ * Builds context-variable lists from upstream nodes and renders
+ * a searchable dropdown for inserting variable references into form fields.
+ */
+export default class WorkflowVariablePicker {
+    /**
+     * @param {object} registryData - { triggers, actions, conditions, entities }
+     */
+    constructor(registryData) {
+        this.registryData = registryData
+    }
+
+    /**
+     * Get upstream nodes by traversing connections backward from nodeId.
+     */
+    getUpstreamNodes(nodeId, editor) {
+        const drawflowData = editor.export()
+        const moduleData = drawflowData.drawflow?.Home?.data || {}
+        const upstream = []
+        const visited = new Set()
+
+        const traverse = (currentId) => {
+            if (visited.has(currentId)) return
+            visited.add(currentId)
+            const node = moduleData[currentId]
+            if (!node) return
+            for (const inp of Object.values(node.inputs || {})) {
+                for (const conn of inp.connections || []) {
+                    const srcId = conn.node.toString()
+                    const srcNode = moduleData[srcId]
+                    if (srcNode) {
+                        upstream.push({ id: srcId, ...srcNode })
+                        traverse(srcId)
+                    }
+                }
+            }
+        }
+
+        traverse(nodeId.toString())
+        return upstream
+    }
+
+    /**
+     * Collect output schema variables from a single node.
+     */
+    getNodeOutputSchema(node) {
+        const type = node.data?.type
+        const config = node.data?.config || {}
+        const vars = []
+
+        if (type === 'trigger') {
+            const trigger = this.registryData.triggers?.find(t => t.event === config.event)
+            if (trigger?.payloadSchema) {
+                for (const [key, meta] of Object.entries(trigger.payloadSchema)) {
+                    vars.push({
+                        path: `$.trigger.${key}`,
+                        label: `Trigger: ${meta.label || key}`,
+                        type: meta.type || 'string'
+                    })
+                }
+            } else if (config.event) {
+                vars.push({ path: '$.trigger.entity', label: 'Trigger: entity', type: 'object' })
+                vars.push({ path: '$.trigger.entity.id', label: 'Trigger: entity.id', type: 'integer' })
+            }
+        } else if (type === 'action') {
+            const action = this.registryData.actions?.find(a => a.action === config.action)
+            const nodeKey = node.data?.nodeKey || node.name
+            if (action?.outputSchema) {
+                for (const [key, meta] of Object.entries(action.outputSchema)) {
+                    vars.push({ path: `$.nodes.${nodeKey}.result.${key}`, label: `${action.label}: ${key}`, type: meta.type || 'string' })
+                }
+            } else {
+                vars.push({ path: `$.nodes.${nodeKey}.result`, label: `${node.name}: result`, type: 'mixed' })
+            }
+        } else if (type === 'approval') {
+            const nodeKey = node.data?.nodeKey || node.name
+            const schema = this.registryData?.approvalOutputSchema
+            if (schema) {
+                for (const [key, meta] of Object.entries(schema)) {
+                    vars.push({
+                        path: `$.nodes.${nodeKey}.${key}`,
+                        label: `${node.name}: ${meta.label || key}`,
+                        type: meta.type || 'string'
+                    })
+                }
+            } else {
+                vars.push({ path: `$.nodes.${nodeKey}.status`, label: `${node.name}: status`, type: 'string' })
+                vars.push({ path: `$.nodes.${nodeKey}.approvedBy`, label: `${node.name}: approvedBy`, type: 'array' })
+                vars.push({ path: `$.nodes.${nodeKey}.comment`, label: `${node.name}: comment`, type: 'string' })
+            }
+        } else if (type === 'condition') {
+            const nodeKey = node.data?.nodeKey || node.name
+            vars.push({ path: `$.nodes.${nodeKey}.result`, label: `${node.name}: result`, type: 'boolean' })
+        } else if (type === 'delay') {
+            const nodeKey = node.data?.nodeKey || node.name
+            vars.push({ path: `$.nodes.${nodeKey}.result.delayConfig`, label: `${node.name}: delayConfig`, type: 'object' })
+        } else if (type === 'loop') {
+            const nodeKey = node.data?.nodeKey || node.name
+            vars.push({ path: `$.nodes.${nodeKey}.result.iteration`, label: `${node.name}: iteration`, type: 'integer' })
+            vars.push({ path: `$.nodes.${nodeKey}.result.maxIterations`, label: `${node.name}: maxIterations`, type: 'integer' })
+        } else if (type === 'subworkflow') {
+            const nodeKey = node.data?.nodeKey || node.name
+            vars.push({ path: `$.nodes.${nodeKey}.result.childInstanceId`, label: `${node.name}: childInstanceId`, type: 'integer' })
+            vars.push({ path: `$.nodes.${nodeKey}.result`, label: `${node.name}: result`, type: 'object' })
+        }
+
+        return vars
+    }
+
+    /**
+     * Build a list of available context variables for a given node.
+     */
+    buildVariableList(nodeId, editor) {
+        const upstream = this.getUpstreamNodes(nodeId, editor)
+        const variables = []
+
+        const drawflowData = editor.export()
+        const moduleData = drawflowData.drawflow?.Home?.data || {}
+        for (const node of Object.values(moduleData)) {
+            if (node.data?.type === 'trigger') {
+                variables.push(...this.getNodeOutputSchema(node))
+                break
+            }
+        }
+
+        upstream.forEach(node => {
+            if (node.data?.type !== 'trigger') {
+                variables.push(...this.getNodeOutputSchema(node))
+            }
+        })
+
+        // If any upstream node is an approval gate, resumeData is available at runtime
+        const hasUpstreamApproval = upstream.some(n => n.data?.type === 'approval')
+        if (hasUpstreamApproval) {
+            variables.push(
+                { path: '$.resumeData.approverId', label: 'Resume: Approver ID', type: 'integer' },
+                { path: '$.resumeData.decision', label: 'Resume: Decision', type: 'string' },
+                { path: '$.resumeData.comment', label: 'Resume: Comment', type: 'string' },
+            )
+        }
+
+        const builtins = this.registryData?.builtinContext
+        if (builtins &amp;&amp; Array.isArray(builtins)) {
+            variables.push(...builtins)
+        } else {
+            variables.push(
+                { path: '$.instance.id', label: 'Instance ID', type: 'integer' },
+                { path: '$.instance.created', label: 'Instance Created', type: 'datetime' },
+                { path: '$.context', label: 'Full Context', type: 'object' }
+            )
+        }
+
+        return variables
+    }
+
+    /**
+     * Attach variable picker buttons to inputs with data-variable-picker="true".
+     */
+    attachPickers(panel, nodeId, editor) {
+        if (!panel) return
+        const inputs = panel.querySelectorAll('input[data-variable-picker="true"], textarea[data-variable-picker="true"]')
+        inputs.forEach(input => {
+            if (input.parentElement.querySelector('.wf-var-picker-btn')) return
+            const wrapper = document.createElement('div')
+            wrapper.className = 'd-flex gap-1'
+            input.parentElement.insertBefore(wrapper, input)
+            wrapper.appendChild(input)
+
+            const btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'btn btn-outline-secondary btn-sm wf-var-picker-btn'
+            btn.innerHTML = '&lt;i class="fa-solid fa-code">&lt;/i>'
+            btn.title = 'Insert variable reference'
+            btn.setAttribute('aria-label', 'Insert variable reference')
+            btn.addEventListener('click', (e) => {
+                e.preventDefault()
+                this.showDropdown(btn, input, nodeId, editor)
+            })
+            wrapper.appendChild(btn)
+        })
+    }
+
+    /**
+     * Show the searchable variable dropdown anchored to anchorBtn.
+     */
+    showDropdown(anchorBtn, targetInput, nodeId, editor) {
+        document.querySelectorAll('.wf-var-dropdown').forEach(el => el.remove())
+
+        const variables = this.buildVariableList(nodeId, editor)
+        if (variables.length === 0) return
+
+        const dropdown = document.createElement('div')
+        dropdown.className = 'wf-var-dropdown card shadow-sm position-absolute'
+        dropdown.style.cssText = 'z-index:1050; max-height:200px; overflow-y:auto; width:280px;'
+
+        const searchInput = document.createElement('input')
+        searchInput.type = 'text'
+        searchInput.className = 'form-control form-control-sm border-0 border-bottom rounded-0'
+        searchInput.placeholder = 'Search variables...'
+        dropdown.appendChild(searchInput)
+
+        const list = document.createElement('div')
+        list.className = 'list-group list-group-flush'
+
+        const renderItems = (filter = '') => {
+            list.innerHTML = ''
+            const filtered = variables.filter(v =>
+                v.path.toLowerCase().includes(filter) || v.label.toLowerCase().includes(filter)
+            )
+            filtered.forEach(v => {
+                const item = document.createElement('button')
+                item.type = 'button'
+                item.className = 'list-group-item list-group-item-action py-1 px-2 small'
+                item.innerHTML = `&lt;code>${v.path}&lt;/code>&lt;br>&lt;span class="text-muted" style="font-size:0.7rem">${v.label} (${v.type})&lt;/span>`
+                item.addEventListener('click', () => {
+                    const pos = targetInput.selectionStart || targetInput.value.length
+                    const before = targetInput.value.substring(0, pos)
+                    const after = targetInput.value.substring(pos)
+                    targetInput.value = before + v.path + after
+                    targetInput.dispatchEvent(new Event('change', { bubbles: true }))
+                    dropdown.remove()
+                    targetInput.focus()
+                })
+                list.appendChild(item)
+            })
+            if (filtered.length === 0) {
+                list.innerHTML = '&lt;div class="text-muted small p-2">No variables found&lt;/div>'
+            }
+        }
+
+        searchInput.addEventListener('input', () => renderItems(searchInput.value.toLowerCase()))
+        renderItems()
+        dropdown.appendChild(list)
+
+        anchorBtn.parentElement.style.position = 'relative'
+        anchorBtn.parentElement.appendChild(dropdown)
+
+        const closeHandler = (e) => {
+            if (!dropdown.contains(e.target) &amp;&amp; e.target !== anchorBtn) {
+                dropdown.remove()
+                document.removeEventListener('click', closeHandler)
+            }
+        }
+        setTimeout(() => document.addEventListener('click', closeHandler), 0)
+        searchInput.focus()
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

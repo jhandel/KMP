@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: assets/js/controllers/workflow-serializer.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: assets/js/controllers/workflow-serializer.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * WorkflowSerializer
+ *
+ * Handles conversion between Drawflow canvas data and workflow definition JSON.
+ * Provides node port definitions, HTML rendering, and auto-layout computation.
+ */
+export default class WorkflowSerializer {
+    constructor(registryData) {
+        this.registryData = registryData || { triggers: [], actions: [], conditions: [], entities: [] }
+    }
+
+    getNodePorts(type) {
+        switch (type) {
+            case 'trigger': return { inputs: 0, outputs: 1 }
+            case 'action': return { inputs: 1, outputs: 1 }
+            case 'condition': return { inputs: 1, outputs: 2 }
+            case 'approval': return { inputs: 1, outputs: 3 }
+            case 'fork': return { inputs: 1, outputs: 2 }
+            case 'join': return { inputs: 2, outputs: 1 }
+            case 'loop': return { inputs: 1, outputs: 2 }
+            case 'forEach': return { inputs: 1, outputs: 3 }
+            case 'delay': return { inputs: 1, outputs: 1 }
+            case 'subworkflow': return { inputs: 1, outputs: 1 }
+            case 'end': return { inputs: 1, outputs: 0 }
+            default: return { inputs: 1, outputs: 1 }
+        }
+    }
+
+    getPortLabel(type, portIndex) {
+        const portLabels = {
+            trigger: ['default'],
+            action: ['default'],
+            condition: ['true', 'false'],
+            approval: ['approved', 'rejected', 'on_each_approval'],
+            loop: ['continue', 'exit'],
+            forEach: ['iterate', 'complete', 'error'],
+            fork: ['path-1', 'path-2', 'path-3', 'path-4'],
+            delay: ['default'],
+            join: ['default'],
+            subworkflow: ['default'],
+        }
+        const zeroBasedIndex = portIndex - 1
+        return portLabels[type]?.[zeroBasedIndex] || `output-${portIndex}`
+    }
+
+    buildNodeHTML(type, nodeKey, config) {
+        const icons = {
+            trigger: 'fa-bolt', action: 'fa-gear', condition: 'fa-diamond',
+            approval: 'fa-check-double', fork: 'fa-code-branch', join: 'fa-code-merge',
+            loop: 'fa-rotate', forEach: 'fa-list-ol', delay: 'fa-clock', subworkflow: 'fa-sitemap', end: 'fa-stop'
+        }
+        const typeLabels = {
+            trigger: 'Trigger', action: 'Action', condition: 'Condition',
+            approval: 'Approval', fork: 'Parallel Fork', join: 'Parallel Join',
+            loop: 'Loop', forEach: 'For Each', delay: 'Delay', subworkflow: 'Sub-workflow', end: 'End'
+        }
+
+        const icon = icons[type] || 'fa-circle'
+        let label = typeLabels[type] || type
+
+        if (config._nodeLabel) {
+            label = config._nodeLabel
+        } else if (config.event) {
+            const trigger = this.registryData.triggers?.find(t => t.event === config.event)
+            if (trigger) label = trigger.label
+        }
+        if (config.action) {
+            const action = this.registryData.actions?.find(a => a.action === config.action)
+            if (action) label = action.label
+        }
+
+        let description = ''
+        if (config.event) description = config.event.split('.').pop()
+        else if (config.action) description = config.action.split('.').pop()
+        else if (config.condition) description = config.condition
+
+        let portLabelsHtml = ''
+        if (['condition', 'loop'].includes(type)) {
+            const labels = {
+                condition: ['True', 'False'],
+                loop: ['Continue', 'Exit'],
+            }
+            const pair = labels[type]
+            portLabelsHtml = `&lt;div class="wf-port-labels">
+                &lt;span class="wf-port-label wf-port-label-yes">${pair[0]}&lt;/span>
+                &lt;span class="wf-port-label wf-port-label-no">${pair[1]}&lt;/span>
+            &lt;/div>`
+        }
+        if (type === 'forEach') {
+            portLabelsHtml = `&lt;div class="wf-port-labels">
+                &lt;span class="wf-port-label wf-port-label-yes">Iterate&lt;/span>
+                &lt;span class="wf-port-label wf-port-label-no">Complete&lt;/span>
+                &lt;span class="wf-port-label wf-port-label-mid">Error&lt;/span>
+            &lt;/div>`
+        }
+        if (type === 'approval') {
+            portLabelsHtml = `&lt;div class="wf-port-labels">
+                &lt;span class="wf-port-label wf-port-label-yes">Approved&lt;/span>
+                &lt;span class="wf-port-label wf-port-label-no">Rejected&lt;/span>
+                &lt;span class="wf-port-label wf-port-label-mid">Each Step&lt;/span>
+            &lt;/div>`
+        }
+        if (type === 'fork') {
+            portLabelsHtml = `&lt;div class="wf-port-labels">
+                &lt;span class="wf-port-label wf-port-label-yes">Path A&lt;/span>
+                &lt;span class="wf-port-label wf-port-label-yes">Path B&lt;/span>
+            &lt;/div>`
+        }
+
+        return `&lt;div class="wf-node wf-node-${type}">
+            &lt;div class="wf-node-header">
+                &lt;span class="wf-node-icon">&lt;i class="fa-solid ${icon}">&lt;/i>&lt;/span>
+                &lt;span class="wf-node-title" title="${label}">${label}&lt;/span>
+            &lt;/div>
+            &lt;div class="wf-node-body">
+                &lt;span class="wf-node-type-label">${typeLabels[type] || type}&lt;/span>
+                ${description ? `&lt;div class="wf-node-description">${description}&lt;/div>` : ''}
+            &lt;/div>
+            ${portLabelsHtml}
+        &lt;/div>`
+    }
+
+    exportWorkflow(editor) {
+        const drawflowData = editor.export()
+        const nodes = {}
+        const canvasLayout = {}
+        const moduleData = drawflowData.drawflow?.Home?.data || {}
+
+        for (const [drawflowId, node] of Object.entries(moduleData)) {
+            const nodeKey = node.data?.nodeKey || node.name
+            const type = node.data?.type || 'unknown'
+            const config = node.data?.config || {}
+
+            const outputs = []
+            for (const [outputKey, outputData] of Object.entries(node.outputs || {})) {
+                for (const conn of outputData.connections || []) {
+                    const targetNode = moduleData[conn.node]
+                    const targetKey = targetNode?.data?.nodeKey || targetNode?.name
+                    const port = outputKey.replace('output_', '')
+                    outputs.push({
+                        port: this.getPortLabel(type, parseInt(port)),
+                        target: targetKey,
+                    })
+                }
+            }
+
+            nodes[nodeKey] = { type, label: node.data?.label || node.name, config, outputs }
+            canvasLayout[nodeKey] = { x: node.pos_x, y: node.pos_y, drawflowId: parseInt(drawflowId) }
+        }
+
+        return { definition: { nodes }, canvasLayout }
+    }
+
+    importWorkflow(editor, definition, canvasLayout) {
+        editor.clear()
+        const nodeIdMap = {}
+        const nodeEntries = Object.entries(definition.nodes || {})
+
+        const hasLayout = canvasLayout &amp;&amp; typeof canvasLayout === 'object' &amp;&amp;
+            !Array.isArray(canvasLayout) &amp;&amp; Object.keys(canvasLayout).length > 0
+
+        let autoPositions = {}
+        if (!hasLayout) {
+            autoPositions = this.computeAutoLayout(definition)
+        }
+
+        for (const [nodeKey, nodeDef] of nodeEntries) {
+            const pos = hasLayout
+                ? (canvasLayout[nodeKey] || { x: 100, y: 100 })
+                : (autoPositions[nodeKey] || { x: 100, y: 100 })
+            const { inputs, outputs } = this.getNodePorts(nodeDef.type)
+            const config = { ...(nodeDef.config || {}), _nodeLabel: nodeDef.label || '' }
+            const html = this.buildNodeHTML(nodeDef.type, nodeKey, config)
+
+            const drawflowId = editor.addNode(
+                nodeKey, inputs, outputs,
+                pos.x, pos.y, `${nodeKey} wf-type-${nodeDef.type}`,
+                { type: nodeDef.type, config: nodeDef.config || {}, nodeKey, label: nodeDef.label || '' },
+                html
+            )
+            nodeIdMap[nodeKey] = drawflowId
+        }
+
+        for (const [nodeKey, nodeDef] of nodeEntries) {
+            const sourceId = nodeIdMap[nodeKey]
+            for (const [idx, output] of (nodeDef.outputs || []).entries()) {
+                const targetId = nodeIdMap[output.target]
+                if (targetId) {
+                    editor.addConnection(sourceId, targetId, `output_${idx + 1}`, 'input_1')
+                }
+            }
+        }
+    }
+
+    computeAutoLayout(definition) {
+        const nodes = definition.nodes || {}
+        const nodeKeys = Object.keys(nodes)
+        const positions = {}
+
+        const inDegree = {}
+        const children = {}
+        nodeKeys.forEach(k => { inDegree[k] = 0; children[k] = [] })
+        for (const [key, node] of Object.entries(nodes)) {
+            for (const out of (node.outputs || [])) {
+                if (out.target &amp;&amp; children[key]) {
+                    children[key].push(out.target)
+                    inDegree[out.target] = (inDegree[out.target] || 0) + 1
+                }
+            }
+        }
+
+        const layers = []
+        let queue = nodeKeys.filter(k => inDegree[k] === 0)
+        const visited = new Set()
+
+        while (queue.length > 0) {
+            layers.push([...queue])
+            queue.forEach(k => visited.add(k))
+            const nextQueue = []
+            for (const k of queue) {
+                for (const child of (children[k] || [])) {
+                    inDegree[child]--
+                    if (inDegree[child] &lt;= 0 &amp;&amp; !visited.has(child)) {
+                        nextQueue.push(child)
+                        visited.add(child)
+                    }
+                }
+            }
+            queue = nextQueue
+        }
+
+        nodeKeys.filter(k => !visited.has(k)).forEach(k => layers.push([k]))
+
+        const nodeW = 260, nodeH = 120, gapX = 60, startX = 80, startY = 60
+
+        layers.forEach((layer, rowIdx) => {
+            const totalWidth = layer.length * nodeW + (layer.length - 1) * gapX
+            const offsetX = startX + Math.max(0, (600 - totalWidth) / 2)
+            layer.forEach((key, colIdx) => {
+                positions[key] = {
+                    x: offsetX + colIdx * (nodeW + gapX),
+                    y: startY + rowIdx * nodeH
+                }
+            })
+        })
+
+        return positions
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

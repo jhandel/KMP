@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: assets/js/controllers/workflow-node-config-handler.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: assets/js/controllers/workflow-node-config-handler.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * WorkflowNodeConfigHandler
+ *
+ * Manages node configuration panel interactions including form handling,
+ * approver type changes, value pickers, and config panel resize.
+ * Instantiated by the main WorkflowDesignerController.
+ */
+export default class WorkflowNodeConfigHandler {
+    constructor(designer) {
+        this.designer = designer
+        this._boundResizeMove = null
+        this._boundResizeEnd = null
+    }
+
+    get editor() { return this.designer.editor }
+    get configPanel() { return this.designer._configPanel }
+    get variablePicker() { return this.designer._variablePicker }
+
+    get nodeConfigTarget() { return this.designer.nodeConfigTarget }
+    get hasNodeConfigTarget() { return this.designer.hasNodeConfigTarget }
+
+    // --- Node Selection ---
+
+    onNodeSelected(nodeId) {
+        this.designer._selectedNodes.add(nodeId)
+        this._highlightSelectedNodes()
+        const nodeData = this.editor.getNodeFromId(nodeId)
+        if (this.hasNodeConfigTarget &amp;&amp; this.configPanel) {
+            const variableInfo = this._buildVariableInfo(nodeId, nodeData)
+            this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this.configPanel.renderConfigHTML(nodeId, nodeData, variableInfo)
+            this.variablePicker?.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+            const nodeConfig = nodeData.data?.config || {}
+            if (nodeConfig.approverType === 'policy' &amp;&amp; nodeConfig.policyClass) {
+                this._loadPolicyActions(nodeConfig.policyClass, nodeConfig.policyAction)
+            }
+            this.nodeConfigTarget.querySelectorAll('[data-vp-settings-select]').forEach(selectEl => {
+                const currentVal = selectEl.value
+                if (currentVal) {
+                    this._loadAppSettingsForPicker(selectEl, currentVal)
+                }
+            })
+            // Load email template dropdown options
+            this._loadEmailTemplateOptions(nodeConfig, nodeId)
+        }
+    }
+
+    onNodeUnselected() {
+        if (!this.designer._shiftHeld) {
+            this.designer.clearMultiSelect()
+        }
+        if (this.hasNodeConfigTarget &amp;&amp; this.configPanel) {
+            this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this.configPanel.renderEmptyHTML()
+        }
+    }
+
+    /**
+     * Build variable info for the catalog tab.
+     * @returns {{ available: Array, produced: Array }}
+     */
+    _buildVariableInfo(nodeId, nodeData) {
+        if (!this.variablePicker) return null
+        const available = this.variablePicker.buildVariableList(nodeId, this.editor)
+        const produced = this.variablePicker.getNodeOutputSchema(nodeData)
+        return { available, produced }
+    }
+
+    _highlightSelectedNodes() {
+        this.designer.canvasTarget.querySelectorAll('.drawflow-node').forEach(el => {
+            el.classList.remove('wf-multi-selected')
+        })
+        this.designer._selectedNodes.forEach(id => {
+            const el = this.designer.canvasTarget.querySelector(`#node-${id}`)
+            if (el) el.classList.add('wf-multi-selected')
+        })
+    }
+
+    // --- Config Form Handlers ---
+
+    onApproverTypeChange(event) {
+        this.updateNodeConfig(event)
+        const form = event.target.closest('form')
+        const selectedType = event.target.value
+        form.querySelectorAll('[data-approver-section]').forEach(section => {
+            section.style.display = section.dataset.approverSection === selectedType ? 'block' : 'none'
+        })
+    }
+
+    onApproverValueModeChange(event) {
+        const section = event.target.closest('[data-approver-section]')
+        if (!section) return
+        const mode = event.target.value
+        const fixedDiv = section.querySelector('[data-approver-value-fixed]')
+        const contextDiv = section.querySelector('[data-approver-value-context]')
+        if (fixedDiv) fixedDiv.style.display = mode === 'fixed' ? 'block' : 'none'
+        if (contextDiv) contextDiv.style.display = mode === 'context' ? 'block' : 'none'
+
+        // Clear the value in the hidden mode so it doesn't persist
+        if (mode === 'fixed') {
+            const ctxInput = contextDiv?.querySelector('input[name="approverValue"]')
+            if (ctxInput) ctxInput.value = ''
+        } else {
+            const acHidden = fixedDiv?.querySelector('input[name="approverValue"]')
+            if (acHidden) acHidden.value = ''
+        }
+        this.updateNodeConfig(event)
+    }
+
+    onSerialPickNextChange(event) {
+        const form = event.target.closest('form')
+        const checked = event.target.checked
+        const allowParallel = form.querySelector('[name="allowParallel"]')
+        if (checked &amp;&amp; allowParallel) {
+            allowParallel.checked = false
+            allowParallel.disabled = true
+        } else if (allowParallel) {
+            allowParallel.disabled = false
+        }
+        this.updateNodeConfig(event)
+    }
+
+    onResolverChange(event) {
+        const form = event.target.closest('form')
+        const nodeId = form.dataset.nodeId
+        const resolverKey = event.target.value
+        const nodeData = this.editor.getNodeFromId(nodeId)
+
+        if (!nodeData.data) nodeData.data = {}
+        if (!nodeData.data.config) nodeData.data.config = {}
+
+        if (resolverKey) {
+            const resolver = this.configPanel.resolvers.find(r => r.resolver === resolverKey)
+            nodeData.data.config.approverConfig = {
+                service: resolverKey,
+                method: resolver?.method || '',
+            }
+            if (resolver?.configSchema) {
+                for (const key of Object.keys(resolver.configSchema)) {
+                    nodeData.data.config.approverConfig[key] = nodeData.data.config.approverConfig[key] || ''
+                }
+            }
+        } else {
+            nodeData.data.config.approverConfig = {}
+        }
+
+        this.editor.updateNodeDataFromId(nodeId, nodeData.data)
+
+        if (this.hasNodeConfigTarget &amp;&amp; this.configPanel) {
+            const updatedNode = this.editor.getNodeFromId(nodeId)
+            this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this.configPanel.renderConfigHTML(nodeId, updatedNode)
+            if (this.variablePicker) {
+                this.variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+            }
+        }
+    }
+
+    onValuePickerTypeChange(event) {
+        const select = event.target
+        const fieldName = select.dataset.vpType
+        const selectedType = select.value
+        const form = select.closest('form')
+        const nodeId = form?.dataset.nodeId
+        const inputGroup = select.closest('.input-group')
+
+        const existingInput = inputGroup.querySelector(`[name="${fieldName}"]`)
+        const isNumber = existingInput?.type === 'number'
+        const dataType = isNumber ? 'integer' : 'string'
+
+        const oldInputs = inputGroup.querySelectorAll(`[name="${fieldName}"]`)
+        oldInputs.forEach(el => {
+            if (el.type === 'checkbox') {
+                el.closest('.form-check')?.remove()
+            } else {
+                el.remove()
+            }
+        })
+
+        let newInputHTML = ''
+        if (selectedType === 'context') {
+            newInputHTML = `&lt;input type="text" class="form-control form-control-sm"
+                name="${fieldName}" value="" placeholder="$.path.to.value"
+                data-action="change->workflow-designer#updateNodeConfig"
+                data-variable-picker="true">`
+        } else if (selectedType === 'app_setting') {
+            newInputHTML = `&lt;select class="form-select form-select-sm" name="${fieldName}"
+                data-action="change->workflow-designer#updateNodeConfig"
+                data-vp-settings-select="${fieldName}">
+                &lt;option value="">Loading settings...&lt;/option>
+            &lt;/select>`
+        } else {
+            if (dataType === 'integer') {
+                newInputHTML = `&lt;input type="number" class="form-control form-control-sm"
+                    name="${fieldName}" value=""
+                    data-action="change->workflow-designer#updateNodeConfig">`
+            } else {
+                newInputHTML = `&lt;input type="text" class="form-control form-control-sm"
+                    name="${fieldName}" value=""
+                    data-action="change->workflow-designer#updateNodeConfig">`
+            }
+        }
+
+        inputGroup.insertAdjacentHTML('beforeend', newInputHTML)
+
+        if (selectedType === 'app_setting') {
+            this._loadAppSettingsForPicker(inputGroup.querySelector(`[data-vp-settings-select="${fieldName}"]`))
+        }
+
+        if (selectedType === 'context' &amp;&amp; this.variablePicker &amp;&amp; nodeId) {
+            this.variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+        }
+
+        this.updateNodeConfig(event)
+    }
+
+    async onPolicyClassChange(event) {
+        this.updateNodeConfig(event)
+        const form = event.target.closest('form')
+        const policyClass = event.target.value
+        const actionSelect = form.querySelector('[name="policyAction"]')
+
+        if (!policyClass) {
+            actionSelect.innerHTML = '&lt;option value="">Select a policy class first...&lt;/option>'
+            return
+        }
+
+        try {
+            const response = await fetch('/workflows/policy-actions?class=' + encodeURIComponent(policyClass))
+            const data = await response.json()
+            let options = '&lt;option value="">Select an action...&lt;/option>'
+            data.policyActions.forEach(a => {
+                options += `&lt;option value="${a.action}">${a.label}&lt;/option>`
+            })
+            actionSelect.innerHTML = options
+        } catch (error) {
+            console.error('Failed to load policy actions:', error)
+            actionSelect.innerHTML = '&lt;option value="">Error loading actions&lt;/option>'
+        }
+    }
+
+    async _loadPolicyActions(policyClass, selectedAction) {
+        try {
+            const response = await fetch('/workflows/policy-actions?class=' + encodeURIComponent(policyClass))
+            const data = await response.json()
+            const actionSelect = this.nodeConfigTarget.querySelector('[name="policyAction"]')
+            if (actionSelect) {
+                let options = '&lt;option value="">Select an action...&lt;/option>'
+                data.policyActions.forEach(a => {
+                    const selected = a.action === selectedAction ? 'selected' : ''
+                    options += `&lt;option value="${a.action}" ${selected}>${a.label}&lt;/option>`
+                })
+                actionSelect.innerHTML = options
+            }
+        } catch (error) {
+            console.error('Failed to load policy actions:', error)
+        }
+    }
+
+    async _loadAppSettingsForPicker(selectEl, selectedKey) {
+        if (!selectEl) return
+
+        try {
+            const response = await fetch('/workflows/app-settings', {
+                headers: { 'Accept': 'application/json' }
+            })
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            const data = await response.json()
+            let options = '&lt;option value="">Select a setting...&lt;/option>'
+            const items = Array.isArray(data) ? data : (data.appSettings || data.settings || [])
+            items.forEach(s => {
+                const key = s.name || s.value || ''
+                const label = s.name || key
+                const selected = key === selectedKey ? 'selected' : ''
+                options += `&lt;option value="${key}" ${selected}>${label}&lt;/option>`
+            })
+            selectEl.innerHTML = options
+        } catch (error) {
+            console.error('Failed to load app settings:', error)
+            if (!selectedKey) {
+                selectEl.innerHTML = '&lt;option value="">Settings unavailable&lt;/option>'
+            } else {
+                selectEl.innerHTML =
+                    `&lt;option value="">Settings unavailable&lt;/option>` +
+                    `&lt;option value="${selectedKey}" selected>${selectedKey}&lt;/option>`
+            }
+        }
+    }
+
+    updateNodeConfig(event) {
+        const form = event.target.closest('form')
+        const nodeId = form.dataset.nodeId
+        const formData = new FormData(form)
+
+        const nodeData = this.editor.getNodeFromId(nodeId)
+        if (!nodeData.data) nodeData.data = {}
+        if (!nodeData.data.config) nodeData.data.config = {}
+
+        const newParams = {}
+        let hasParams = false
+        const newApproverConfig = {}
+        let hasApproverConfig = false
+
+        const vpTypeSelects = form.querySelectorAll('[data-vp-type]')
+        const vpFields = new Set()
+        vpTypeSelects.forEach(select => vpFields.add(select.dataset.vpType))
+
+        for (const [key, value] of formData.entries()) {
+            if (vpFields.has(key)) continue
+            if (key.startsWith('params.') &amp;&amp; vpFields.has(key)) continue
+            if (key.startsWith('approverConfig.') &amp;&amp; vpFields.has(key)) continue
+            // Skip KV editor sub-fields — they are handled by _extractKvFields
+            if (key.includes('__key__') || key.includes('__val__')) continue
+
+            if (key.startsWith('params.')) {
+                const paramKey = key.substring(7)
+                newParams[paramKey] = value
+                hasParams = true
+            } else if (key.startsWith('approverConfig.')) {
+                const acKey = key.substring(15)
+                newApproverConfig[acKey] = value
+                hasApproverConfig = true
+            } else {
+                nodeData.data.config[key] = value
+            }
+        }
+
+        vpTypeSelects.forEach(select => {
+            const fieldName = select.dataset.vpType
+            const selectedType = select.value
+            const container = select.closest('.value-picker')
+            const input = container.querySelector(`[name="${fieldName}"]`)
+            const rawValue = input?.value ?? ''
+
+            let composedValue
+            if (selectedType === 'fixed') {
+                const isNumber = input?.type === 'number'
+                composedValue = isNumber ? (rawValue === '' ? '' : Number(rawValue)) : rawValue
+            } else if (selectedType === 'context') {
+                composedValue = rawValue ? { type: 'context', path: rawValue } : ''
+            } else if (selectedType === 'app_setting') {
+                composedValue = rawValue ? { type: 'app_setting', key: rawValue } : ''
+            }
+
+            if (fieldName.startsWith('params.')) {
+                const paramKey = fieldName.substring(7)
+                newParams[paramKey] = composedValue
+                hasParams = true
+            } else if (fieldName.startsWith('approverConfig.')) {
+                const acKey = fieldName.substring(15)
+                newApproverConfig[acKey] = composedValue
+                hasApproverConfig = true
+            } else {
+                nodeData.data.config[fieldName] = composedValue
+            }
+        })
+
+        if (hasParams) {
+            nodeData.data.config.params = newParams
+        }
+        if (hasApproverConfig) {
+            nodeData.data.config.approverConfig = newApproverConfig
+        }
+
+        // Extract key-value editor fields (e.g., vars for Core.SendEmail)
+        this._extractKvFields(form, nodeData)
+
+        nodeData.data.config.allowParallel = form.querySelector('[name="allowParallel"]')?.checked ?? true
+        nodeData.data.config.serialPickNext = form.querySelector('[name="serialPickNext"]')?.checked ?? false
+
+        this.editor.updateNodeDataFromId(nodeId, nodeData.data)
+
+        const changedField = event.target?.name
+        if (changedField === 'action' || changedField === 'condition' || changedField === 'event') {
+            const updatedNode = this.editor.getNodeFromId(nodeId)
+            if (this.hasNodeConfigTarget &amp;&amp; this.configPanel) {
+                const variableInfo = this._buildVariableInfo(nodeId, updatedNode)
+                this.nodeConfigTarget.innerHTML = this._resizeHandleHTML + this.configPanel.renderConfigHTML(nodeId, updatedNode, variableInfo)
+                if (this.variablePicker) {
+                    this.variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+                }
+            }
+        } else if (this.variablePicker &amp;&amp; this.hasNodeConfigTarget) {
+            this.variablePicker.attachPickers(this.nodeConfigTarget, nodeId, this.editor)
+        }
+    }
+
+    // --- Config Panel Resize ---
+
+    get _resizeHandleHTML() {
+        return '&lt;div class="config-panel-resize-handle" data-action="mousedown->workflow-designer#onResizeStart">&lt;/div>'
+    }
+
+    restoreConfigPanelWidth() {
+        const saved = localStorage.getItem('wf-config-panel-width')
+        if (saved &amp;&amp; this.hasNodeConfigTarget) {
+            const width = parseInt(saved, 10)
+            if (width >= 300 &amp;&amp; width &lt;= window.innerWidth * 0.6) {
+                this.nodeConfigTarget.style.width = width + 'px'
+                this.nodeConfigTarget.style.minWidth = width + 'px'
+            }
+        }
+    }
+
+    onResizeStart(event) {
+        event.preventDefault()
+        this._resizeStartX = event.clientX
+        this._resizeStartWidth = this.nodeConfigTarget.getBoundingClientRect().width
+        const handle = event.currentTarget
+        handle.classList.add('dragging')
+
+        this._boundResizeMove = this._onResizeMove.bind(this)
+        this._boundResizeEnd = this._onResizeEnd.bind(this, handle)
+        document.addEventListener('mousemove', this._boundResizeMove)
+        document.addEventListener('mouseup', this._boundResizeEnd)
+    }
+
+    _onResizeMove(event) {
+        const delta = this._resizeStartX - event.clientX
+        const maxWidth = window.innerWidth * 0.6
+        let newWidth = Math.max(300, Math.min(maxWidth, this._resizeStartWidth + delta))
+        this.nodeConfigTarget.style.width = newWidth + 'px'
+        this.nodeConfigTarget.style.minWidth = newWidth + 'px'
+    }
+
+    _onResizeEnd(handle) {
+        handle.classList.remove('dragging')
+        document.removeEventListener('mousemove', this._boundResizeMove)
+        document.removeEventListener('mouseup', this._boundResizeEnd)
+        const currentWidth = Math.round(this.nodeConfigTarget.getBoundingClientRect().width)
+        localStorage.setItem('wf-config-panel-width', currentWidth)
+    }
+
+    // --- Email Template Select methods ---
+
+    /**
+     * Fetch active email templates from the API and populate any
+     * email-template-select dropdowns in the config panel.
+     * @param {object} nodeConfig
+     * @param {string} nodeId
+     */
+    _loadEmailTemplateOptions(nodeConfig, nodeId) {
+        const selects = this.nodeConfigTarget.querySelectorAll('[data-email-template-select]')
+        if (selects.length === 0) return
+
+        // Cache the fetch to avoid re-fetching every node click
+        if (!this._emailTemplateOptionsPromise) {
+            this._emailTemplateOptionsPromise = fetch('/email-templates/options.json')
+                .then(r => r.ok ? r.json() : { options: [] })
+                .then(data => data.options || [])
+                .catch(() => [])
+        }
+
+        const currentTemplateId = String(nodeConfig?.params?.template ?? '')
+
+        this._emailTemplateOptionsPromise.then(options => {
+            selects.forEach(select => {
+                select.innerHTML = '&lt;option value="">Select a template…&lt;/option>'
+                options.forEach(opt => {
+                    const sel = String(opt.value) === currentTemplateId ? 'selected' : ''
+                    // Build accessible option label: prefer name, show slug as secondary
+                    let optLabel = opt.label
+                    if (opt.slug &amp;&amp; opt.label !== opt.slug) {
+                        optLabel = `${opt.label} [${opt.slug}]`
+                    } else if (!opt.slug &amp;&amp; !opt.isWorkflowNative) {
+                        // Legacy mailer-backed: keep label as-is (already humanized)
+                    }
+                    const el = document.createElement('option')
+                    el.value = opt.value
+                    if (sel) el.selected = true
+                    el.textContent = optLabel
+                    el.dataset.availableVars = JSON.stringify(opt.availableVars || [])
+                    el.dataset.variablesSchema = JSON.stringify(opt.variablesSchema || [])
+                    el.dataset.parsedPlaceholders = JSON.stringify(opt.parsedPlaceholders || [])
+                    el.dataset.subject = opt.subjectPreview || ''
+                    el.dataset.slug = opt.slug || ''
+                    el.dataset.isWorkflowNative = opt.isWorkflowNative ? '1' : '0'
+                    select.appendChild(el)
+                })
+                // Show analysis for the currently selected template
+                if (currentTemplateId) {
+                    this._renderTemplateAnalysis(select, nodeId)
+                }
+            })
+        })
+    }
+
+    /**
+     * Handle email template dropdown change: save to config and show analysis.
+     */
+    onEmailTemplateChange(event) {
+        const select = event.target
+        const nodeId = event.target.closest('form')?.dataset.nodeId
+        this._renderTemplateAnalysis(select, nodeId)
+        // Trigger normal config save
+        this.updateNodeConfig(event)
+    }
+
+    /**
+     * Render a rich variable-mapping analysis panel below the template dropdown.
+     *
+     * Shows:
+     *  - Template identity (name + slug badge, workflow-native indicator)
+     *  - Required vs optional variables from variables_schema
+     *  - Whether each is mapped/unmapped against available workflow context vars
+     *  - Parsed subject placeholders not covered by variables_schema
+     *
+     * @param {HTMLSelectElement} select
+     * @param {string|null} nodeId - current node id, used to resolve available vars
+     */
+    _renderTemplateAnalysis(select, nodeId) {
+        const option = select.selectedOptions[0]
+        const analysisEl = select.closest('.mb-3')?.querySelector('.email-template-analysis')
+        if (!analysisEl) return
+
+        if (!option || !option.value) {
+            analysisEl.innerHTML = ''
+            return
+        }
+
+        // Parse metadata stored on the option
+        let variablesSchema = []
+        let parsedPlaceholders = []
+        let availableVars = []
+        try { variablesSchema = JSON.parse(option.dataset.variablesSchema || '[]') } catch { /* ignore */ }
+        try { parsedPlaceholders = JSON.parse(option.dataset.parsedPlaceholders || '[]') } catch { /* ignore */ }
+        try { availableVars = JSON.parse(option.dataset.availableVars || '[]') } catch { /* ignore */ }
+
+        const slug = option.dataset.slug || ''
+        const isWorkflowNative = option.dataset.isWorkflowNative === '1'
+        const subjectPreview = option.dataset.subject || ''
+
+        // Build the set of available workflow variable names (short names from paths like $.entity.field → field)
+        const workflowVarPaths = new Set()
+        const workflowVarNames = new Set()
+        if (nodeId &amp;&amp; this.variablePicker) {
+            const nodeData = this.editor.getNodeFromId(nodeId)
+            if (nodeData) {
+                const wfVars = this.variablePicker.buildVariableList(nodeId, this.editor)
+                wfVars.forEach(v => {
+                    workflowVarPaths.add(v.path)
+                    // Extract trailing name component ($.entity.someField → someField)
+                    const parts = v.path.split('.')
+                    workflowVarNames.add(parts[parts.length - 1])
+                    workflowVarNames.add(v.path) // also match full path
+                })
+            }
+        }
+
+        let html = '&lt;div class="border rounded p-2 bg-light">'
+
+        // Identity badge row
+        html += '&lt;div class="d-flex align-items-center gap-2 mb-2 flex-wrap">'
+        if (isWorkflowNative &amp;&amp; slug) {
+            html += `&lt;span class="badge bg-primary" title="Workflow-native template">&lt;i class="bi bi-diagram-3 me-1">&lt;/i>${this._escHtml(slug)}&lt;/span>`
+        } else if (slug) {
+            html += `&lt;span class="badge bg-secondary" title="Slug">${this._escHtml(slug)}&lt;/span>`
+        } else {
+            html += '&lt;span class="badge bg-warning text-dark" title="Legacy mailer-backed template (no slug)">&lt;i class="bi bi-exclamation-triangle me-1">&lt;/i>Legacy&lt;/span>'
+        }
+        if (subjectPreview) {
+            html += `&lt;small class="text-muted text-truncate" style="max-width:220px;" title="${this._escHtml(subjectPreview)}">Subject: ${this._escHtml(subjectPreview.substring(0, 60))}${subjectPreview.length > 60 ? '…' : ''}&lt;/small>`
+        }
+        html += '&lt;/div>'
+
+        const schemaNames = new Set(variablesSchema.map(e => e.name).filter(Boolean))
+        const hasSchema = variablesSchema.length > 0
+        const hasPlaceholders = parsedPlaceholders.length > 0
+
+        if (hasSchema) {
+            const required = variablesSchema.filter(e => e.required)
+            const optional = variablesSchema.filter(e => !e.required)
+            let missingRequired = 0
+
+            const renderRow = (entry) => {
+                const name = entry.name || ''
+                const type = entry.type || 'string'
+                const desc = entry.description ? ` — ${entry.description}` : ''
+                const req = entry.required
+                const mapped = workflowVarNames.has(name) || workflowVarNames.size === 0
+                let statusIcon, statusClass
+                if (workflowVarNames.size === 0) {
+                    // No workflow context available — neutral display
+                    statusIcon = '&lt;i class="bi bi-dash-circle text-secondary">&lt;/i>'
+                    statusClass = ''
+                } else if (mapped) {
+                    statusIcon = '&lt;i class="bi bi-check-circle-fill text-success">&lt;/i>'
+                    statusClass = ''
+                } else {
+                    statusIcon = req
+                        ? '&lt;i class="bi bi-x-circle-fill text-danger">&lt;/i>'
+                        : '&lt;i class="bi bi-dash-circle text-warning">&lt;/i>'
+                    statusClass = req ? 'text-danger' : 'text-warning'
+                    if (req) missingRequired++
+                }
+                const reqBadge = req ? '&lt;span class="badge bg-danger ms-1" style="font-size:0.65em;">required&lt;/span>' : '&lt;span class="badge bg-secondary ms-1" style="font-size:0.65em;">optional&lt;/span>'
+                return `&lt;li class="d-flex align-items-center gap-1 ${statusClass}" style="font-size:0.8em;">
+                    ${statusIcon}
+                    &lt;code>${this._escHtml(name)}&lt;/code>&lt;span class="text-muted">(${this._escHtml(type)})&lt;/span>${reqBadge}${desc ? `&lt;span class="text-muted ms-1">${this._escHtml(desc)}&lt;/span>` : ''}
+                &lt;/li>`
+            }
+
+            if (required.length > 0) {
+                html += '&lt;div class="mb-1">&lt;strong class="small">Required variables&lt;/strong>'
+                html += '&lt;ul class="list-unstyled mb-0 mt-1">'
+                required.forEach(e => { html += renderRow(e) })
+                html += '&lt;/ul>&lt;/div>'
+            }
+            if (optional.length > 0) {
+                html += '&lt;div class="mb-1">&lt;strong class="small">Optional variables&lt;/strong>'
+                html += '&lt;ul class="list-unstyled mb-0 mt-1">'
+                optional.forEach(e => { html += renderRow(e) })
+                html += '&lt;/ul>&lt;/div>'
+            }
+
+            // Summary warning if required vars are unmapped
+            if (missingRequired > 0) {
+                html += `&lt;div class="alert alert-danger py-1 px-2 mb-0 mt-1" style="font-size:0.8em;" role="alert">
+                    &lt;i class="bi bi-exclamation-triangle-fill me-1">&lt;/i>
+                    ${missingRequired} required variable${missingRequired > 1 ? 's are' : ' is'} not mapped from workflow context. Check your workflow variables.
+                &lt;/div>`
+            }
+
+            // Surface any subject placeholders not covered by schema
+            const uncoveredPlaceholders = parsedPlaceholders.filter(p => !schemaNames.has(p))
+            if (uncoveredPlaceholders.length > 0) {
+                html += `&lt;div class="mt-1">&lt;small class="text-muted">&lt;i class="bi bi-info-circle me-1">&lt;/i>Subject also uses: ${uncoveredPlaceholders.map(p => `&lt;code>${this._escHtml(p)}&lt;/code>`).join(', ')} (not in schema)&lt;/small>&lt;/div>`
+            }
+        } else if (hasPlaceholders) {
+            // No schema, show placeholders from subject as a fallback hint
+            html += `&lt;div>&lt;small class="text-muted">&lt;i class="bi bi-info-circle me-1">&lt;/i>Subject placeholders: ${parsedPlaceholders.map(p => `&lt;code>${this._escHtml(p)}&lt;/code>`).join(', ')}&lt;/small>&lt;/div>`
+        } else if (availableVars.length > 0) {
+            const varNames = availableVars.map(v => typeof v === 'object' ? (v.name || v) : v)
+            html += `&lt;small class="text-muted">&lt;i class="bi bi-info-circle me-1">&lt;/i>Available vars: &lt;code>${varNames.map(n => this._escHtml(n)).join('&lt;/code>, &lt;code>')}&lt;/code>&lt;/small>`
+        } else {
+            html += '&lt;small class="text-muted">&lt;i class="bi bi-info-circle me-1">&lt;/i>No variable schema defined for this template.&lt;/small>'
+        }
+
+        html += '&lt;/div>'
+        analysisEl.innerHTML = html
+    }
+
+    /**
+     * HTML-escape a string for safe inline rendering.
+     * @param {string} str
+     * @returns {string}
+     */
+    _escHtml(str) {
+        return String(str)
+            .replace(/&amp;/g, '&amp;amp;')
+            .replace(/&lt;/g, '&amp;lt;')
+            .replace(/>/g, '&amp;gt;')
+            .replace(/"/g, '&amp;quot;')
+            .replace(/'/g, '&amp;#39;')
+    }
+
+    // --- Key-Value Editor methods ---
+
+    addKvRow(event) {
+        const btn = event.target.closest('[data-kv-target]')
+        const fieldName = btn.dataset.kvTarget
+        const container = btn.closest('.kv-editor').querySelector(`[data-kv-rows="${fieldName}"]`)
+        const existingRows = container.querySelectorAll('.kv-row')
+        const nextIdx = existingRows.length
+
+        const rowHTML = this.configPanel._renderKvRow(fieldName, nextIdx, '', '')
+        container.insertAdjacentHTML('beforeend', rowHTML)
+    }
+
+    removeKvRow(event) {
+        const row = event.target.closest('.kv-row')
+        const form = row.closest('form')
+        row.remove()
+        // Re-trigger config save after removal
+        this._saveKvFieldsFromForm(form)
+    }
+
+    onKvValueTypeChange(event) {
+        const select = event.target
+        const selectedType = select.value
+        const row = select.closest('.kv-row')
+        const valInput = row.querySelector('[name*="__val__"]')
+        if (valInput) {
+            valInput.placeholder = selectedType === 'context' ? '$.path.to.value' : 'value'
+            valInput.value = ''
+        }
+        // Trigger config update
+        const form = select.closest('form')
+        if (form) this._saveKvFieldsFromForm(form)
+    }
+
+    _saveKvFieldsFromForm(form) {
+        const nodeId = form.dataset.nodeId
+        const nodeData = this.editor.getNodeFromId(nodeId)
+        if (!nodeData?.data?.config) return
+
+        this._extractKvFields(form, nodeData)
+        this.editor.updateNodeDataFromId(nodeId, nodeData.data)
+    }
+
+    _extractKvFields(form, nodeData) {
+        const kvEditors = form.querySelectorAll('.kv-editor')
+        kvEditors.forEach(editor => {
+            const fieldName = editor.querySelector('[data-kv-rows]')?.dataset.kvRows
+            if (!fieldName) return
+
+            const obj = {}
+            const rows = editor.querySelectorAll('.kv-row')
+            rows.forEach(row => {
+                const keyInput = row.querySelector('[name*="__key__"]')
+                const valInput = row.querySelector('[name*="__val__"]')
+                const typeSelect = row.querySelector('[data-kv-vtype]')
+                const key = keyInput?.value?.trim()
+                if (!key) return
+
+                const rawVal = valInput?.value ?? ''
+                const valType = typeSelect?.value ?? 'fixed'
+
+                if (valType === 'context') {
+                    obj[key] = rawVal.startsWith('$.') ? rawVal : `$.${rawVal}`
+                } else if (valType === 'app_setting') {
+                    obj[key] = rawVal ? { type: 'app_setting', key: rawVal } : ''
+                } else {
+                    obj[key] = rawVal
+                }
+            })
+
+            // Write into the correct nested location (e.g., params.vars)
+            if (fieldName.startsWith('params.')) {
+                const paramKey = fieldName.substring(7)
+                if (!nodeData.data.config.params) nodeData.data.config.params = {}
+                nodeData.data.config.params[paramKey] = obj
+            } else {
+                nodeData.data.config[fieldName] = obj
+            }
+        })
+    }
+
+    disconnect() {
+        if (this._boundResizeMove) {
+            document.removeEventListener('mousemove', this._boundResizeMove)
+        }
+        if (this._boundResizeEnd) {
+            document.removeEventListener('mouseup', this._boundResizeEnd)
+        }
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="KMP_Timezone.html">KMP_Timezone</a></li></ul><h3>Classes</h3><ul><li><a href="ActivitiesApproveAndAssignAuthorization.html">ActivitiesApproveAndAssignAuthorization</a></li><li><a href="ActivitiesRenewAuthorization.html">ActivitiesRenewAuthorization</a></li><li><a href="ActivityToggleController.html">ActivityToggleController</a></li><li><a href="ActivityWaiverManagerController.html">ActivityWaiverManagerController</a></li><li><a href="AddActivityModalController.html">AddActivityModalController</a></li><li><a href="AppSettingForm.html">AppSettingForm</a></li><li><a href="AppSettingModalController.html">AppSettingModalController</a></li><li><a href="ApprovalDetailController.html">ApprovalDetailController</a></li><li><a href="ApprovalReassignController.html">ApprovalReassignController</a></li><li><a href="ApprovalResponseController.html">ApprovalResponseController</a></li><li><a href="AutoComplete.html">AutoComplete</a></li><li><a href="AwardsAwardForm.html">AwardsAwardForm</a></li><li><a href="AwardsRecommendationAddForm.html">AwardsRecommendationAddForm</a></li><li><a href="AwardsRecommendationBulkEditForm.html">AwardsRecommendationBulkEditForm</a></li><li><a href="AwardsRecommendationEditForm.html">AwardsRecommendationEditForm</a></li><li><a href="AwardsRecommendationGroupController.html">AwardsRecommendationGroupController</a></li><li><a href="AwardsRecommendationQuickEditForm.html">AwardsRecommendationQuickEditForm</a></li><li><a href="AwardsRecommendationTable.html">AwardsRecommendationTable</a></li><li><a href="BackupRestoreStatusController.html">BackupRestoreStatusController</a></li><li><a href="BaseGatheringFormController.html">BaseGatheringFormController</a></li><li><a href="BrancheLinks.html">BrancheLinks</a></li><li><a href="CameraCaptureController.html">CameraCaptureController</a></li><li><a href="CodeEditorController.html">CodeEditorController</a></li><li><a href="CsvDownloadController.html">CsvDownloadController</a></li><li><a href="DelayForwardController.html">DelayForwardController</a></li><li><a href="DeleteConfirmationController.html">DeleteConfirmationController</a></li><li><a href="DetailTabsController.html">DetailTabsController</a></li><li><a href="EditActivityDescriptionController.html">EditActivityDescriptionController</a></li><li><a href="EmailTemplateEditorController.html">EmailTemplateEditorController</a></li><li><a href="EmailTemplateFormController.html">EmailTemplateFormController</a></li><li><a href="ExemptionReasonsController.html">ExemptionReasonsController</a></li><li><a href="FileSizeValidatorController.html">FileSizeValidatorController</a></li><li><a href="FilterGrid.html">FilterGrid</a></li><li><a href="GWSharingController.html">GWSharingController</a></li><li><a href="GatheringCloneController.html">GatheringCloneController</a></li><li><a href="GatheringFormController.html">GatheringFormController</a></li><li><a href="GatheringLocationAutocompleteController.html">GatheringLocationAutocompleteController</a></li><li><a href="GatheringMapController.html">GatheringMapController</a></li><li><a href="GatheringScheduleController.html">GatheringScheduleController</a></li><li><a href="GatheringTypeFormController.html">GatheringTypeFormController</a></li><li><a href="GatheringsCalendarController.html">GatheringsCalendarController</a></li><li><a href="GitHubSubmitter.html">GitHubSubmitter</a></li><li><a href="GridViewController.html">GridViewController</a></li><li><a href="GuifierController.html">GuifierController</a></li><li><a href="HelloWorldController.html">HelloWorldController</a></li><li><a href="ImagePreview.html">ImagePreview</a></li><li><a href="ImageZoom.html">ImageZoom</a></li><li><a href="MarkdownEditorController.html">MarkdownEditorController</a></li><li><a href="MemberCardProfile.html">MemberCardProfile</a></li><li><a href="MemberMobileCardMenu.html">MemberMobileCardMenu</a></li><li><a href="MemberMobileCardPWA.html">MemberMobileCardPWA</a></li><li><a href="MemberMobileCardProfile.html">MemberMobileCardProfile</a></li><li><a href="MemberUniqueEmail.html">MemberUniqueEmail</a></li><li><a href="MemberVerifyForm.html">MemberVerifyForm</a></li><li><a href="MobileApprovalsController.html">MobileApprovalsController</a></li><li><a href="MobileCalendarController.html">MobileCalendarController</a></li><li><a href="MobileControllerBase.html">MobileControllerBase</a></li><li><a href="MobileOfflineOverlayController.html">MobileOfflineOverlayController</a></li><li><a href="MobileRequestAuthController.html">MobileRequestAuthController</a></li><li><a href="ModalOpener.html">ModalOpener</a></li><li><a href="MyRsvpsController.html">MyRsvpsController</a></li><li><a href="NavBarController.html">NavBarController</a></li><li><a href="OutletButton.html">OutletButton</a></li><li><a href="PermissionAddRole.html">PermissionAddRole</a></li><li><a href="PermissionImport.html">PermissionImport</a></li><li><a href="PermissionManagePolicies.html">PermissionManagePolicies</a></li><li><a href="PopoverController.html">PopoverController</a></li><li><a href="QrcodeController.html">QrcodeController</a></li><li><a href="RetentionPolicyInputController.html">RetentionPolicyInputController</a></li><li><a href="RevokeForm.html">RevokeForm</a></li><li><a href="RoleAddMember.html">RoleAddMember</a></li><li><a href="RoleAddPermission.html">RoleAddPermission</a></li><li><a href="SecurityDebugController.html">SecurityDebugController</a></li><li><a href="SelectAllListController.html">SelectAllListController</a></li><li><a href="SessionExtender.html">SessionExtender</a></li><li><a href="SidebarToggleController.html">SidebarToggleController</a></li><li><a href="SortableListController.html">SortableListController</a></li><li><a href="TimezoneInputController.html">TimezoneInputController</a></li><li><a href="TurboModal.html">TurboModal</a></li><li><a href="VariableInsertController.html">VariableInsertController</a></li><li><a href="WaiverAttestationController.html">WaiverAttestationController</a></li><li><a href="WaiverCalendarController.html">WaiverCalendarController</a></li><li><a href="WaiverTemplateController.html">WaiverTemplateController</a></li><li><a href="WaiverUploadController.html">WaiverUploadController</a></li><li><a href="WaiverUploadWizardController.html">WaiverUploadWizardController</a></li><li><a href="WorkflowDesignerController.html">WorkflowDesignerController</a></li><li><a href="WorkflowIndexController.html">WorkflowIndexController</a></li><li><a href="WorkflowToolbarController.html">WorkflowToolbarController</a></li><li><a href="WorkflowVersionsController.html">WorkflowVersionsController</a></li><li><a href="module.exports.html">exports</a></li></ul><h3>Global</h3><ul><li><a href="global.html#DB_NAME">DB_NAME</a></li><li><a href="global.html#_buildVariableInfo">_buildVariableInfo</a></li><li><a href="global.html#_escHtml">_escHtml</a></li><li><a href="global.html#_loadEmailTemplateOptions">_loadEmailTemplateOptions</a></li><li><a href="global.html#_renderEmailTemplateSelect">_renderEmailTemplateSelect</a></li><li><a href="global.html#_renderKeyValueEditor">_renderKeyValueEditor</a></li><li><a href="global.html#_renderTemplateAnalysis">_renderTemplateAnalysis</a></li><li><a href="global.html#_variableCatalogHTML">_variableCatalogHTML</a></li><li><a href="global.html#_variableListHTML">_variableListHTML</a></li><li><a href="global.html#attachPickers">attachPickers</a></li><li><a href="global.html#buildVariableList">buildVariableList</a></li><li><a href="global.html#getCurrentSnapshot">getCurrentSnapshot</a></li><li><a href="global.html#getNodeOutputSchema">getNodeOutputSchema</a></li><li><a href="global.html#getUpstreamNodes">getUpstreamNodes</a></li><li><a href="global.html#onEmailTemplateChange">onEmailTemplateChange</a></li><li><a href="global.html#push">push</a></li><li><a href="global.html#redo">redo</a></li><li><a href="global.html#renderAutoComplete">renderAutoComplete</a></li><li><a href="global.html#renderConfigHTML">renderConfigHTML</a></li><li><a href="global.html#renderEmptyHTML">renderEmptyHTML</a></li><li><a href="global.html#renderValuePicker">renderValuePicker</a></li><li><a href="global.html#showDropdown">showDropdown</a></li><li><a href="global.html#undo">undo</a></li><li><a href="global.html#validate">validate</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 12 2026 14:53:06 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
