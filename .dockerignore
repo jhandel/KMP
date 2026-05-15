@@ -32,9 +32,9 @@ app/docs
 .editorconfig
 app/.editorconfig
 
-# Docker dev files
+# Docker dev files that are not needed in the build context.
+# Keep files copied by docker/Dockerfile.app available to BuildKit.
 docker/Dockerfile.app
-docker/entrypoint.sh
 docker/.env.example
 
 # Dev scripts
