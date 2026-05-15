@@ -17,10 +17,21 @@
             "url": "http://localhost:8080"
         },
         {
-            "name": "Listen for Xdebug",
+            "name": "Listen for Xdebug (Docker app)",
             "type": "php",
             "request": "launch",
-            "port": 9003
+            "port": 9003,
+            "hostname": "0.0.0.0",
+            "pathMappings": {
+                "/var/www/html": "${workspaceFolder}/app"
+            }
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch KMP - Chrome with Xdebug",
+            "url": "http://localhost:8080",
+            "webRoot": "${workspaceFolder}/app/webroot"
         },
         {
             "name": "Launch currently open script",
@@ -36,6 +47,16 @@
                 "XDEBUG_MODE": "debug,develop",
                 "XDEBUG_CONFIG": "client_port=${port}"
             }
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Debug KMP Docker app in Chrome",
+            "configurations": [
+                "Listen for Xdebug (Docker app)",
+                "Launch KMP - Chrome with Xdebug"
+            ],
+            "stopAll": true
         }
     ]
 }

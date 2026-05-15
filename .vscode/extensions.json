@@ -1,0 +1,12 @@
+{
+    "recommendations": [
+        "xdebug.php-debug",
+        "bmewburn.vscode-intelephense-client",
+        "rifi2k.format-html-in-php",
+        "alexkrechik.cucumberautocomplete",
+        "ms-azuretools.vscode-docker",
+        "github.vscode-github-actions",
+        "github.copilot",
+        "github.copilot-chat"
+    ]
+}

@@ -2,6 +2,94 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Docker: Start KMP Dev Environment",
+            "type": "shell",
+            "command": "./dev-up.sh",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker: Rebuild KMP Dev Environment",
+            "type": "shell",
+            "command": "./dev-up.sh --build",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker: Stop KMP Dev Environment",
+            "type": "shell",
+            "command": "./dev-down.sh",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker: PHPUnit",
+            "type": "shell",
+            "command": "./dev-test.sh php",
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker: Jest",
+            "type": "shell",
+            "command": "./dev-test.sh js",
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker: Vite Build",
+            "type": "shell",
+            "command": "./dev-test.sh build",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker: Playwright Smoke",
+            "type": "shell",
+            "command": "./dev-test.sh ui-smoke",
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker: Reset Database with Seed",
+            "type": "shell",
+            "command": "./dev-test.sh reset-db --seed",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Run Security Tests",
             "type": "shell",
             "command": "bash ${workspaceFolder}/security-checker.sh",

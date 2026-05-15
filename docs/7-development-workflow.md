@@ -129,6 +129,17 @@ bash bin/verify.sh --with-coverage
 bash bin/verify.sh --with-mutation
 ```
 
+When working from a host checkout with the Docker Compose agentic workflow, run the same checks through the app container:
+
+```bash
+./dev-test.sh build
+./dev-test.sh js
+./dev-test.sh php
+./dev-test.sh cs
+./dev-test.sh stan
+./dev-test.sh ui-smoke
+```
+
 ### JavaScript Tests
 
 ```bash
