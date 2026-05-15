@@ -187,7 +187,7 @@ if (SeedManager::isPostgres('test')) {
         ['KMP.KingdomName', 'Test Kingdom'],
         ['KMP.ShortSiteTitle', 'KMP Test'],
         ['KMP.LongSiteTitle', 'KMP Test Environment'],
-        ['KMP.SiteAdminSignature', 'KMP Test Administrators'],
+        ['Email.SiteAdminSignature', 'KMP Test Administrators'],
         ['KMP.RequireActiveWarrantForSecurity', 'false'],
         ['Warrant.LastCheck', $now],
     ];
@@ -303,6 +303,24 @@ if (SeedManager::isPostgres('test')) {
          ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, start_on = EXCLUDED.start_on, expires_on = EXCLUDED.expires_on, modified = EXCLUDED.modified, modified_by = EXCLUDED.modified_by",
         [$now, $now],
     );
+
+    foreach (
+        [
+            ['branches', 'id'],
+            ['members', 'id'],
+            ['roles', 'id'],
+            ['permissions', 'id'],
+            ['roles_permissions', 'id'],
+            ['permission_policies', 'id'],
+            ['member_roles', 'id'],
+            ['warrant_rosters', 'id'],
+            ['warrants', 'id'],
+        ] as [$table, $column]
+    ) {
+        $conn->execute(
+            "SELECT setval(pg_get_serial_sequence('$table', '$column'), COALESCE((SELECT MAX($column) FROM $table), 1), TRUE)",
+        );
+    }
 }
 
 // Clear cached table metadata so CakePHP sees columns added by migrations.

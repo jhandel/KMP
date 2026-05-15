@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Test\TestCase\Controller;
 
 use App\Services\Platform\PlatformAdminAuthService;
+use Cake\Core\Configure;
 use Cake\Http\ServerRequest;
 use Cake\I18n\DateTime;
 use Cake\Mailer\Mailer;
@@ -18,10 +19,24 @@ class PlatformAdminControllerTest extends TestCase
 
     private string|false $originalPlatformSecretKey;
 
+    /**
+     * @var array<int, string>
+     */
+    private array $originalPlatformAdminHosts = [];
+
+    /**
+     * @var array<int, string>
+     */
+    private array $originalPlatformRedirectHosts = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->originalPlatformSecretKey = getenv('PLATFORM_SECRET_KEY');
+        $this->originalPlatformAdminHosts = (array)Configure::read('PlatformAdmin.hosts');
+        $this->originalPlatformRedirectHosts = (array)Configure::read('PlatformAdmin.redirectFromHosts');
+        Configure::write('PlatformAdmin.hosts', ['admin.localhost']);
+        Configure::write('PlatformAdmin.redirectFromHosts', ['localhost', '127.0.0.1']);
         $this->setPlatformSecretKey('test-platform-secret-key-32-chars-minimum');
         (new Migrations())->migrate([
             'connection' => 'test',
@@ -44,6 +59,8 @@ class PlatformAdminControllerTest extends TestCase
         } else {
             $this->setPlatformSecretKey($this->originalPlatformSecretKey);
         }
+        Configure::write('PlatformAdmin.hosts', $this->originalPlatformAdminHosts);
+        Configure::write('PlatformAdmin.redirectFromHosts', $this->originalPlatformRedirectHosts);
         parent::tearDown();
     }
 

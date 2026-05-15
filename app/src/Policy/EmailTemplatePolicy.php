@@ -106,4 +106,17 @@ class EmailTemplatePolicy extends BasePolicy
         // Same permission as viewing templates
         return $this->_hasPolicy($user, 'canView', $entity, ...$optionalArgs);
     }
+
+    /**
+     * Check if $user can discover email templates.
+     *
+     * @param \App\KMP\KmpIdentityInterface $user The user.
+     * @param \App\Model\Entity\BaseEntity|\Cake\ORM\Table $entity
+     * @param mixed ...$optionalArgs Optional arguments
+     * @return bool
+     */
+    public function canDiscover(KmpIdentityInterface $user, BaseEntity|Table $entity, ...$optionalArgs): bool
+    {
+        return $this->canIndex($user, $entity, ...$optionalArgs);
+    }
 }
