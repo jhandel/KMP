@@ -33,6 +33,7 @@ class TenantProvisioningCommandTest extends TestCase
             'platform_audit_events',
             'platform_secrets',
             'platform_admin_sessions',
+            'platform_admin_email_codes',
             'platform_admin_recovery_codes',
             'platform_admin_webauthn_credentials',
             'platform_service_configs',
@@ -47,8 +48,8 @@ class TenantProvisioningCommandTest extends TestCase
         }
         if (in_array('phinxlog', $connection->getSchemaCollection()->listTables(), true)) {
             $connection->execute(
-                'DELETE FROM phinxlog WHERE version IN (?, ?, ?)',
-                ['20260414000000', '20260512172000', '20260512183000'],
+                'DELETE FROM phinxlog WHERE version IN (?, ?, ?, ?)',
+                ['20260414000000', '20260512172000', '20260512183000', '20260514195800'],
             );
         }
         (new Migrations())->migrate([
