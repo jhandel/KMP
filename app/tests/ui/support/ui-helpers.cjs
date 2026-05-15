@@ -38,12 +38,13 @@ const clearMailpitMessages = async (requestContext) => {
 
 const waitForAppReady = async (requestContext, timeout = 60000) => {
     const { baseUrl } = getUiTestEnvironment();
+    const healthUrl = `${baseUrl}/health`;
     const startedAt = Date.now();
     let lastErrorMessage = 'no response received';
 
     while (Date.now() - startedAt < timeout) {
         try {
-            const response = await requestContext.get(baseUrl, {
+            const response = await requestContext.get(healthUrl, {
                 failOnStatusCode: false,
                 timeout: 5000,
             });
@@ -60,7 +61,7 @@ const waitForAppReady = async (requestContext, timeout = 60000) => {
         await wait(1000);
     }
 
-    throw new Error(`Timed out waiting for ${baseUrl}: ${lastErrorMessage}`);
+    throw new Error(`Timed out waiting for ${healthUrl}: ${lastErrorMessage}`);
 };
 
 const runAndWaitForNetworkIdle = async (page, action, timeout = DEFAULT_TIMEOUT) => {
