@@ -17,7 +17,6 @@ jobs:
   phpunit:
     name: PHPUnit (${{ matrix.database.type }})
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.database.type == 'postgres' }}
 
     strategy:
       fail-fast: false
@@ -134,15 +133,36 @@ jobs:
         run: PGPASSWORD=root psql -h 127.0.0.1 -U root -d kmp_test -c "CREATE DATABASE kmp;"
 
       - name: Run PHPUnit tests
+        id: phpunit
+        continue-on-error: ${{ matrix.database.type == 'postgres' && github.event_name == 'pull_request' }}
         run: |
           cd app
           if [ "${{ matrix.database.type }}" = "postgres" ]; then
-            # Postgres job validates cross-DB compatibility for core app logic.
-            # Full suite currently depends on MySQL dev seed data.
+            # TODO(promote-postgres-ci-gate:stage-2): make Postgres PR lane required and
+            # expand from core-unit to core-unit + core-feature once CI stability is proven.
+            # TODO(promote-postgres-ci-gate:stage-3): move Postgres lane to --testsuite all
+            # after seed/bootstrap parity no longer depends on MySQL-specific assumptions.
             vendor/bin/phpunit --testsuite core-unit --no-coverage --log-junit ../test-results/junit.xml
           else
             vendor/bin/phpunit --testsuite all --no-coverage --log-junit ../test-results/junit.xml
           fi
+
+      - name: Postgres staged gate roadmap (PR advisory lane)
+        if: matrix.database.type == 'postgres' && github.event_name == 'pull_request' && always()
+        run: |
+          {
+            echo "### Postgres CI gate status (staged rollout)"
+            echo "- Current stage: advisory on pull requests, required on main/develop pushes."
+            if [ "${{ steps.phpunit.outcome }}" = "success" ]; then
+              echo "- Result: ✅ Postgres core-unit suite passed."
+            else
+              echo "- Result: ⚠️ Postgres core-unit suite failed (non-blocking while staged)."
+            fi
+            echo "- Required PR checks today: \`PHPUnit (mysql)\`, \`Jest\`, \`Playwright smoke\`."
+            echo "- Roadmap:"
+            echo "  1. TODO(promote-postgres-ci-gate:stage-2) Require Postgres core-unit + core-feature for PR merge."
+            echo "  2. TODO(promote-postgres-ci-gate:stage-3) Require full Postgres \`--testsuite all\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test results
         if: success() || failure()

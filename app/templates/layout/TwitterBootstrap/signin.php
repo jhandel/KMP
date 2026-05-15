@@ -36,10 +36,6 @@ if (!$this->fetch("tb_flash")) {
     echo "</body>";
     $this->KMP->endBlock();
 
-    echo $this->KMP->startBlock("tb_footer");
-
-    $this->KMP->endBlock();
-
     echo $this->element('copyrightFooter', []);
 
     echo $this->fetch("content");

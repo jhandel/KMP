@@ -59,6 +59,8 @@ Managed multi-tenant deployments use a separate platform datastore plus one data
 
 The same rule applies to tenant-specific email and storage values. Shared `.env` keys such as `EMAIL_SMTP_PASSWORD`, `AZURE_STORAGE_CONNECTION_STRING`, or `AWS_SECRET_ACCESS_KEY` are deployment defaults. Tenant production values should be stored as `tenant_service_configs` metadata in the platform datastore with tenant-specific secret references such as `env:ANSTEORRA_SMTP_PASSWORD` or `env:ANSTEORRA_AZURE_STORAGE_CONNECTION_STRING`.
 
+If PostgreSQL is fronted by PgBouncer, follow the validation and rollout guidance in [PgBouncer Validation (CakePHP + Multi-Tenant PostgreSQL)](pgbouncer-validation.md) before enabling transaction pooling.
+
 ### Email (SMTP)
 
 | Variable | Default | Description |

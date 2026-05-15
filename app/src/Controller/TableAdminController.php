@@ -4,8 +4,8 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\KMP\KmpIdentityInterface;
+use App\Services\Tenant\TenantConnectionAccessor;
 use Cake\Database\Connection;
-use Cake\Datasource\ConnectionManager;
 use Cake\Http\Exception\ForbiddenException;
 use Exception;
 
@@ -25,7 +25,7 @@ class TableAdminController extends AppController
         $this->authorizeCurrentUrl();
         $this->requireSuperUser();
 
-        $connection = ConnectionManager::get('default');
+        $connection = (new TenantConnectionAccessor())->tenantDomain();
         $schemaCollection = $connection->getSchemaCollection();
 
         $tables = $schemaCollection->listTables();

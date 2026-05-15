@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\Model\Entity\PlatformAdmin;
 use App\Services\Platform\PlatformAdminAuthService;
 use Cake\Command\Command;
 use Cake\Console\Arguments;
@@ -42,6 +43,10 @@ class PlatformAdminCreateCommand extends Command
             ->addOption('password', [
                 'required' => true,
                 'help' => 'Initial password. Must be at least 14 characters.',
+            ])
+            ->addOption('role', [
+                'default' => PlatformAdmin::ROLE_BREAK_GLASS,
+                'help' => 'Role: viewer|operator|provisioner|security_admin|break_glass.',
             ]);
     }
 
@@ -59,6 +64,8 @@ class PlatformAdminCreateCommand extends Command
                 (string)$args->getArgument('email'),
                 (string)$args->getOption('display-name'),
                 (string)$args->getOption('password'),
+                false,
+                (string)$args->getOption('role'),
             );
             $io->success(sprintf('Platform admin %s created.', $result['admin']->email));
             $io->out('Login and action verification codes will be emailed to the platform admin address.');

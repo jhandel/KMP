@@ -28,7 +28,13 @@ use Cake\Mailer\Transport\MailTransport;
 use Templating\View\Icon\BootstrapIcon;
 
 // Determine cache engine and Redis config from environment
-$cacheEngine = env('CACHE_ENGINE', 'apcu') === 'redis' ? RedisEngine::class : ApcuEngine::class;
+$cacheEngineName = strtolower((string)env('CACHE_ENGINE', 'apcu'));
+$cacheEngine = match ($cacheEngineName) {
+    'array' => ArrayEngine::class,
+    'file' => FileEngine::class,
+    'redis' => RedisEngine::class,
+    default => ApcuEngine::class,
+};
 $cliArgs = array_map('strtolower', $_SERVER['argv'] ?? []);
 $isSetupCommand = PHP_SAPI === 'cli' && (in_array('migrations', $cliArgs, true) || in_array('update_database', $cliArgs, true));
 if ($cacheEngine === RedisEngine::class && $isSetupCommand) {
@@ -313,6 +319,7 @@ return [
 
     "Tenancy" => [
         "requiredSchemaVersion" => env("TENANT_REQUIRED_SCHEMA_VERSION", null),
+        "invalidationPollIntervalSeconds" => (int)env("TENANT_INVALIDATION_POLL_INTERVAL_SECONDS", 5),
         "allowSingleTenantFallback" => filter_var(
             env("TENANT_ALLOW_SINGLE_TENANT_FALLBACK", env("DEBUG", false) ? "true" : "false"),
             FILTER_VALIDATE_BOOLEAN,

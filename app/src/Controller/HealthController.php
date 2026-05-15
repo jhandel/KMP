@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Services\Platform\TenantHealthSurfaceService;
+use App\Services\Telemetry\TenantMetrics;
 use Cake\Cache\Cache;
 use Cake\Core\Configure;
 use Cake\Datasource\ConnectionManager;
@@ -39,6 +41,7 @@ class HealthController extends AppController
     {
         $dbOk = false;
         try {
+            // Intentional infra probe: checks base app DB reachability, not tenant data-plane routing.
             $connection = ConnectionManager::get('default');
             $connection->execute('SELECT 1');
             $dbOk = true;
@@ -66,6 +69,9 @@ class HealthController extends AppController
             'db' => $dbOk,
             'cache' => $cacheOk,
             'profile' => Configure::read('KMP.Deploy.Profile', 'unknown'),
+            'tenant_metrics' => TenantMetrics::snapshot(),
+            'tenant_connection_pool' => TenantMetrics::connectionPoolSummary(),
+            'tenant_health' => $this->tenantHealthSummary(),
             'timestamp' => date('c'),
         ];
 
@@ -78,5 +84,13 @@ class HealthController extends AppController
         }
 
         return $response;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function tenantHealthSummary(): array
+    {
+        return (new TenantHealthSurfaceService())->buildPublicHealthSummary();
     }
 }

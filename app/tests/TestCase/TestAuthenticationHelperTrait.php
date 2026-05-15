@@ -6,6 +6,8 @@ namespace App\Test\TestCase;
 use App\Middleware\TenantSessionMiddleware;
 use App\Model\Entity\Tenant;
 use App\Services\Tenant\TenantProvisioningService;
+use App\Services\Tenant\TenantInvalidationService;
+use App\Services\Tenant\TenantRegistry;
 use Cake\Database\SchemaCache;
 use Cake\Datasource\ConnectionManager;
 use Cake\Datasource\EntityInterface;
@@ -290,6 +292,8 @@ trait TestAuthenticationHelperTrait
             'storage_adapter' => 'local',
             'storage_secret_reference' => null,
         ]);
+        TenantInvalidationService::clearLocalCache();
+        TenantRegistry::clearLocalCache();
         TableRegistry::getTableLocator()->clear();
     }
 }

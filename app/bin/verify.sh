@@ -2,7 +2,7 @@
 # verify.sh — Run all verification checks for the KMP application.
 # Usage: cd /workspaces/KMP/app && bash bin/verify.sh
 #
-# Runs: PHPUnit, Jest, Vite build, PHPCS, PHPStan
+# Runs: PHPUnit, Jest, Vite build, PHPCS, PHPStan, default-connection guardrail
 # Returns exit code 0 if all checks pass, 1 if any fail.
 
 set -o pipefail
@@ -18,7 +18,7 @@ usage() {
     cat <<'EOF'
 Usage: bash bin/verify.sh [--with-coverage[=security|all]] [--with-mutation[=security|all]]
 
-Default behavior runs PHPUnit, Jest, Vite build, PHPCS, and PHPStan.
+Default behavior runs PHPUnit, Jest, Vite build, PHPCS, PHPStan, and the default-connection guardrail.
 Optional flags add slower coverage and mutation checks after the standard suite.
 EOF
 }
@@ -140,6 +140,12 @@ run_check "PHPStan Static Analysis" '
         echo "⚠️  Expected $KNOWN known errors but found ${ERROR_COUNT:-unknown}"
         exit 1
     fi
+'
+
+# 6. Disallow unsafe ConnectionManager::get('\''default'\'') usages
+run_check "Default Connection Guardrail" '
+    php bin/check-default-connection-usage.php 2>&1
+    test "${PIPESTATUS[0]}" -eq 0
 '
 
 if [ -n "$WITH_COVERAGE" ]; then

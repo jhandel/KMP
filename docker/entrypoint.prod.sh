@@ -301,7 +301,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "${KMP_SKIP_CRON:-false}" != "true" ]; then
     echo "Configuring cron jobs..."
-    QUEUE_CRON="*/2 * * * * cd /var/www/html && bin/cake queue run -q >> /var/log/cron.log 2>&1"
+    QUEUE_CRON="*/2 * * * * cd /var/www/html && bin/cake queue run --all-tenants --exit-when-empty --max-runtime 45 -q >> /var/log/cron.log 2>&1"
     BACKUP_CRON="0 3 * * * cd /var/www/html && bin/cake backup_check >> /var/log/cron.log 2>&1"
     (crontab -l 2>/dev/null | grep -v "queue run" | grep -v "backup_check"; echo "$QUEUE_CRON"; echo "$BACKUP_CRON") | crontab -
 

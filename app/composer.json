@@ -94,6 +94,7 @@
         "cs-check": "phpcs --colors -p",
         "cs-fix": "phpcbf --colors -p",
         "stan": "phpstan analyse",
+        "check:default-connection": "php bin/check-default-connection-usage.php",
         "docs:php": "bash bin/run-phpdoc.sh",
         "test": "phpunit --colors=always",
         "test:coverage": [

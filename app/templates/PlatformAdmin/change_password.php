@@ -12,8 +12,15 @@
             </div>
             <div class="card-body">
                 <?php if ((bool)$admin->require_password_change) : ?>
-                    <p class="text-muted">This account must choose a new password before using the platform console.</p>
+                    <div class="alert alert-warning">
+                        This account must choose a new password before using the platform console.
+                        Seeded or reset accounts cannot continue until this is complete.
+                    </div>
                 <?php endif; ?>
+                <p class="text-muted">
+                    Platform admin passwords protect tenant-wide operations, backups, restore, and secret rotation.
+                    Use a unique password that is not shared with any tenant member account.
+                </p>
                 <?= $this->Form->create(null) ?>
                 <?= $this->Form->control('current_password', [
                     'type' => 'password',

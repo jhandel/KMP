@@ -8,14 +8,28 @@ use App\Model\Entity\TenantDatabaseConfig;
 use App\Model\Entity\TenantServiceConfig;
 use App\Model\Table\TenantAliasesTable;
 use App\Model\Table\TenantDatabaseConfigsTable;
+use App\Model\Table\TenantRuntimeInvalidationVersionsTable;
 use App\Model\Table\TenantServiceConfigsTable;
 use App\Model\Table\TenantsTable;
+use App\Services\Telemetry\TenantMetrics;
 use App\Services\Tenant\TenantResolutionException;
 use App\Services\Tenant\TenantResolver;
 use Cake\TestSuite\TestCase;
 
 class TenantResolverTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        TenantMetrics::reset();
+    }
+
+    protected function tearDown(): void
+    {
+        TenantMetrics::reset();
+        parent::tearDown();
+    }
+
     public function testNormalizeHostLowercasesStripsPortAndTrailingDot(): void
     {
         $this->assertSame('tenant.example.org', TenantResolver::normalizeHost('Tenant.Example.ORG:8443.'));
@@ -41,6 +55,14 @@ class TenantResolverTest extends TestCase
         $this->assertSame('alias-tenant', $context->slug);
         $this->assertSame('alias.example.org', $context->resolvedHost);
         $this->assertSame(['alias.example.org'], $registry->requestedHosts);
+        $this->assertSame(1, $this->metricHistogramCount(
+            'kmp_tenant_resolution_duration_ms',
+            'outcome=success',
+        ));
+        $this->assertSame(1, $this->metricCounterValue(
+            'kmp_tenant_health_signal_total',
+            'signal=resolution_success',
+        ));
     }
 
     public function testResolveActiveTenantByPrimaryHost(): void
@@ -60,6 +82,25 @@ class TenantResolverTest extends TestCase
         $this->assertSame('primary.example.org', $context->primaryHost);
     }
 
+    public function testResolveHostStaysWithinUnitLatencyBudget(): void
+    {
+        $tenant = $this->tenant(['slug' => 'budget-tenant']);
+        $resolver = new TenantResolver(new FakeTenantRegistry([
+            'budget.example.org' => $tenant,
+        ]));
+
+        $startedAt = hrtime(true);
+        $context = $resolver->resolveHost('budget.example.org');
+        $elapsedMilliseconds = (hrtime(true) - $startedAt) / 1_000_000;
+
+        $this->assertSame('budget-tenant', $context->slug);
+        $this->assertLessThan(
+            250.0,
+            $elapsedMilliseconds,
+            sprintf('Tenant resolution exceeded budget: %.2fms', $elapsedMilliseconds),
+        );
+    }
+
     public function testResolveRejectsUnknownTenant(): void
     {
         $resolver = new TenantResolver(new FakeTenantRegistry([]));
@@ -72,6 +113,14 @@ class TenantResolverTest extends TestCase
         } catch (TenantResolutionException $exception) {
             $this->assertSame(TenantResolutionException::UNKNOWN_TENANT, $exception->getReason());
             $this->assertSame('missing.example.org', $exception->getHost());
+            $this->assertSame(1, $this->metricHistogramCount(
+                'kmp_tenant_resolution_duration_ms',
+                'outcome=unknown_tenant',
+            ));
+            $this->assertSame(1, $this->metricCounterValue(
+                'kmp_tenant_health_signal_total',
+                'signal=resolution_unknown_tenant',
+            ));
 
             throw $exception;
         }
@@ -94,6 +143,28 @@ class TenantResolverTest extends TestCase
         } catch (TenantResolutionException $exception) {
             $this->assertSame(TenantResolutionException::INACTIVE_TENANT, $exception->getReason());
             $this->assertSame('disabled-tenant', $exception->getTenantSlug());
+
+            throw $exception;
+        }
+    }
+
+    public function testResolveRejectsDrainingTenantWithDrainReason(): void
+    {
+        $tenant = $this->tenant([
+            'slug' => 'draining-tenant',
+            'status' => Tenant::STATUS_DRAINING,
+        ]);
+        $resolver = new TenantResolver(new FakeTenantRegistry([
+            'draining.example.org' => $tenant,
+        ]));
+
+        $this->expectException(TenantResolutionException::class);
+
+        try {
+            $resolver->resolveHost('draining.example.org');
+        } catch (TenantResolutionException $exception) {
+            $this->assertSame(TenantResolutionException::DRAINING_TENANT, $exception->getReason());
+            $this->assertSame('draining-tenant', $exception->getTenantSlug());
 
             throw $exception;
         }
@@ -185,6 +256,7 @@ class TenantResolverTest extends TestCase
         $this->assertSame('platform', TenantAliasesTable::defaultConnectionName());
         $this->assertSame('platform', TenantDatabaseConfigsTable::defaultConnectionName());
         $this->assertSame('platform', TenantServiceConfigsTable::defaultConnectionName());
+        $this->assertSame('platform', TenantRuntimeInvalidationVersionsTable::defaultConnectionName());
     }
 
     /**
@@ -202,5 +274,19 @@ class TenantResolverTest extends TestCase
             'tenant_database_configs' => [],
             'tenant_service_configs' => [],
         ]);
+    }
+
+    private function metricCounterValue(string $metric, string $labelKey): int
+    {
+        $snapshot = TenantMetrics::snapshot();
+
+        return (int)($snapshot['counters'][$metric][$labelKey] ?? 0);
+    }
+
+    private function metricHistogramCount(string $metric, string $labelKey): int
+    {
+        $snapshot = TenantMetrics::snapshot();
+
+        return (int)($snapshot['histograms'][$metric][$labelKey]['count'] ?? 0);
     }
 }

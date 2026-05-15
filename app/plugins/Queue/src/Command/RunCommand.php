@@ -8,6 +8,7 @@ use Cake\Command\Command;
 use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
 use Cake\Console\ConsoleOptionParser;
+use Cake\Core\Configure;
 use Cake\Core\ContainerInterface;
 use Cake\Log\Log;
 use Psr\Log\LoggerInterface;
@@ -62,6 +63,11 @@ class RunCommand extends Command {
 			'default' => null,
 			'short' => 'r',
 		]);
+		$parser->addOption('exit-when-empty', [
+			'help' => 'Exit when the selected tenant queue has no ready jobs.',
+			'boolean' => true,
+			'default' => false,
+		]);
 
 		$parser->addOption('group', [
 			'short' => 'g',
@@ -110,12 +116,29 @@ class RunCommand extends Command {
 	 */
 	public function execute(Arguments $args, ConsoleIo $io): int {
 		return $this->runTenantAware($args, $io, function (Arguments $args, ConsoleIo $io): int {
+			$this->applyRuntimeOverrides($args);
 			$logger = $this->getLogger($args);
 			$io = new Io($io);
 			$processor = new Processor($io, $logger, $this->container);
 
 			return $processor->run($args->getOptions());
 		});
+	}
+
+	/**
+	 * Apply command-line runtime controls before each tenant-scoped worker pass.
+	 *
+	 * @param \Cake\Console\Arguments $args Arguments
+	 * @return void
+	 */
+	protected function applyRuntimeOverrides(Arguments $args): void {
+		$maxRuntime = $args->getOption('max-runtime');
+		if ($maxRuntime !== null && $maxRuntime !== '') {
+			Configure::write('Queue.workermaxruntime', max(1, (int)$maxRuntime));
+		}
+		if ((bool)$args->getOption('exit-when-empty')) {
+			Configure::write('Queue.exitwhennothingtodo', true);
+		}
 	}
 
 }

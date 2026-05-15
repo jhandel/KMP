@@ -142,6 +142,7 @@ abstract class BaseTestCase extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->restoreTenantTestAlias();
         $this->startTransaction();
         $this->ensureSyntheticTestMembers();
     }
@@ -185,6 +186,23 @@ abstract class BaseTestCase extends TestCase
             $this->connection->rollback();
             $this->transactionStarted = false;
         }
+    }
+
+    /**
+     * Restore the standard tenant datasource alias after tests that swap it.
+     *
+     * @return void
+     */
+    protected function restoreTenantTestAlias(): void
+    {
+        if (ConnectionManager::getConfig('test') === null) {
+            return;
+        }
+
+        ConnectionManager::dropAlias('tenant');
+        ConnectionManager::drop('tenant');
+        ConnectionManager::alias('test', 'tenant');
+        TableRegistry::getTableLocator()->clear();
     }
 
     /**

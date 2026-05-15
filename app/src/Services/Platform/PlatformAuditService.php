@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace App\Services\Platform;
 
 use App\Model\Entity\PlatformAdmin;
+use App\Services\Logging\SensitiveDataRedactor;
+use App\Services\Logging\TenantLogContextBuilder;
 use Cake\Datasource\EntityInterface;
 use Cake\Http\ServerRequest;
 use Cake\ORM\Locator\LocatorAwareTrait;
@@ -16,22 +18,15 @@ class PlatformAuditService
 {
     use LocatorAwareTrait;
 
-    private const REDACTED_KEYS = [
-        'password',
-        'password_hash',
-        'mfa_code',
-        'email_code',
-        'verify_email_code',
-        'recovery_code',
-        'backup_key',
-        'restore_key',
-        'secret',
-        'database_secret_value',
-        'email_secret_value',
-        'storage_secret_value',
-        'secret_reference_value',
-        'token',
-    ];
+    /**
+     * @param \App\Services\Logging\SensitiveDataRedactor|null $redactor Redactor
+     * @param \App\Services\Logging\TenantLogContextBuilder|null $contextBuilder Context builder
+     */
+    public function __construct(
+        private readonly ?SensitiveDataRedactor $redactor = null,
+        private readonly ?TenantLogContextBuilder $contextBuilder = null,
+    ) {
+    }
 
     /**
      * Record a platform audit event.
@@ -43,6 +38,7 @@ class PlatformAuditService
      * @param \Cake\Http\ServerRequest|null $request Request context
      * @param int|null $tenantId Tenant id
      * @param string $eventType Event type
+     * @param array<string, mixed> $contextOverrides Extra context fields
      * @return \Cake\Datasource\EntityInterface
      */
     public function record(
@@ -53,6 +49,7 @@ class PlatformAuditService
         ?ServerRequest $request = null,
         ?int $tenantId = null,
         string $eventType = 'platform_admin',
+        array $contextOverrides = [],
     ): EntityInterface {
         $events = $this->fetchTable('PlatformAuditEvents');
         $previous = $events->find()
@@ -60,17 +57,29 @@ class PlatformAuditService
             ->orderByDesc('id')
             ->first();
         $previousHash = is_object($previous) ? (string)$previous->get('event_hash') : null;
-        $metadata = $this->redact($metadata);
+        $contextBuilder = $this->contextBuilder ?? new TenantLogContextBuilder();
+        $context = $contextBuilder->build(
+            request: $request,
+            admin: $admin,
+            tenantId: $tenantId,
+            tenantSlug: isset($metadata['tenant_slug']) ? (string)$metadata['tenant_slug'] : null,
+            operationId: isset($metadata['operation_id']) ? (string)$metadata['operation_id'] : null,
+            correlationId: isset($metadata['correlation_id']) ? (string)$metadata['correlation_id'] : null,
+            extra: $contextOverrides,
+        );
+        $resolvedTenantId = $tenantId;
+        $metadata = array_merge($context, $metadata);
+        $metadata = ($this->redactor ?? new SensitiveDataRedactor())->redact($metadata);
         $payload = [
             'platform_admin_id' => $admin?->id,
-            'tenant_id' => $tenantId,
+            'tenant_id' => $resolvedTenantId,
             'event_type' => $eventType,
             'severity' => $result === 'success' ? 'info' : 'warning',
             'action' => $action,
             'result' => $result,
             'subject_type' => $metadata['subject_type'] ?? null,
             'subject_id' => isset($metadata['subject_id']) ? (string)$metadata['subject_id'] : null,
-            'request_id' => $request?->getAttribute('requestId'),
+            'request_id' => isset($context['request_id']) ? (string)$context['request_id'] : null,
             'ip_address' => $request?->clientIp(),
             'user_agent' => $request?->getHeaderLine('User-Agent'),
             'metadata' => $metadata === [] ? null : $this->encodeMetadata($metadata),
@@ -108,24 +117,5 @@ class PlatformAuditService
         } catch (JsonException) {
             return json_encode(['encoding_error' => true], JSON_THROW_ON_ERROR);
         }
-    }
-
-    /**
-     * @param array<string, mixed> $value Metadata
-     * @return array<string, mixed>
-     */
-    private function redact(array $value): array
-    {
-        foreach ($value as $key => $item) {
-            if (in_array(strtolower((string)$key), self::REDACTED_KEYS, true)) {
-                $value[$key] = '[redacted]';
-                continue;
-            }
-            if (is_array($item)) {
-                $value[$key] = $this->redact($item);
-            }
-        }
-
-        return $value;
     }
 }

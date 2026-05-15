@@ -31,7 +31,12 @@ class TenantRuntimeConfigServiceTest extends TestCase
         Configure::write('Documents.storage', $this->baseStorage);
         Configure::write('EmailTransport.default', $this->baseTransport);
         Configure::write('Email.default', $this->baseEmail);
+        putenv('ANSTEORRA_S3_SECRET');
+        putenv('OUTLANDS_SMTP_PASSWORD');
+        putenv('TENANT_A_SMTP_PASSWORD');
+        putenv('TENANT_B_SMTP_PASSWORD');
         putenv('PLATFORM_SECRET_KEY');
+        unset($_ENV['ANSTEORRA_S3_SECRET'], $_ENV['OUTLANDS_SMTP_PASSWORD'], $_ENV['TENANT_A_SMTP_PASSWORD'], $_ENV['TENANT_B_SMTP_PASSWORD']);
         unset($_ENV['PLATFORM_SECRET_KEY']);
         (new PlatformSecretService())->clearCache();
         parent::tearDown();
@@ -105,6 +110,71 @@ class TenantRuntimeConfigServiceTest extends TestCase
         $this->assertSame('smtp.outlands.example.org', $transport['host']);
         $this->assertSame('smtp-secret', $transport['password']);
         $this->assertSame('noreply@outlands.example.org', $email['from']);
+
+        $service->reset();
+        $this->assertSame($this->baseTransport, Configure::read('EmailTransport.default'));
+        $this->assertSame($this->baseEmail, Configure::read('Email.default'));
+    }
+
+    public function testApplyingSecondTenantConfigDoesNotLeakFirstTenantValues(): void
+    {
+        $service = new TenantRuntimeConfigService();
+        $tenantA = new TenantContext(
+            201,
+            'tenant-a',
+            'Tenant A',
+            'active',
+            null,
+            'tenant-a.example.org',
+            'tenant-a.example.org',
+            [],
+            [[
+                'serviceName' => 'email',
+                'configKey' => 'default',
+                'secretReference' => 'env:TENANT_A_SMTP_PASSWORD',
+                'metadata' => [
+                    'transport' => ['host' => 'smtp.tenant-a.example.org', 'username' => 'tenant-a'],
+                    'email' => ['from' => 'no-reply@tenant-a.example.org'],
+                ],
+                'isActive' => true,
+            ]],
+        );
+        $tenantB = new TenantContext(
+            202,
+            'tenant-b',
+            'Tenant B',
+            'active',
+            null,
+            'tenant-b.example.org',
+            'tenant-b.example.org',
+            [],
+            [[
+                'serviceName' => 'email',
+                'configKey' => 'default',
+                'secretReference' => 'env:TENANT_B_SMTP_PASSWORD',
+                'metadata' => [
+                    'transport' => ['host' => 'smtp.tenant-b.example.org', 'username' => 'tenant-b'],
+                    'email' => ['from' => 'no-reply@tenant-b.example.org'],
+                ],
+                'isActive' => true,
+            ]],
+        );
+
+        putenv('TENANT_A_SMTP_PASSWORD=tenant-a-secret');
+        $_ENV['TENANT_A_SMTP_PASSWORD'] = 'tenant-a-secret';
+        $service->apply($tenantA);
+        $this->assertSame('smtp.tenant-a.example.org', Configure::read('EmailTransport.default.host'));
+        $this->assertSame('tenant-a-secret', Configure::read('EmailTransport.default.password'));
+
+        putenv('TENANT_B_SMTP_PASSWORD=tenant-b-secret');
+        $_ENV['TENANT_B_SMTP_PASSWORD'] = 'tenant-b-secret';
+        $service->apply($tenantB);
+
+        $this->assertSame('smtp.tenant-b.example.org', Configure::read('EmailTransport.default.host'));
+        $this->assertSame('tenant-b-secret', Configure::read('EmailTransport.default.password'));
+        $this->assertSame('no-reply@tenant-b.example.org', Configure::read('Email.default.from'));
+        $this->assertNotSame('smtp.tenant-a.example.org', Configure::read('EmailTransport.default.host'));
+        $this->assertNotSame('tenant-a-secret', Configure::read('EmailTransport.default.password'));
 
         $service->reset();
         $this->assertSame($this->baseTransport, Configure::read('EmailTransport.default'));

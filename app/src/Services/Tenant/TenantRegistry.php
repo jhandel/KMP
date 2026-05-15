@@ -5,6 +5,7 @@ namespace App\Services\Tenant;
 
 use App\Model\Entity\Tenant;
 use App\Model\Entity\TenantAlias;
+use App\Services\Telemetry\TenantMetrics;
 use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\ORM\Query\SelectQuery;
 
@@ -16,6 +17,19 @@ class TenantRegistry
     use LocatorAwareTrait;
 
     /**
+     * @var array<string, array{tenant: \App\Model\Entity\Tenant|null, tenantId: int|null, tenantVersion: int, globalVersion: int}>
+     */
+    private static array $hostCache = [];
+
+    /**
+     * @param \App\Services\Tenant\TenantInvalidationService|null $invalidationService Invalidation version source
+     */
+    public function __construct(
+        private readonly ?TenantInvalidationService $invalidationService = null,
+    ) {
+    }
+
+    /**
      * Find a tenant by normalized host alias or primary host.
      *
      * @param string $normalizedHost Normalized host
@@ -23,12 +37,44 @@ class TenantRegistry
      */
     public function findTenantForHost(string $normalizedHost): ?Tenant
     {
+        $service = $this->invalidationService ?? new TenantInvalidationService();
+        $globalVersion = $service->globalVersion();
+        $cached = self::$hostCache[$normalizedHost] ?? null;
+        if ($cached !== null && $cached['globalVersion'] === $globalVersion) {
+            if (
+                $cached['tenantId'] === null
+                || $cached['tenantVersion'] === $service->tenantVersion((int)$cached['tenantId'])
+            ) {
+                TenantMetrics::incrementRegistryQueryOutcome('cache_hit');
+
+                return $cached['tenant'];
+            }
+            TenantMetrics::incrementRegistryQueryOutcome('cache_stale');
+        }
+
         $tenant = $this->findTenantByHostAlias($normalizedHost);
         if ($tenant !== null) {
+            TenantMetrics::incrementRegistryQueryOutcome('alias_hit');
+            self::$hostCache[$normalizedHost] = [
+                'tenant' => $tenant,
+                'tenantId' => (int)$tenant->id,
+                'tenantVersion' => $service->tenantVersion((int)$tenant->id),
+                'globalVersion' => $globalVersion,
+            ];
+
             return $tenant;
         }
 
-        return $this->findTenantByPrimaryHost($normalizedHost);
+        $tenant = $this->findTenantByPrimaryHost($normalizedHost);
+        TenantMetrics::incrementRegistryQueryOutcome($tenant === null ? 'miss' : 'primary_hit');
+        self::$hostCache[$normalizedHost] = [
+            'tenant' => $tenant,
+            'tenantId' => $tenant === null ? null : (int)$tenant->id,
+            'tenantVersion' => $tenant === null ? 0 : $service->tenantVersion((int)$tenant->id),
+            'globalVersion' => $globalVersion,
+        ];
+
+        return $tenant;
     }
 
     /**
@@ -135,5 +181,15 @@ class TenantRegistry
         }
 
         return null;
+    }
+
+    /**
+     * Clear process-local host resolution cache.
+     *
+     * @return void
+     */
+    public static function clearLocalCache(): void
+    {
+        self::$hostCache = [];
     }
 }

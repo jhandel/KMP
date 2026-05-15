@@ -29,6 +29,7 @@ class TenantProvisioningService
     public function __construct(
         private readonly TenantConnectionFactory $connectionFactory = new TenantConnectionFactory(),
         private readonly TenantMigrationService $migrationService = new TenantMigrationService(),
+        private readonly TenantInvalidationService $invalidationService = new TenantInvalidationService(),
     ) {
     }
 
@@ -71,7 +72,17 @@ class TenantProvisioningService
         $this->ensureDatabaseConfig($tenant, $data);
         $this->ensureServiceConfigs($tenant, $data);
 
-        return $this->reloadTenant((int)$tenant->id);
+        $tenant = $this->reloadTenant((int)$tenant->id);
+        $this->invalidationService->bumpTenant((int)$tenant->id, 'tenant_config_updated', [
+            'slug' => (string)$tenant->slug,
+        ]);
+        $this->invalidationService->bumpGlobal('tenant_registry_updated', [
+            'slug' => (string)$tenant->slug,
+        ]);
+        TenantInvalidationService::clearLocalCache();
+        TenantRegistry::clearLocalCache();
+
+        return $tenant;
     }
 
     /**
@@ -113,6 +124,7 @@ class TenantProvisioningService
         $tenant = $this->getTenant($slug);
         $valid = [
             Tenant::STATUS_ACTIVE,
+            Tenant::STATUS_DRAINING,
             Tenant::STATUS_DISABLED,
             Tenant::STATUS_MAINTENANCE,
             Tenant::STATUS_FAILED,
@@ -121,10 +133,25 @@ class TenantProvisioningService
         if (!in_array($status, $valid, true)) {
             throw new RuntimeException(sprintf('Unsupported tenant status "%s".', $status));
         }
-        $tenant->status = $status;
-        $this->fetchTable('Tenants')->saveOrFail($tenant);
 
-        return $tenant;
+        return (new TenantOperationLockService())->runWithLock(
+            (int)$tenant->id,
+            'tenant_status',
+            'tenant-provisioning-service',
+            function () use ($tenant, $status): Tenant {
+                $tenant->status = $status;
+                $this->fetchTable('Tenants')->saveOrFail($tenant);
+                $this->invalidationService->bumpTenant((int)$tenant->id, 'tenant_status_changed', [
+                    'status' => $status,
+                ]);
+
+                return $tenant;
+            },
+            [
+                'slug' => (string)$tenant->slug,
+                'status' => $status,
+            ],
+        );
     }
 
     /**
@@ -136,17 +163,34 @@ class TenantProvisioningService
      */
     public function migrateTenant(Tenant $tenant, ?string $plugin = null): string
     {
-        $context = TenantContext::fromTenant($tenant, (string)($tenant->primary_host ?? $tenant->slug));
-        $this->connectionFactory->configure($context);
-        $this->migrationService->migrate('tenant', $plugin);
+        return (new TenantOperationLockService())->runWithLock(
+            (int)$tenant->id,
+            'tenant_migrate',
+            'tenant-provisioning-service',
+            function () use ($tenant, $plugin): string {
+                $context = TenantContext::fromTenant($tenant, (string)($tenant->primary_host ?? $tenant->slug));
+                $this->connectionFactory->configure($context);
+                $this->migrationService->migrate('tenant', $plugin);
 
-        $tenant->schema_version = $this->migrationService->targetSchemaVersion();
-        if ($tenant->status === Tenant::STATUS_PROVISIONING) {
-            $tenant->status = Tenant::STATUS_ACTIVE;
-        }
-        $this->fetchTable('Tenants')->saveOrFail($tenant);
+                $tenant->schema_version = $this->migrationService->targetSchemaVersion();
+                if ($tenant->status === Tenant::STATUS_PROVISIONING) {
+                    $tenant->status = Tenant::STATUS_ACTIVE;
+                }
+                $this->fetchTable('Tenants')->saveOrFail($tenant);
+                $this->invalidationService->bumpTenant((int)$tenant->id, 'tenant_schema_migrated', [
+                    'schemaVersion' => (string)$tenant->schema_version,
+                    'plugin' => $plugin,
+                ]);
 
-        return (string)$tenant->schema_version;
+                return (string)$tenant->schema_version;
+            },
+            [
+                'slug' => (string)$tenant->slug,
+                'plugin' => $plugin,
+            ],
+            null,
+            1800,
+        );
     }
 
     /**

@@ -203,4 +203,37 @@ class DocumentServiceTest extends BaseTestCase
 
         $this->assertSame('tenants/tenant-docs/member-profile-photos/doc_123.jpg', $path);
     }
+
+    public function testIdenticalDocumentPathIsNamespacedPerTenant(): void
+    {
+        $method = new ReflectionMethod(DocumentService::class, 'tenantStoragePath');
+        $method->setAccessible(true);
+        $relativePath = 'member-profile-photos/shared-file.jpg';
+
+        TenantContext::setCurrent(new TenantContext(
+            44,
+            'Tenant A',
+            'Tenant A',
+            'active',
+            null,
+            'tenant-a.example.org',
+            'tenant-a.example.org',
+        ));
+        $tenantAPath = $method->invoke($this->service, $relativePath);
+
+        TenantContext::setCurrent(new TenantContext(
+            45,
+            'Tenant B',
+            'Tenant B',
+            'active',
+            null,
+            'tenant-b.example.org',
+            'tenant-b.example.org',
+        ));
+        $tenantBPath = $method->invoke($this->service, $relativePath);
+
+        $this->assertSame('tenants/tenant-a/member-profile-photos/shared-file.jpg', $tenantAPath);
+        $this->assertSame('tenants/tenant-b/member-profile-photos/shared-file.jpg', $tenantBPath);
+        $this->assertNotSame($tenantAPath, $tenantBPath);
+    }
 }

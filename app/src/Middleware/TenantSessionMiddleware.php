@@ -106,7 +106,17 @@ class TenantSessionMiddleware implements MiddlewareInterface
     {
         $path = $request->getUri()->getPath() ?: '/';
         foreach ($this->skipPathPrefixes as $prefix) {
-            if ($path === $prefix || ($prefix !== '/' && str_starts_with($path, rtrim($prefix, '/') . '/'))) {
+            $normalizedPrefix = rtrim($prefix, '/');
+            if (
+                $path === $prefix
+                || (
+                    $prefix !== '/'
+                    && (
+                        str_starts_with($path, $normalizedPrefix . '/')
+                        || str_starts_with($path, $normalizedPrefix . '.')
+                    )
+                )
+            ) {
                 return true;
             }
         }

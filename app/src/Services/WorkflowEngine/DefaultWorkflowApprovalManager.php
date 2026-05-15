@@ -8,7 +8,6 @@ use App\Model\Entity\WorkflowApproval;
 use App\Model\Entity\WorkflowApprovalResponse;
 use App\Services\ServiceResult;
 use App\Services\WorkflowRegistry\WorkflowApproverResolverRegistry;
-use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
@@ -80,13 +79,12 @@ class DefaultWorkflowApprovalManager implements WorkflowApprovalManagerInterface
      */
     private function attemptRecordResponse(int $approvalId, int $memberId, string $decision, ?string $comment, ?int $nextApproverId): ServiceResult
     {
-        $connection = ConnectionManager::get('default');
+        $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
+        $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
+        $connection = $approvalsTable->getConnection();
 
         /** @var ServiceResult $result */
-        $result = $connection->transactional(function () use ($approvalId, $memberId, $decision, $comment, $nextApproverId) {
-            $approvalsTable = TableRegistry::getTableLocator()->get('WorkflowApprovals');
-            $responsesTable = TableRegistry::getTableLocator()->get('WorkflowApprovalResponses');
-
+        $result = $connection->transactional(function () use ($approvalId, $memberId, $decision, $comment, $nextApproverId, $approvalsTable, $responsesTable) {
             // Layer 1: Lock the approval row to prevent concurrent modifications
             /** @var \App\Model\Entity\WorkflowApproval|null $approval */
             $approval = $approvalsTable->find()

@@ -151,9 +151,19 @@ The same declared contract scales through each promotion step:
 | Stage | Required evidence |
 | --- | --- |
 | Local before commit | Run all declared layers for the change. For normal code changes, finish with `bash bin/verify.sh`. If E2E is declared, also run `npm run test:ui`. |
-| Pull request gate | Keep the gate fast, but do not drop declared coverage. The `Quality Gates` workflow now runs PHPUnit, Jest, and the Playwright smoke lane. Changes that declare broader E2E coverage should still run the relevant local/full Playwright lane before review. |
+| Pull request gate | Keep the gate fast, but do not drop declared coverage. The `Quality Gates` workflow runs required checks for `PHPUnit (mysql)`, `Jest`, and `Playwright smoke`, plus a staged Postgres advisory lane (`PHPUnit (postgres)` running `core-unit`). Changes that declare broader E2E coverage should still run the relevant local/full Playwright lane before review. |
 | UAT / release candidate | Run the full regression set for declared layers, including `bash bin/verify.sh` and `npm run test:ui:uat` on the exact candidate ref. The nightly/UAT verification workflow is the CI lane for that evidence. UAT signoff must reference the same contract declared during implementation. |
 | Promotion from UAT to production | Promote only the same verified SHA/config/schema combination that passed UAT. No open failures, waivers, or untested critical-path changes are allowed. Re-run post-deploy smoke checks for declared `P0` paths. |
+
+### Postgres CI Gate Trajectory (staged, non-disruptive)
+
+To keep cross-database compatibility moving toward a required standard without breaking all PRs immediately:
+
+1. **Stage 1 (current):** `PHPUnit (postgres)` runs `core-unit` on PRs as an advisory signal and is **required** on `main`/`develop` pushes.
+2. **TODO(promote-postgres-ci-gate:stage-2):** Require Postgres `core-unit + core-feature` on PR merge checks.
+3. **TODO(promote-postgres-ci-gate:stage-3):** Require Postgres `--testsuite all` once seed/bootstrap parity no longer depends on MySQL-only assumptions.
+
+Rationale: this creates a clear quality trajectory while preserving day-to-day PR throughput during suite hardening.
 
 ## 🧪 Starter Tests
 

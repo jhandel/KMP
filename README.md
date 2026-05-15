@@ -13,23 +13,44 @@ KMP is moving to a managed multi-tenant hosting model. The standalone installer 
 - 📖 [Archived self-hosted deployment reference](docs/deployment/README.md)
 - 🛠️ [Legacy installer implementation notes](installer/README.md)
 
-Dev users all have the password "TestPassword"
+## Development Login Credentials
 
-Dev Users : 
-* admin@amp.ansteorra.org - System super user
-* agatha@ampdemo.com - Local MoAS
-* bryce@ampdemo.com - Local Seneschal
-* caroline@ampdemo.com - Regional Seneschal
-* devon@ampdemo.com - Regional Armored
-* eirik@ampdemo.com - Kingdom Seneschal
-* garun@ampdemo.com - Kingdom Rapier
-* haylee@ampdemo.com - Kingdom MoAS
-* iris@ampdemo.com - Basic User
-* jael@ampdemo.com - Pricipality Coronet
-* kal@ampdemo.com - Local Landed Nobility with a Canton
-* forest@ampdemo.com - Crown
-* leonard@ampdemo.com - Local Landed Nobility with Stronghold
-* mel@ampdemo.com - Local Exchequer and Kingdom Social Media
+The seeded platform admin account for `/platform-admin` is:
+
+- **Email:** `platform-admin@localhost.test`
+- **Password:** `TestPassword`
+- **Role:** Break-glass platform administrator
+
+Platform admin accounts are separate from tenant users. Platform-admin login, MFA, and privileged-action verification emails are captured in Mailpit during development.
+
+The seeded tenant super user account is:
+
+- **Email:** `admin@amp.ansteorra.org`
+- **Password:** `TestPassword`
+- **Role:** System super user
+
+All seeded dev tenant users use the password `TestPassword`:
+
+| Email | Seeded role |
+| --- | --- |
+| `admin@amp.ansteorra.org` | System super user |
+| `agatha@ampdemo.com` | Local MoAS |
+| `bryce@ampdemo.com` | Local Seneschal |
+| `caroline@ampdemo.com` | Regional Seneschal |
+| `devon@ampdemo.com` | Regional Armored |
+| `eirik@ampdemo.com` | Kingdom Seneschal |
+| `garun@ampdemo.com` | Kingdom Rapier |
+| `haylee@ampdemo.com` | Kingdom MoAS |
+| `iris@ampdemo.com` | Basic User |
+| `jael@ampdemo.com` | Principality Coronet |
+| `kal@ampdemo.com` | Local Landed Nobility with a Canton |
+| `forest@ampdemo.com` | Crown |
+| `leonard@ampdemo.com` | Local Landed Nobility with Stronghold |
+| `mel@ampdemo.com` | Local Exchequer and Kingdom Social Media |
+
+Development email, including MFA and verification codes, is delivered to Mailpit instead of real inboxes. After an action sends a code, open the Mailpit UI at http://localhost:8025 and use the newest message for the login email address. The local app runs at http://localhost:8080 when started with `./dev-up.sh`.
+
+If you seed or reset another platform admin with `bin/cake platform_admin:seed` or `bin/cake platform_admin:reset_password`, the command prints the initial password and subsequent verification emails are captured in Mailpit.
 
 ## Utility Scripts
 

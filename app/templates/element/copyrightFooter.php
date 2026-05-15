@@ -6,7 +6,9 @@ $appName = $this->KMP->getAppSetting("KMP.LongSiteTitle");
 $appVersion = $this->KMP->getAppSetting("App.version");
 
 $footerLinks = $this->KMP->getAppSettingsStartWith("KMP.FooterLink.");
-echo $this->KMP->startBlock("tb_footer"); ?>
+echo $this->KMP->startBlock("tb_footer");
+try {
+?>
 
 <?php if (Configure::read('debug')) : ?>
 <div data-controller="security-debug">
@@ -37,7 +39,7 @@ echo $this->KMP->startBlock("tb_footer"); ?>
                 <li class="nav-item text-nowrap mx-2">
                     <?= $this->Html->link(
                         '<i class="bi bi-journal-text"></i> Changelog',
-                        ['controller' => 'Pages', 'action' => 'changelog', 'plugin' => null],
+                        '/pages/changelog',
                         ['class' => 'btn btn-sm btn-outline-secondary', 'escape' => false]
                     ) ?>
                 </li>
@@ -73,5 +75,7 @@ echo $this->KMP->startBlock("tb_footer"); ?>
 </div>
 <?php endif; ?>
 <?php
-$this->KMP->endBlock();
+} finally {
+    $this->KMP->endBlock();
+}
 ?>

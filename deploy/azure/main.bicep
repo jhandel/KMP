@@ -552,7 +552,7 @@ resource jobQueue 'Microsoft.App/jobs@2024-03-01' = {
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: jobEnvQueueAndSync
           command: [ '/usr/local/bin/docker-entrypoint.sh' ]
-          args: [ 'bin/cake', 'queue', 'run', '--max-runtime', '270', '-q' ]
+          args: [ 'bin/cake', 'queue', 'run', '--all-tenants', '--exit-when-empty', '--max-runtime', '270', '-q' ]
         }
       ]
     }

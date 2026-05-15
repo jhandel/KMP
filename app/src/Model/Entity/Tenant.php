@@ -21,6 +21,7 @@ class Tenant extends BaseEntity
 {
     public const STATUS_PROVISIONING = 'provisioning';
     public const STATUS_ACTIVE = 'active';
+    public const STATUS_DRAINING = 'draining';
     public const STATUS_DISABLED = 'disabled';
     public const STATUS_MAINTENANCE = 'maintenance';
     public const STATUS_FAILED = 'failed';
@@ -45,5 +46,15 @@ class Tenant extends BaseEntity
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ACTIVE;
+    }
+
+    /**
+     * Whether the tenant is in drain mode.
+     *
+     * @return bool
+     */
+    public function isDraining(): bool
+    {
+        return $this->status === self::STATUS_DRAINING;
     }
 }

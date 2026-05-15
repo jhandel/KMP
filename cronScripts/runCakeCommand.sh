@@ -4,8 +4,8 @@
 #
 # Usage examples:
 #   ./runCakeCommand.sh --workdir /home/user/app sync_active_window_statuses --dry-run
-#   ./runCakeCommand.sh --workdir /home/user/app --php-bin /usr/bin/php queue run -q
-#   CAKE_WORKDIR=/home/user/app ./runCakeCommand.sh queue run --max-jobs 5
+#   ./runCakeCommand.sh --workdir /home/user/app --php-bin /usr/bin/php queue run --tenant=example -q
+#   CAKE_WORKDIR=/home/user/app ./runCakeCommand.sh queue run --all-tenants --exit-when-empty --max-runtime 270 -q
 #
 # Optional environment variables:
 #   CAKE_WORKDIR   Default workdir if --workdir is omitted
@@ -32,7 +32,7 @@ Options:
 
 Examples:
   runCakeCommand.sh --workdir /home/vscribe/amp-uat.ansteorra.org sync_active_window_statuses
-  runCakeCommand.sh --workdir /home/vscribe/amp-prod.ansteorra.org queue run -q
+  runCakeCommand.sh --workdir /home/vscribe/amp-prod.ansteorra.org queue run --all-tenants --exit-when-empty -q
   CAKE_WORKDIR=/home/vscribe/amp-uat.ansteorra.org runCakeCommand.sh sync_active_window_statuses --dry-run
 USAGE
 }

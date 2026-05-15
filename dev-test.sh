@@ -16,6 +16,7 @@ Checks:
   build     Run Vite development build
   cs        Run PHPCS on changed PHP files
   stan      Run PHPStan
+  default-conn  Run guardrail against unsafe ConnectionManager::get('default')
   ui-smoke  Reset DB, then run the Playwright smoke lane in the app container
   ui        Reset DB, then run the full Playwright UAT lane in the app container
   shell     Open a shell in the app container
@@ -87,6 +88,9 @@ case "$check" in
             fi
             exit "$EXIT_CODE"
         ' bash "$@"
+        ;;
+    default-conn)
+        exec_app php bin/check-default-connection-usage.php "$@"
         ;;
     ui-smoke)
         ./dev-reset-db.sh --seed

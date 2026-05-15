@@ -10,6 +10,7 @@ use Cake\Cache\Cache;
 use Cake\Database\Connection;
 use Cake\Database\Driver\Sqlite;
 use Cake\Datasource\ConnectionManager;
+use Cake\Datasource\Exception\MissingDatasourceConfigException;
 use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
 use Migrations\Migrations;
@@ -155,6 +156,83 @@ class TenantConnectionFactoryTest extends TestCase
         (new TenantConnectionFactory())->configure($context);
 
         $this->assertSame('managed-db-password', ConnectionManager::getConfig('tenant')['password']);
+    }
+
+    public function testSwitchingTenantsReplacesDataConnectionAndCachePrefix(): void
+    {
+        ConnectionManager::drop('tenant');
+        ConnectionManager::setConfig('tenant', [
+            'className' => Connection::class,
+            'driver' => Sqlite::class,
+            'database' => 'legacy.sqlite',
+            'cacheMetadata' => true,
+        ]);
+        $factory = new TenantConnectionFactory();
+        $tenantA = new TenantContext(
+            31,
+            'tenant-a',
+            'Tenant A',
+            'active',
+            null,
+            'tenant-a.example.org',
+            'tenant-a.example.org',
+            [[
+                'connectionRole' => 'primary',
+                'driver' => Sqlite::class,
+                'databaseName' => 'tenant-a.sqlite',
+                'isActive' => true,
+            ]],
+        );
+        $tenantB = new TenantContext(
+            32,
+            'tenant-b',
+            'Tenant B',
+            'active',
+            null,
+            'tenant-b.example.org',
+            'tenant-b.example.org',
+            [[
+                'connectionRole' => 'primary',
+                'driver' => Sqlite::class,
+                'databaseName' => 'tenant-b.sqlite',
+                'isActive' => true,
+            ]],
+        );
+
+        $factory->configure($tenantA);
+        $tenantAPrefix = (string)(Cache::getConfig('_cake_model_')['prefix'] ?? '');
+        $this->assertSame('tenant-a.sqlite', ConnectionManager::getConfig('tenant')['database']);
+        $this->assertStringContainsString('tenant_31_tenant-a_model_', $tenantAPrefix);
+
+        $factory->configure($tenantB);
+        $tenantBPrefix = (string)(Cache::getConfig('_cake_model_')['prefix'] ?? '');
+        $this->assertSame('tenant-b.sqlite', ConnectionManager::getConfig('tenant')['database']);
+        $this->assertStringContainsString('tenant_32_tenant-b_model_', $tenantBPrefix);
+        $this->assertStringNotContainsString('tenant_31_tenant-a_model_', $tenantBPrefix);
+
+        TenantContext::clearCurrent();
+        $factory->resetOrmState();
+        $this->assertSame(
+            (string)($this->originalModelCacheConfig['prefix'] ?? ''),
+            (string)(Cache::getConfig('_cake_model_')['prefix'] ?? ''),
+        );
+    }
+
+    public function testConfigureThrowsWhenTenantHasNoActiveDatabaseConfig(): void
+    {
+        $context = new TenantContext(
+            21,
+            'tenant-no-db',
+            'Tenant No DB',
+            'active',
+            null,
+            'tenant-no-db.example.org',
+            'tenant-no-db.example.org',
+            [],
+        );
+
+        $this->expectException(MissingDatasourceConfigException::class);
+        (new TenantConnectionFactory())->configure($context);
     }
 
     private function loadPlatformMigrations(): void

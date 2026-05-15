@@ -35,6 +35,9 @@ class TenantDatabaseConfigsTable extends Table
         $this->setTable('tenant_database_configs');
         $this->setDisplayField('database_name');
         $this->setPrimaryKey('id');
+        if ($this->getSchema()->hasColumn('metadata')) {
+            $this->getSchema()->setColumnType('metadata', 'json');
+        }
 
         $this->addBehavior('Timestamp');
 

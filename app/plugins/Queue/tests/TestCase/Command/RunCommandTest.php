@@ -56,6 +56,30 @@ class RunCommandTest extends TestCase
 	}
 
 	/**
+	 * @return void
+	 */
+	public function testScheduledRunnerOptionsExitWhenQueueIsEmpty(): void
+	{
+		$this->_needsConnection();
+
+		$originalMaxRuntime = Configure::read('Queue.workermaxruntime');
+		$originalExitWhenEmpty = Configure::read('Queue.exitwhennothingtodo');
+
+		try {
+			$this->exec('queue run --exit-when-empty --max-runtime 1');
+
+			$output = $this->_out->output();
+			$this->assertStringContainsString('nothing to do, exiting.', $output);
+			$this->assertSame(1, Configure::read('Queue.workermaxruntime'));
+			$this->assertTrue(Configure::read('Queue.exitwhennothingtodo'));
+			$this->assertExitCode(0);
+		} finally {
+			Configure::write('Queue.workermaxruntime', $originalMaxRuntime);
+			Configure::write('Queue.exitwhennothingtodo', $originalExitWhenEmpty);
+		}
+	}
+
+	/**
 	 * Helper method for skipping tests that need a real connection.
 	 *
 	 * @return void

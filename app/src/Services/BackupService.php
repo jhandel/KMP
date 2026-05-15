@@ -4,11 +4,11 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\Tenant\TenantContext;
+use App\Services\Tenant\TenantConnectionAccessor;
 use Cake\Cache\Cache;
 use Cake\Database\Connection;
 use Cake\Database\Driver\Postgres;
 use Cake\Database\Schema\TableSchemaInterface;
-use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\Locator\LocatorAwareTrait;
@@ -72,9 +72,7 @@ class BackupService
      */
     private function backupConnection(): Connection
     {
-        return TenantContext::getCurrent() !== null
-            ? ConnectionManager::get('tenant')
-            : ConnectionManager::get('default');
+        return (new TenantConnectionAccessor())->tenantDomain();
     }
 
     /**

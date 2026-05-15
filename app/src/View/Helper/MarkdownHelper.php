@@ -36,7 +36,13 @@ class MarkdownHelper extends Helper
     {
         parent::initialize($config);
 
-        $this->parsedown = new Parsedown();
+        $errorReporting = error_reporting();
+        error_reporting($errorReporting & ~E_DEPRECATED);
+        try {
+            $this->parsedown = new Parsedown();
+        } finally {
+            error_reporting($errorReporting);
+        }
 
         // Enable safe mode to prevent XSS attacks
         $this->parsedown->setSafeMode(true);

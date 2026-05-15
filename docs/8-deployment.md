@@ -7,6 +7,20 @@ layout: default
 
 This section covers the processes and considerations for deploying the Kingdom Management Portal to production environments.
 
+> Managed multi-tenant operations guidance lives in [Deployment Overview](deployment/README.md), including the [Production Command Strategy](deployment/production-command-strategy.md) for safe admin/console command execution in Azure multi-replica environments, the [Tenant Maintenance Runbook](deployment/tenant-maintenance-runbook.md) for drain/maintenance and rollback flow, and the [Capacity Thresholds and Tenant Sharding Runbook](deployment/capacity-sharding-runbook.md) for shard split/cutover operations.
+
+For managed multi-tenant Azure deployments requiring cross-pod refresh of tenant config/schema/secret/cutover changes, see [Cross-Pod Invalidation Design](architecture/cross-pod-invalidation-design.md) and the [Deployment README](deployment/README.md).
+
+## 8.0 CI Database Gate Rationale
+
+Release confidence depends on proving behavior against the production-target trajectory, which includes PostgreSQL compatibility. To avoid a disruptive “flip the switch” change, CI uses a staged gate:
+
+- **Current:** MySQL PR checks remain required, while PostgreSQL runs as an explicit advisory PR lane and is required on integration branch pushes.
+- **Next (TODO/promote-postgres-ci-gate:stage-2):** Require PostgreSQL `core-unit + core-feature` for PR merge.
+- **Final (TODO/promote-postgres-ci-gate:stage-3):** Require PostgreSQL full-suite parity (`--testsuite all`) once remaining MySQL-seed coupling is removed.
+
+This staged path keeps deployments stable while making the PostgreSQL gate explicit, measurable, and progressively stricter.
+
 ## 8.1 Production Setup
 
 ### Server Requirements

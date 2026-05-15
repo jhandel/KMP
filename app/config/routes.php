@@ -127,8 +127,14 @@ return function (RouteBuilder $routes): void {
             "controller" => "Health",
             "action" => "index",
         ]);
+        $builder->connect('/platform-admin.json', [
+            'controller' => 'PlatformAdmin',
+            'action' => 'index',
+            '_ext' => 'json',
+        ]);
 
         $builder->scope('/platform-admin', function (RouteBuilder $builder): void {
+            $builder->connect('', ['controller' => 'PlatformAdmin', 'action' => 'index']);
             $builder->connect('/', ['controller' => 'PlatformAdmin', 'action' => 'index']);
             $builder->connect('/login', ['controller' => 'PlatformAdmin', 'action' => 'login']);
             $builder->connect('/logout', ['controller' => 'PlatformAdmin', 'action' => 'logout']);
@@ -145,7 +151,7 @@ return function (RouteBuilder $routes): void {
                 ->setPass(['slug', 'status'])
                 ->setPatterns([
                     'slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]',
-                    'status' => 'active|disabled|maintenance|failed|provisioning',
+                    'status' => 'active|draining|disabled|maintenance|failed|provisioning',
                 ]);
             $builder->connect('/tenants/{slug}/backup', ['controller' => 'PlatformAdmin', 'action' => 'createBackup'])
                 ->setPass(['slug'])
@@ -156,6 +162,35 @@ return function (RouteBuilder $routes): void {
             $builder->connect('/tenants/{slug}/secrets', ['controller' => 'PlatformAdmin', 'action' => 'updateTenantSecrets'])
                 ->setPass(['slug'])
                 ->setPatterns(['slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]']);
+            $builder->connect('/tenants/{slug}/secret-rotation-status', ['controller' => 'PlatformAdmin', 'action' => 'secretRotationStatus'])
+                ->setPass(['slug'])
+                ->setPatterns(['slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]']);
+            $builder->connect(
+                '/tenants/{slug}/doctor/{finding}/remediate/{remediation}',
+                ['controller' => 'PlatformAdmin', 'action' => 'remediateDoctorFinding'],
+            )
+                ->setPass(['slug', 'finding', 'remediation'])
+                ->setPatterns([
+                    'slug' => '[a-z0-9][a-z0-9-]*[a-z0-9]',
+                    'finding' => '[a-z0-9_-]+',
+                    'remediation' => '[a-z0-9_-]+',
+                ]);
+            $builder->connect('/operations/{id}/retry', ['controller' => 'PlatformAdmin', 'action' => 'retryOperation'])
+                ->setPass(['id'])
+                ->setPatterns(['id' => '\d+']);
+            $builder->connect('/operations/{id}/cancel', ['controller' => 'PlatformAdmin', 'action' => 'cancelOperation'])
+                ->setPass(['id'])
+                ->setPatterns(['id' => '\d+']);
+            $builder->connect('/operations/{id}/resume', ['controller' => 'PlatformAdmin', 'action' => 'resumeOperation'])
+                ->setPass(['id'])
+                ->setPatterns(['id' => '\d+']);
+            $builder->connect('/operations/{id}/approve', ['controller' => 'PlatformAdmin', 'action' => 'approveOperation'])
+                ->setPass(['id'])
+                ->setPatterns(['id' => '\d+']);
+            $builder->connect('/operations/{id}/reject', ['controller' => 'PlatformAdmin', 'action' => 'rejectOperation'])
+                ->setPass(['id'])
+                ->setPatterns(['id' => '\d+']);
+            $builder->connect('/operations/catalog', ['controller' => 'PlatformAdmin', 'action' => 'commandCatalog']);
             $builder->connect('/audit', ['controller' => 'PlatformAdmin', 'action' => 'audit']);
         });
 
@@ -184,7 +219,10 @@ return function (RouteBuilder $routes): void {
          * @example "/pages/about" → display('about')
          * @example "/pages/help" → display('help')
          */
-        $builder->connect("/pages/changelog", "Pages::changelog");
+        $builder->connect("/pages/changelog", [
+            "controller" => "Pages",
+            "action" => "changelog",
+        ]);
         $builder->connect("/pages/*", "Pages::display");
 
         /**

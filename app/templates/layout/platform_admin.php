@@ -17,6 +17,7 @@
             <?= $this->Html->link('KMP Platform Admin', ['controller' => 'PlatformAdmin', 'action' => 'index'], ['class' => 'navbar-brand']) ?>
             <div class="navbar-nav">
                 <?= $this->Html->link('Tenants', ['controller' => 'PlatformAdmin', 'action' => 'index'], ['class' => 'nav-link']) ?>
+                <?= $this->Html->link('Command Catalog', ['controller' => 'PlatformAdmin', 'action' => 'commandCatalog'], ['class' => 'nav-link']) ?>
                 <?= $this->Html->link('Audit', ['controller' => 'PlatformAdmin', 'action' => 'audit'], ['class' => 'nav-link']) ?>
                 <?= $this->Html->link('Logout', ['controller' => 'PlatformAdmin', 'action' => 'logout'], ['class' => 'nav-link']) ?>
             </div>

@@ -15,7 +15,6 @@ use App\Services\WorkflowEngine\StateMachine\StateMachineHandler;
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
 use Cake\Core\ContainerInterface;
-use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
@@ -29,7 +28,7 @@ use Throwable;
  *
  * Transaction strategy: each public entry point (startWorkflow, resumeWorkflow,
  * cancelWorkflow, fireIntermediateApprovalActions) wraps its work in a single
- * database transaction via ConnectionManager::get('default')->transactional().
+ * database transaction via the WorkflowInstances table connection.
  * Recursive calls (e.g., subworkflow nodes calling startWorkflow, or child
  * completion calling resumeWorkflow) share the outer transaction instead of
  * opening a nested one. The $isInTransaction flag tracks this.
@@ -2439,7 +2438,7 @@ class DefaultWorkflowEngine implements WorkflowEngineInterface
                 return $work();
             }
 
-            $connection = ConnectionManager::get('default');
+            $connection = TableRegistry::getTableLocator()->get('WorkflowInstances')->getConnection();
             $result = $connection->transactional($work);
             $this->isInTransaction = false;
 

@@ -16,16 +16,19 @@ No building, compiling, or dependency installation is needed on your server.
 
 ## Multi-Tenant Migration Order
 
-Managed multi-tenant deployments must keep platform registry migrations separate from tenant application migrations:
+Managed multi-tenant deployments must keep platform registry migrations separate from tenant application migrations.
+
+Use the dedicated [Deployment Migration Runbook](deployment-migration-runbook.md) for the full production procedure (preflight safety checks, `deployment:migrate` orchestration, dashboard/hold-resume triage, and stop/rollback communication).
+
+Minimum sequencing rule remains:
 
 ```bash
 cd app
 bin/cake platform:migrate
-bin/cake tenant:migrate --all-tenants
-bin/cake tenant:doctor --all-tenants
+# then tenant migration wave (runbook path)
 ```
 
-`platform:migrate` runs only `config/PlatformMigrations/` on the `platform` datasource. `tenant:migrate` runs normal app and plugin migrations against each tenant database. Do not run platform registry migrations through `update_database` or against a tenant database.
+`platform:migrate` runs only `config/PlatformMigrations/` on the `platform` datasource. Do not run platform registry migrations through `update_database` or against a tenant database.
 
 ## Using `kmp update`
 

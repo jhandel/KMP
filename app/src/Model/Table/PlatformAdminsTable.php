@@ -68,6 +68,17 @@ class PlatformAdminsTable extends Table
                 PlatformAdmin::STATUS_DISABLED,
                 PlatformAdmin::STATUS_LOCKED,
             ]);
+        $validator
+            ->scalar('role')
+            ->requirePresence('role', 'create')
+            ->notEmptyString('role')
+            ->inList('role', [
+                PlatformAdmin::ROLE_VIEWER,
+                PlatformAdmin::ROLE_OPERATOR,
+                PlatformAdmin::ROLE_PROVISIONER,
+                PlatformAdmin::ROLE_SECURITY_ADMIN,
+                PlatformAdmin::ROLE_BREAK_GLASS,
+            ]);
 
         return $validator;
     }

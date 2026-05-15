@@ -116,7 +116,7 @@ For legacy installations that still have the management tool:
 kmp backup
 ```
 
-See [Backup & Restore](backup-restore.md) for full details.
+See [Backup & Restore](backup-restore-runbook.md) for full details.
 
 ## Updates
 

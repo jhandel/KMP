@@ -89,6 +89,7 @@ class TenantsTable extends Table
             ->inList('status', [
                 Tenant::STATUS_PROVISIONING,
                 Tenant::STATUS_ACTIVE,
+                Tenant::STATUS_DRAINING,
                 Tenant::STATUS_DISABLED,
                 Tenant::STATUS_MAINTENANCE,
                 Tenant::STATUS_FAILED,

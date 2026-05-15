@@ -49,17 +49,33 @@ class TenantDatabaseConfig extends BaseEntity
      * Encode metadata arrays for JSON-capable platform datastores.
      *
      * @param array<string, mixed>|string|null $metadata Metadata value
-     * @return string|null
+     * @return array<string, mixed>|string|null
      */
-    protected function _setMetadata(array|string|null $metadata): ?string
+    protected function _setMetadata(array|string|null $metadata): array|string|null
     {
         if ($metadata === null || $metadata === '') {
             return null;
         }
-        if (is_string($metadata)) {
+
+        return $metadata;
+    }
+
+    /**
+     * Normalize metadata storage to arrays for callers.
+     *
+     * @param array<string, mixed>|string|null $metadata Metadata value
+     * @return array<string, mixed>|null
+     */
+    protected function _getMetadata(array|string|null $metadata): ?array
+    {
+        if ($metadata === null || $metadata === '') {
+            return null;
+        }
+        if (is_array($metadata)) {
             return $metadata;
         }
+        $decoded = json_decode($metadata, true);
 
-        return json_encode($metadata, JSON_THROW_ON_ERROR);
+        return is_array($decoded) ? $decoded : null;
     }
 }

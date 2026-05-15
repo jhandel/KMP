@@ -10,6 +10,7 @@ class TenantResolutionException extends RuntimeException
     public const EMPTY_HOST = 'empty_host';
     public const UNKNOWN_TENANT = 'unknown_tenant';
     public const INACTIVE_TENANT = 'inactive_tenant';
+    public const DRAINING_TENANT = 'draining_tenant';
     public const SCHEMA_MISMATCH = 'schema_mismatch';
 
     /**

@@ -3,8 +3,12 @@ declare(strict_types=1);
 
 namespace App\Middleware;
 
+use App\Services\Logging\SensitiveDataRedactor;
+use App\Services\Logging\TenantLogContextBuilder;
 use App\Services\Tenant\TenantConnectionFactory;
+use App\Services\Tenant\TenantConnectionPoolMonitor;
 use App\Services\Tenant\TenantContext;
+use App\Services\Tenant\TenantInvalidationApplier;
 use App\Services\Tenant\TenantResolutionException;
 use App\Services\Tenant\TenantResolver;
 use App\Services\Tenant\TenantRuntimeConfigService;
@@ -30,11 +34,16 @@ class TenantResolutionMiddleware implements MiddlewareInterface
      */
     private array $skipPathPrefixes;
 
+    private readonly TenantInvalidationApplier $invalidationApplier;
+    private readonly TenantLogContextBuilder $logContextBuilder;
+    private readonly SensitiveDataRedactor $redactor;
+
     /**
      * @param \App\Services\Tenant\TenantResolver $resolver Tenant resolver
      * @param \App\Services\Tenant\TenantConnectionFactory $connectionFactory Tenant connection factory
      * @param bool $allowSingleTenantFallback Allow legacy boot if platform registry is unavailable
      * @param array<int, string> $skipPathPrefixes Paths that never need tenant context
+     * @param \App\Services\Tenant\TenantConnectionPoolMonitor $connectionPoolMonitor Pool monitoring sampler
      */
     public function __construct(
         private readonly TenantResolver $resolver,
@@ -42,8 +51,18 @@ class TenantResolutionMiddleware implements MiddlewareInterface
         private readonly bool $allowSingleTenantFallback = false,
         array $skipPathPrefixes = ['/health'],
         private readonly TenantRuntimeConfigService $runtimeConfigService = new TenantRuntimeConfigService(),
+        private readonly TenantConnectionPoolMonitor $connectionPoolMonitor = new TenantConnectionPoolMonitor(),
+        ?TenantInvalidationApplier $invalidationApplier = null,
+        ?TenantLogContextBuilder $logContextBuilder = null,
+        ?SensitiveDataRedactor $redactor = null,
     ) {
         $this->skipPathPrefixes = $skipPathPrefixes;
+        $this->invalidationApplier = $invalidationApplier ?? new TenantInvalidationApplier(
+            connectionFactory: $this->connectionFactory,
+            runtimeConfigService: $this->runtimeConfigService,
+        );
+        $this->logContextBuilder = $logContextBuilder ?? new TenantLogContextBuilder();
+        $this->redactor = $redactor ?? new SensitiveDataRedactor();
     }
 
     /**
@@ -59,8 +78,10 @@ class TenantResolutionMiddleware implements MiddlewareInterface
 
         try {
             $context = $this->resolver->resolve($request);
+            $this->invalidationApplier->apply($context);
             $this->connectionFactory->configure($context);
             $this->runtimeConfigService->apply($context);
+            $this->emitConnectionPoolSignals($request);
             $this->configureTenantRoutingAndSession($request, $context);
         } catch (TenantResolutionException $exception) {
             TenantContext::clearCurrent();
@@ -68,14 +89,21 @@ class TenantResolutionMiddleware implements MiddlewareInterface
             return $this->resolutionFailureResponse($exception);
         } catch (Throwable $exception) {
             TenantContext::clearCurrent();
+            $context = $this->redactor->redact($this->logContextBuilder->build(
+                request: $request instanceof CakeServerRequest ? $request : null,
+                extra: [
+                    'error_class' => $exception::class,
+                    'error_message' => $exception->getMessage(),
+                ],
+            ));
             if ($this->allowSingleTenantFallback) {
-                Log::warning('Tenant resolution fallback active: ' . $exception->getMessage());
+                Log::warning('Tenant resolution fallback active.', $context);
                 $this->connectionFactory->resetOrmState();
 
                 return $handler->handle($request);
             }
 
-            Log::error('Tenant resolution failed before request dispatch: ' . $exception->getMessage());
+            Log::error('Tenant resolution failed before request dispatch.', $context);
 
             return $this->safeResponse(503, 'Tenant service unavailable.');
         }
@@ -96,7 +124,17 @@ class TenantResolutionMiddleware implements MiddlewareInterface
     {
         $path = $request->getUri()->getPath() ?: '/';
         foreach ($this->skipPathPrefixes as $prefix) {
-            if ($path === $prefix || ($prefix !== '/' && str_starts_with($path, rtrim($prefix, '/') . '/'))) {
+            $normalizedPrefix = rtrim($prefix, '/');
+            if (
+                $path === $prefix
+                || (
+                    $prefix !== '/'
+                    && (
+                        str_starts_with($path, $normalizedPrefix . '/')
+                        || str_starts_with($path, $normalizedPrefix . '.')
+                    )
+                )
+            ) {
                 return true;
             }
         }
@@ -113,6 +151,7 @@ class TenantResolutionMiddleware implements MiddlewareInterface
         return match ($exception->getReason()) {
             TenantResolutionException::UNKNOWN_TENANT,
             TenantResolutionException::EMPTY_HOST => $this->safeResponse(404, 'Tenant not found.'),
+            TenantResolutionException::DRAINING_TENANT => $this->drainingResponse(),
             default => $this->safeResponse(503, 'Tenant unavailable.'),
         };
     }
@@ -128,6 +167,18 @@ class TenantResolutionMiddleware implements MiddlewareInterface
             ->withStatus($status)
             ->withType('text/plain')
             ->withStringBody($message);
+    }
+
+    /**
+     * Drain-mode response for deterministic request shedding during cutover.
+     *
+     * @return \Psr\Http\Message\ResponseInterface
+     */
+    private function drainingResponse(): ResponseInterface
+    {
+        return $this->safeResponse(503, 'Tenant is draining for cutover. Retry shortly.')
+            ->withHeader('Retry-After', '30')
+            ->withHeader('Cache-Control', 'no-store');
     }
 
     /**
@@ -210,5 +261,52 @@ class TenantResolutionMiddleware implements MiddlewareInterface
         $slug = preg_replace('/[^A-Za-z0-9]/', '_', $context->slug) ?: 'tenant';
 
         return self::SESSION_COOKIE_PREFIX . $context->id . '_' . $slug;
+    }
+
+    /**
+     * Emit tenant connection-pool observability signals for dashboards/alerts.
+     *
+     * @param \Psr\Http\Message\ServerRequestInterface $request Request
+     * @return void
+     */
+    private function emitConnectionPoolSignals(ServerRequestInterface $request): void
+    {
+        $sample = $this->connectionPoolMonitor->sampleTenantPool();
+        if (($sample['sampled'] ?? false) === true) {
+            $risk = (string)($sample['risk'] ?? 'normal');
+            if (!in_array($risk, ['high', 'critical'], true)) {
+                return;
+            }
+            $context = $this->redactor->redact($this->logContextBuilder->build(
+                request: $request instanceof CakeServerRequest ? $request : null,
+                extra: [
+                    'pool_driver' => $sample['driver'] ?? 'other',
+                    'pool_risk' => $risk,
+                    'pool_saturation_ratio' => (float)($sample['saturation_ratio'] ?? 0.0),
+                    'pool_active_connections' => (int)($sample['active_connections'] ?? 0),
+                    'pool_idle_connections' => (int)($sample['idle_connections'] ?? 0),
+                    'pool_waiting_connections' => (int)($sample['waiting_connections'] ?? 0),
+                    'pool_total_connections' => (int)($sample['total_connections'] ?? 0),
+                    'pool_max_connections' => (int)($sample['max_connections'] ?? 0),
+                ],
+            ));
+            Log::warning(
+                'Tenant connection pool saturation risk detected.',
+                $context + ['scope' => ['app.performance']],
+            );
+
+            return;
+        }
+
+        if (($sample['reason'] ?? '') === 'probe_failed') {
+            $context = $this->redactor->redact($this->logContextBuilder->build(
+                request: $request instanceof CakeServerRequest ? $request : null,
+                extra: [
+                    'pool_driver' => $sample['driver'] ?? 'other',
+                    'pool_probe_error' => $sample['error'] ?? 'other',
+                ],
+            ));
+            Log::warning('Tenant connection pool probe failed.', $context + ['scope' => ['app.performance']]);
+        }
     }
 }

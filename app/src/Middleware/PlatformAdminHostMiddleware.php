@@ -36,7 +36,9 @@ class PlatformAdminHostMiddleware implements MiddlewareInterface
         $path = $request->getUri()->getPath() ?: '/';
         $host = strtolower($request->getUri()->getHost());
         $isAdminHost = in_array($host, $this->normalizedHosts(), true);
-        $isPlatformPath = $path === '/platform-admin' || str_starts_with($path, '/platform-admin/');
+        $isPlatformPath = $path === '/platform-admin'
+            || str_starts_with($path, '/platform-admin/')
+            || str_starts_with($path, '/platform-admin.');
 
         if ($isPlatformPath && !$isAdminHost) {
             $redirectHost = $this->redirectHostFor($host);

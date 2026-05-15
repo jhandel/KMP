@@ -71,6 +71,23 @@ class TenantSessionMiddlewareTest extends TestCase
         $this->assertNull($session->read('Auth'));
     }
 
+    public function testSameAuthenticatedUserCannotReuseSessionAcrossTenants(): void
+    {
+        $session = new Session();
+        $session->write('Auth', ['id' => 42, 'role' => 'admin']);
+        TenantSessionMiddleware::writeTenantSession($session, $this->tenantContext(9, 'tenant-a'));
+
+        $response = (new TenantSessionMiddleware())->process(
+            $this->request($session, $this->tenantContext(10, 'tenant-b')),
+            new RecordingHandler(),
+        );
+
+        $this->assertSame(302, $response->getStatusCode());
+        $this->assertNull($session->read('Auth'));
+        $this->assertNull($session->read(TenantSessionMiddleware::TENANT_ID_SESSION_KEY));
+        $this->assertNull($session->read(TenantSessionMiddleware::TENANT_SLUG_SESSION_KEY));
+    }
+
     public function testUnauthenticatedRequestDoesNotRequireTenantSessionKeys(): void
     {
         $handler = new RecordingHandler();

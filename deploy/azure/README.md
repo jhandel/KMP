@@ -48,7 +48,7 @@ They differ only in env vars and arg overrides:
   migrations and exits
 - `<prefix>-reset` — runs `/opt/kmp/reset-and-seed.sh` which drops schema,
   re-applies migrations, and restores the bundled encrypted seed
-- `<prefix>-queue` — `bin/cake queue run --max-jobs 25 -q` every 5 minutes
+- `<prefix>-queue` — `bin/cake queue run --all-tenants --exit-when-empty --max-runtime 270 -q` every 5 minutes
 - `<prefix>-sync` — `bin/cake sync_active_window_statuses` nightly at 07:15 UTC
 
 ## One-time bootstrap

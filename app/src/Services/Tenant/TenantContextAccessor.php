@@ -43,6 +43,11 @@ class TenantContextAccessor
             return $context;
         }
 
+        $context = TenantContext::getCurrent();
+        if ($context instanceof TenantContext) {
+            return $context;
+        }
+
         return null;
     }
 

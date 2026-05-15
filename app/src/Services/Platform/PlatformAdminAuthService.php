@@ -41,6 +41,7 @@ class PlatformAdminAuthService
         string $displayName,
         string $password,
         bool $requirePasswordChange = false,
+        string $role = PlatformAdmin::ROLE_BREAK_GLASS,
     ): array {
         $this->assertPasswordPolicy($password);
         $admins = $this->fetchTable('PlatformAdmins');
@@ -49,6 +50,7 @@ class PlatformAdminAuthService
             'display_name' => $displayName,
             'password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'status' => PlatformAdmin::STATUS_ACTIVE,
+            'role' => $role,
             'require_password_change' => $requirePasswordChange,
             'failed_attempts' => 0,
         ]);
@@ -73,6 +75,7 @@ class PlatformAdminAuthService
         bool $force = false,
         bool $requirePasswordChange = true,
         bool $enforcePasswordPolicy = true,
+        string $role = PlatformAdmin::ROLE_BREAK_GLASS,
     ): array {
         if ($enforcePasswordPolicy) {
             $this->assertPasswordPolicy($password);
@@ -88,6 +91,7 @@ class PlatformAdminAuthService
                 'display_name' => $displayName,
                 'password_hash' => password_hash($password, PASSWORD_DEFAULT),
                 'status' => PlatformAdmin::STATUS_ACTIVE,
+                'role' => $role,
                 'require_password_change' => $requirePasswordChange,
                 'failed_attempts' => 0,
             ]);
@@ -105,6 +109,7 @@ class PlatformAdminAuthService
         $admin->display_name = $displayName;
         $admin->password_hash = password_hash($password, PASSWORD_DEFAULT);
         $admin->status = PlatformAdmin::STATUS_ACTIVE;
+        $admin->role = $role;
         $admin->require_password_change = $requirePasswordChange;
         $admin->failed_attempts = 0;
         $admin->locked_until = null;
@@ -255,6 +260,33 @@ class PlatformAdminAuthService
         $sessions->saveOrFail($session);
 
         return $session->platform_admin;
+    }
+
+    /**
+     * Check whether the authenticated session is recent enough for sensitive actions.
+     */
+    public function isSessionFresh(?string $token, int $maxAgeMinutes): bool
+    {
+        if ($token === null || $token === '' || $maxAgeMinutes < 1) {
+            return false;
+        }
+        $session = $this->fetchTable('PlatformAdminSessions')->find()
+            ->select(['id', 'created'])
+            ->where([
+                'token_hash' => hash('sha256', $token),
+                'revoked_at IS' => null,
+                'expires_at >=' => DateTime::now(),
+            ])
+            ->first();
+        if ($session === null) {
+            return false;
+        }
+        $createdAt = $session->get('created');
+        if (!$createdAt instanceof \DateTimeInterface) {
+            return false;
+        }
+
+        return $createdAt >= DateTime::now()->subMinutes($maxAgeMinutes);
     }
 
     /**

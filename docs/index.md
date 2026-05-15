@@ -26,6 +26,9 @@ layout: default
 | **3.7 [Active Window Sync](3.7-active-window-sync.md)** | Scheduled status maintenance for ActiveWindow entities |
 | **3.8 [Youth Age-Up](3.8-youth-age-up.md)** | Automated transition of minor accounts to adult statuses |
 | **3.9 [Multi-Tenancy Architecture](3.9-multi-tenancy.md)** | Host-based tenancy, platform registry, tenant databases, and operations |
+| **3.10 [Platform Admin UI and Operations Guide](platform-admin-ui.md)** | Platform-admin routes, roles, operation queue, command catalog, secrets, backup/restore, and audit surfaces |
+| **3.11 [Platform Operation Engine Decision (ADR)](architecture/platform-operation-engine-decision.md)** | Decisive architecture choice for platform control-plane operation orchestration |
+| **3.12 [Cross-Pod Invalidation Design](architecture/cross-pod-invalidation-design.md)** | Tenant config/schema/secret/cutover invalidation design for multi-pod deployments |
 | **4. [Core Modules](4-core-modules.md)** | |
 | **4.1 [Member Lifecycle](4.1-member-lifecycle.md)** | Complete member lifecycle and data flow documentation |
 | **4.1.1 [MembersTable API Reference](4.1.1-members-table-reference.md)** | MembersTable model API and query methods |

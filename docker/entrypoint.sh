@@ -118,7 +118,7 @@ fi
 
 # Setup cron for queue processing (runs every 2 minutes)
 echo "Configuring cron job..."
-CRON_JOB="*/2 * * * * cd $APP_DIR && bin/cake queue run -q >> /var/log/cron.log 2>&1"
+CRON_JOB="*/2 * * * * cd $APP_DIR && bin/cake queue run --all-tenants --exit-when-empty --max-runtime 45 -q >> /var/log/cron.log 2>&1"
 (crontab -l 2>/dev/null | grep -v "queue run" ; echo "$CRON_JOB") | crontab -
 
 # Start cron in background

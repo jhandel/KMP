@@ -9,7 +9,6 @@ use App\Model\Entity\WorkflowVersion;
 use App\Services\ServiceResult;
 use App\Services\WorkflowRegistry\WorkflowActionRegistry;
 use App\Services\WorkflowRegistry\WorkflowConditionRegistry;
-use Cake\Datasource\ConnectionManager;
 use Cake\I18n\DateTime;
 use Cake\ORM\TableRegistry;
 
@@ -122,7 +121,7 @@ class DefaultWorkflowVersionManager implements WorkflowVersionManagerInterface
             return new ServiceResult(false, 'Definition validation failed: ' . implode('; ', $errors));
         }
 
-        $result = ConnectionManager::get('default')->transactional(function () use ($versionsTable, $definitionsTable, $version, $versionId, $publishedBy) {
+        $result = $versionsTable->getConnection()->transactional(function () use ($versionsTable, $definitionsTable, $version, $versionId, $publishedBy) {
             // Archive any existing published version for this definition
             $currentPublished = $versionsTable->find()
                 ->where([
@@ -511,7 +510,7 @@ class DefaultWorkflowVersionManager implements WorkflowVersionManagerInterface
             }
         }
 
-        $result = ConnectionManager::get('default')->transactional(function () use ($instancesTable, $migrationsTable, $instance, $targetVersionId, $oldVersionId, $nodeMapping, $migratedBy, $activeNodes) {
+        $result = $instancesTable->getConnection()->transactional(function () use ($instancesTable, $migrationsTable, $instance, $targetVersionId, $oldVersionId, $nodeMapping, $migratedBy, $activeNodes) {
             // Remap active nodes
             $remappedNodes = [];
             foreach ($activeNodes as $activeNode) {

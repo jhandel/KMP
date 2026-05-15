@@ -30,7 +30,9 @@ class TenantProvisioningCommandTest extends TestCase
         $platformTables = [
             'tenant_operation_approvals',
             'tenant_operation_jobs',
+            'tenant_operation_locks',
             'platform_audit_events',
+            'platform_audit_retention_anchors',
             'platform_secrets',
             'platform_admin_sessions',
             'platform_admin_email_codes',
@@ -38,6 +40,7 @@ class TenantProvisioningCommandTest extends TestCase
             'platform_admin_webauthn_credentials',
             'platform_service_configs',
             'platform_admins',
+            'tenant_runtime_invalidation_versions',
             'tenant_service_configs',
             'tenant_database_configs',
             'tenant_aliases',
@@ -47,9 +50,15 @@ class TenantProvisioningCommandTest extends TestCase
             $connection->execute(sprintf('DROP TABLE IF EXISTS %s', $connection->getDriver()->quoteIdentifier($table)));
         }
         if (in_array('phinxlog', $connection->getSchemaCollection()->listTables(), true)) {
+            $versions = [];
+            foreach (glob(CONFIG . 'PlatformMigrations' . DS . '*.php') ?: [] as $file) {
+                if (preg_match('/^(\d{14})_/', basename($file), $matches)) {
+                    $versions[] = $matches[1];
+                }
+            }
             $connection->execute(
-                'DELETE FROM phinxlog WHERE version IN (?, ?, ?, ?)',
-                ['20260414000000', '20260512172000', '20260512183000', '20260514195800'],
+                sprintf('DELETE FROM phinxlog WHERE version IN (%s)', implode(',', array_fill(0, count($versions), '?'))),
+                $versions,
             );
         }
         (new Migrations())->migrate([
@@ -204,6 +213,10 @@ class TenantProvisioningCommandTest extends TestCase
         $this->exec('tenant:maintenance ' . $slug);
         $this->assertExitSuccess();
         $this->assertOutputContains('maintenance');
+
+        $this->exec('tenant:drain ' . $slug);
+        $this->assertExitSuccess();
+        $this->assertOutputContains('draining');
 
         $this->exec('tenant:enable ' . $slug);
         $this->assertExitSuccess();

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\Model\Entity\PlatformAdmin;
 use App\Services\Platform\PlatformAdminAuthService;
 use Cake\Command\Command;
 use Cake\Console\Arguments;
@@ -61,6 +62,10 @@ class PlatformAdminSeedCommand extends Command
                 'boolean' => true,
                 'default' => false,
                 'help' => 'Allow a short seed password for local development only.',
+            ])
+            ->addOption('role', [
+                'default' => env('PLATFORM_ADMIN_SEED_ROLE', PlatformAdmin::ROLE_BREAK_GLASS),
+                'help' => 'Role: viewer|operator|provisioner|security_admin|break_glass.',
             ]);
     }
 
@@ -82,6 +87,7 @@ class PlatformAdminSeedCommand extends Command
                 (bool)$args->getOption('force'),
                 !(bool)$args->getOption('no-require-change'),
                 !(bool)$args->getOption('allow-weak-password'),
+                (string)$args->getOption('role'),
             );
         } catch (Throwable $e) {
             $io->error($e->getMessage());

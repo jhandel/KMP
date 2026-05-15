@@ -12,9 +12,10 @@
             </div>
             <div class="card-body">
                 <?php if (!empty($pendingEmail)) : ?>
-                    <p class="text-muted" role="status">
+                    <div class="alert alert-info" role="status">
                         Enter the verification code emailed to <?= h($pendingEmail) ?>.
-                    </p>
+                        It is a 6-digit code that expires after 10 minutes; request a new sign-in if the message is old.
+                    </div>
                     <?= $this->Form->create(null) ?>
                     <?= $this->Form->control('email_code', [
                         'label' => 'Email verification code',
@@ -45,7 +46,7 @@
                     ]) ?>
                     <p class="small text-muted">
                         After your password is verified, a short-lived code will be emailed to your platform admin
-                        address.
+                        address. Five failed password attempts lock the account for 15 minutes.
                     </p>
                     <?= $this->Form->button('Email verification code', ['class' => 'btn btn-primary w-100']) ?>
                     <?= $this->Form->end() ?>
@@ -53,6 +54,7 @@
                 <p class="small text-muted mt-3 mb-0">
                     Lost platform admin access requires a trusted shell reset:
                     <code>bin/cake platform_admin:reset_password email@example.org</code>.
+                    Platform admin accounts are separate from tenant member accounts.
                 </p>
             </div>
         </div>

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Test\TestCase\Services\Platform;
 
+use App\Model\Entity\PlatformAdmin;
 use App\Services\Platform\PlatformAdminAuthService;
 use Cake\Http\ServerRequest;
 use Cake\I18n\DateTime;
@@ -68,6 +69,34 @@ class PlatformAdminAuthServiceTest extends TestCase
 
         $this->assertNotNull($admin);
         $this->assertSame('complete@platform.test', $admin->email);
+    }
+
+    public function testSessionFreshnessCheckPassesForRecentSession(): void
+    {
+        $service = new PlatformAdminAuthService();
+        $service->createAdmin('fresh@platform.test', 'Fresh Admin', 'VeryLongPlatformPassword!');
+        $request = new ServerRequest(['url' => '/platform-admin/login']);
+        $challenge = $service->beginLogin('fresh@platform.test', 'VeryLongPlatformPassword!', $request);
+        $this->setEmailCode((int)$challenge['challengeId'], '123456');
+        $token = $service->completeLogin((int)$challenge['challengeId'], '123456', $request);
+
+        $this->assertTrue($service->isSessionFresh($token, 15));
+    }
+
+    public function testSessionFreshnessCheckFailsForStaleSession(): void
+    {
+        $service = new PlatformAdminAuthService();
+        $service->createAdmin('stale@platform.test', 'Stale Admin', 'VeryLongPlatformPassword!');
+        $request = new ServerRequest(['url' => '/platform-admin/login']);
+        $challenge = $service->beginLogin('stale@platform.test', 'VeryLongPlatformPassword!', $request);
+        $this->setEmailCode((int)$challenge['challengeId'], '123456');
+        $token = $service->completeLogin((int)$challenge['challengeId'], '123456', $request);
+        $this->getTableLocator()->get('PlatformAdminSessions')->updateAll(
+            ['created' => DateTime::now()->subMinutes(31)],
+            ['token_hash' => hash('sha256', $token)],
+        );
+
+        $this->assertFalse($service->isSessionFresh($token, 15));
     }
 
     public function testInvalidEmailCodeRecordsAttempt(): void
@@ -248,6 +277,20 @@ class PlatformAdminAuthServiceTest extends TestCase
         $this->assertTrue($created['created']);
         $this->assertFalse((bool)$created['admin']->require_password_change);
         $this->assertTrue(password_verify('TestPassword', (string)$created['admin']->password_hash));
+    }
+
+    public function testCreateAdminStoresAssignedRole(): void
+    {
+        $service = new PlatformAdminAuthService();
+        $created = $service->createAdmin(
+            'role@platform.test',
+            'Role Admin',
+            'VeryLongPlatformPassword!',
+            false,
+            PlatformAdmin::ROLE_OPERATOR,
+        );
+
+        $this->assertSame(PlatformAdmin::ROLE_OPERATOR, (string)$created['admin']->role);
     }
 
     public function testChangePasswordClearsFirstLoginFlag(): void
