@@ -76,7 +76,12 @@ docker compose exec -T app bin/cake updateDatabase || echo "  (updateDatabase co
 
 echo "[post] Preparing platform tenant registry..."
 docker compose exec -T app bin/cake platform:migrate
-docker compose exec -T app bin/cake platform_admin:seed --email="${PLATFORM_ADMIN_SEED_EMAIL}"
+docker compose exec -T app bin/cake platform_admin:seed \
+    --email="${PLATFORM_ADMIN_SEED_EMAIL}" \
+    --password=TestPassword \
+    --force \
+    --no-require-change \
+    --allow-weak-password
 docker compose exec -T app bin/cake tenant:create "${TENANT_SLUG}" \
     --display-name="Local Development" \
     --primary-host=localhost \

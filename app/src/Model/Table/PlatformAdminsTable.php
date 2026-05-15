@@ -33,6 +33,7 @@ class PlatformAdminsTable extends Table
         $this->setDisplayField('email');
         $this->setPrimaryKey('id');
         $this->addBehavior('Timestamp');
+        $this->hasMany('PlatformAdminEmailCodes', ['foreignKey' => 'platform_admin_id']);
         $this->hasMany('PlatformAdminRecoveryCodes', ['foreignKey' => 'platform_admin_id']);
         $this->hasMany('PlatformAdminSessions', ['foreignKey' => 'platform_admin_id']);
         $this->hasMany('PlatformAdminWebauthnCredentials', ['foreignKey' => 'platform_admin_id']);

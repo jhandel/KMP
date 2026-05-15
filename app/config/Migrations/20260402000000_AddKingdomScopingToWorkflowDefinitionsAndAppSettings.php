@@ -38,8 +38,9 @@ class AddKingdomScopingToWorkflowDefinitionsAndAppSettings extends BaseMigration
             ])
             ->update();
 
-        // Drop the old unique index on slug alone
-        $wfDef->removeIndexByName('idx_wf_definitions_slug')->update();
+        // Drop the old unique index on slug alone. Postgres may expose MySQL
+        // dump indexes as constraints, so remove both possible forms.
+        $this->dropUniqueIndexOrConstraint('workflow_definitions', 'idx_wf_definitions_slug');
 
         // Add composite unique index on (slug, kingdom_id)
         $wfDef
@@ -69,8 +70,9 @@ class AddKingdomScopingToWorkflowDefinitionsAndAppSettings extends BaseMigration
             ])
             ->update();
 
-        // Drop the old unique index on name alone
-        $appSettings->removeIndexByName('name')->update();
+        // Drop the old unique index on name alone. Postgres may expose MySQL
+        // dump indexes as app_settings_name rather than the MySQL key name.
+        $this->dropUniqueIndexOrConstraint('app_settings', 'name', 'app_settings_name');
 
         // Add composite unique index on (name, kingdom_id)
         $appSettings
@@ -79,5 +81,27 @@ class AddKingdomScopingToWorkflowDefinitionsAndAppSettings extends BaseMigration
                 'name' => 'idx_app_settings_name_kingdom',
             ])
             ->update();
+    }
+
+    /**
+     * Drop legacy unique indexes across MySQL and Postgres schema imports.
+     *
+     * @param string $tableName Table name.
+     * @param string ...$names Constraint/index names to remove.
+     * @return void
+     */
+    private function dropUniqueIndexOrConstraint(string $tableName, string ...$names): void
+    {
+        $adapter = $this->getAdapter()->getAdapterType();
+        if (in_array($adapter, ['pgsql', 'postgres'], true)) {
+            foreach ($names as $name) {
+                $this->execute(sprintf('ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s', $tableName, $name));
+                $this->execute(sprintf('DROP INDEX IF EXISTS %s', $name));
+            }
+
+            return;
+        }
+
+        $this->table($tableName)->removeIndexByName($names[0])->update();
     }
 }

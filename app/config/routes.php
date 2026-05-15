@@ -133,6 +133,7 @@ return function (RouteBuilder $routes): void {
             $builder->connect('/login', ['controller' => 'PlatformAdmin', 'action' => 'login']);
             $builder->connect('/logout', ['controller' => 'PlatformAdmin', 'action' => 'logout']);
             $builder->connect('/change-password', ['controller' => 'PlatformAdmin', 'action' => 'changePassword']);
+            $builder->connect('/action-code', ['controller' => 'PlatformAdmin', 'action' => 'requestActionCode']);
             $builder->connect('/tenants/create', ['controller' => 'PlatformAdmin', 'action' => 'createTenant']);
             $builder->connect('/tenants/{slug}', ['controller' => 'PlatformAdmin', 'action' => 'viewTenant'])
                 ->setPass(['slug'])

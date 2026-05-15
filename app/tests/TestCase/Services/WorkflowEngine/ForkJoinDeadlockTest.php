@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Services\WorkflowEngine;
@@ -151,6 +150,8 @@ class ForkJoinDeadlockTest extends BaseTestCase
 
     public function testForkWithIntermediateNodesToJoinStaysRunning(): void
     {
+        $this->skipIfPostgres('This regression depends on MySQL timestamp tie ordering.');
+
         // When intermediate condition nodes exist between fork and join, the join may
         // not complete due to findIncomingSource timing (same-second timestamps).
         // This documents the engine's sequential execution behavior.

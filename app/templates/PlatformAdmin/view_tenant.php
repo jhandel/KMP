@@ -35,6 +35,10 @@
             Store encrypted platform-managed secrets for cloud deployments where admins cannot update environment
             variables on the host. Existing secret values are never displayed.
         </p>
+        <?= $this->Form->create(null, ['url' => ['action' => 'requestActionCode']]) ?>
+        <?= $this->Form->hidden('action_label', ['value' => 'Update managed secrets for tenant ' . $tenant->slug]) ?>
+        <?= $this->Form->button('Email secrets update code', ['class' => 'btn btn-outline-primary mb-3']) ?>
+        <?= $this->Form->end() ?>
         <?= $this->Form->create(null, ['url' => ['action' => 'updateTenantSecrets', $tenant->slug]]) ?>
         <div class="row">
             <div class="col-md-4">
@@ -64,10 +68,14 @@
                 <?= $this->Form->control('verify_password', ['type' => 'password', 'required' => true]) ?>
             </div>
             <div class="col-md-4">
-                <?= $this->Form->control('verify_mfa_code', [
-                    'label' => 'One-time action code',
+                <?= $this->Form->control('verify_email_code', [
+                    'label' => 'Email action verification code',
                     'required' => true,
-                    'help' => 'Use an unused code; each login and high-risk action consumes one code.',
+                    'autocomplete' => 'one-time-code',
+                    'inputmode' => 'numeric',
+                    'pattern' => '[0-9]*',
+                    'maxlength' => 6,
+                    'help' => 'Use the 6-digit code emailed to your platform admin address.',
                 ]) ?>
             </div>
         </div>
@@ -78,6 +86,10 @@
 <h2 class="h4">Backups</h2>
 <div class="card mb-4">
     <div class="card-body">
+        <?= $this->Form->create(null, ['url' => ['action' => 'requestActionCode']]) ?>
+        <?= $this->Form->hidden('action_label', ['value' => 'Create backup for tenant ' . $tenant->slug]) ?>
+        <?= $this->Form->button('Email backup verification code', ['class' => 'btn btn-outline-primary mb-3']) ?>
+        <?= $this->Form->end() ?>
         <?= $this->Form->create(null, ['url' => ['action' => 'createBackup', $tenant->slug]]) ?>
         <div class="row">
             <div class="col-md-4">
@@ -87,10 +99,14 @@
                 <?= $this->Form->control('verify_password', ['type' => 'password', 'required' => true]) ?>
             </div>
             <div class="col-md-4">
-                <?= $this->Form->control('verify_mfa_code', [
-                    'label' => 'One-time action code',
+                <?= $this->Form->control('verify_email_code', [
+                    'label' => 'Email action verification code',
                     'required' => true,
-                    'help' => 'Use an unused code; each login and high-risk action consumes one code.',
+                    'autocomplete' => 'one-time-code',
+                    'inputmode' => 'numeric',
+                    'pattern' => '[0-9]*',
+                    'maxlength' => 6,
+                    'help' => 'Use the 6-digit code emailed to your platform admin address.',
                 ]) ?>
             </div>
         </div>
@@ -116,6 +132,10 @@
             Restore always imports into a new database and cuts over only after validation succeeds.
             Do not reuse the current tenant database name.
         </p>
+        <?= $this->Form->create(null, ['url' => ['action' => 'requestActionCode']]) ?>
+        <?= $this->Form->hidden('action_label', ['value' => 'Restore backup for tenant ' . $tenant->slug]) ?>
+        <?= $this->Form->button('Email restore verification code', ['class' => 'btn btn-outline-primary mb-3']) ?>
+        <?= $this->Form->end() ?>
         <?= $this->Form->create(null, [
             'url' => ['action' => 'restoreBackup', $tenant->slug],
             'type' => 'file',
@@ -130,10 +150,14 @@
                 <?= $this->Form->control('verify_password', ['type' => 'password', 'required' => true]) ?>
             </div>
             <div class="col-md-4">
-                <?= $this->Form->control('verify_mfa_code', [
-                    'label' => 'One-time action code',
+                <?= $this->Form->control('verify_email_code', [
+                    'label' => 'Email action verification code',
                     'required' => true,
-                    'help' => 'Use an unused code; each login and high-risk action consumes one code.',
+                    'autocomplete' => 'one-time-code',
+                    'inputmode' => 'numeric',
+                    'pattern' => '[0-9]*',
+                    'maxlength' => 6,
+                    'help' => 'Use the 6-digit code emailed to your platform admin address.',
                 ]) ?>
             </div>
         </div>
@@ -148,12 +172,23 @@
             <div class="card mb-3">
                 <div class="card-body">
                     <h3 class="h6">Set <?= h($status) ?></h3>
+                    <?= $this->Form->create(null, ['url' => ['action' => 'requestActionCode']]) ?>
+                    <?= $this->Form->hidden(
+                        'action_label',
+                        ['value' => 'Set tenant ' . $tenant->slug . ' status to ' . $status],
+                    ) ?>
+                    <?= $this->Form->button('Email status code', ['class' => 'btn btn-outline-primary btn-sm mb-2']) ?>
+                    <?= $this->Form->end() ?>
                     <?= $this->Form->create(null, ['url' => ['action' => 'setTenantStatus', $tenant->slug, $status]]) ?>
                     <?= $this->Form->control('verify_password', ['type' => 'password', 'required' => true]) ?>
-                    <?= $this->Form->control('verify_mfa_code', [
-                        'label' => 'One-time action code',
+                    <?= $this->Form->control('verify_email_code', [
+                        'label' => 'Email action verification code',
                         'required' => true,
-                        'help' => 'Use an unused code; each login and high-risk action consumes one code.',
+                        'autocomplete' => 'one-time-code',
+                        'inputmode' => 'numeric',
+                        'pattern' => '[0-9]*',
+                        'maxlength' => 6,
+                        'help' => 'Use the 6-digit code emailed to your platform admin address.',
                     ]) ?>
                     <?= $this->Form->button('Apply', ['class' => 'btn btn-outline-danger']) ?>
                     <?= $this->Form->end() ?>

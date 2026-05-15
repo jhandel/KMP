@@ -50,7 +50,17 @@ class PlatformAdminSeedCommand extends Command
             ->addOption('force', [
                 'boolean' => true,
                 'default' => false,
-                'help' => 'Replace the seed admin password and recovery codes if the account already exists.',
+                'help' => 'Replace the seed admin password if the account already exists.',
+            ])
+            ->addOption('no-require-change', [
+                'boolean' => true,
+                'default' => false,
+                'help' => 'Do not require the platform admin to change this password on next login.',
+            ])
+            ->addOption('allow-weak-password', [
+                'boolean' => true,
+                'default' => false,
+                'help' => 'Allow a short seed password for local development only.',
             ]);
     }
 
@@ -70,6 +80,8 @@ class PlatformAdminSeedCommand extends Command
                 (string)$args->getOption('display-name'),
                 $password,
                 (bool)$args->getOption('force'),
+                !(bool)$args->getOption('no-require-change'),
+                !(bool)$args->getOption('allow-weak-password'),
             );
         } catch (Throwable $e) {
             $io->error($e->getMessage());
@@ -85,12 +97,11 @@ class PlatformAdminSeedCommand extends Command
         }
 
         $io->success(sprintf('Platform admin %s is ready.', $result['admin']->email));
-        $io->warning('This account must change its password on first login.');
-        $io->out('Initial password: ' . $password);
-        $io->warning('Store these one-time MFA/recovery codes securely. They will not be shown again.');
-        foreach ($result['recoveryCodes'] as $code) {
-            $io->out($code);
+        if ((bool)$result['admin']->require_password_change) {
+            $io->warning('This account must change its password on first login.');
         }
+        $io->out('Initial password: ' . $password);
+        $io->out('Login and action verification codes will be emailed to the platform admin address.');
 
         return Command::CODE_SUCCESS;
     }

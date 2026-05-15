@@ -20,6 +20,8 @@ class PlatformAuditService
         'password',
         'password_hash',
         'mfa_code',
+        'email_code',
+        'verify_email_code',
         'recovery_code',
         'backup_key',
         'restore_key',

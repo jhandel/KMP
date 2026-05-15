@@ -23,11 +23,16 @@ class InitMigrationSeed extends BaseSeed
      */
     public function run(): void
     {
-        $this->call('InitBranchesSeed', ['source' => 'Seeds']);
-        $this->call('InitMembersSeed', ['source' => 'Seeds']);
-        $this->call('InitRolesSeed', ['source' => 'Seeds']);
-        $this->call('InitPermissionsSeed', ['source' => 'Seeds']);
-        $this->call('InitRolesPermissionsSeed', ['source' => 'Seeds']);
-        $this->call('InitMemberRolesSeed', ['source' => 'Seeds']);
+        SeedHelpers::enableTestMode();
+        try {
+            $this->call('InitBranchesSeed', ['source' => 'Seeds']);
+            $this->call('InitMembersSeed', ['source' => 'Seeds']);
+            $this->call('InitRolesSeed', ['source' => 'Seeds']);
+            $this->call('InitPermissionsSeed', ['source' => 'Seeds']);
+            $this->call('InitRolesPermissionsSeed', ['source' => 'Seeds']);
+            $this->call('InitMemberRolesSeed', ['source' => 'Seeds']);
+        } finally {
+            SeedHelpers::disableTestMode();
+        }
     }
 }
