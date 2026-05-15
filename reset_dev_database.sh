@@ -110,6 +110,11 @@ fi
 TENANT_DB_NAME="${TENANT_DB_DATABASE:-${MYSQL_DB_NAME:-KMP_DEV}}"
 TENANT_DB_HOST="${TENANT_DB_HOST:-${MYSQL_HOST:-localhost}}"
 TENANT_DB_USER="${TENANT_DB_USERNAME:-${MYSQL_USERNAME:-}}"
+export TENANT_DB_PASSWORD="${TENANT_DB_PASSWORD:-${DB_PASS:-${MYSQL_PASSWORD:-}}}"
+export PLATFORM_DB_HOST="${PLATFORM_DB_HOST:-$TENANT_DB_HOST}"
+export PLATFORM_DB_USERNAME="${PLATFORM_DB_USERNAME:-$TENANT_DB_USER}"
+export PLATFORM_DB_PASSWORD="${PLATFORM_DB_PASSWORD:-$TENANT_DB_PASSWORD}"
+export PLATFORM_DB_DATABASE="${PLATFORM_DB_DATABASE:-$TENANT_DB_NAME}"
 TENANT_DB_DRIVER='Cake\Database\Driver\Mysql'
 TENANT_CREATE_DB_ARGS=(--database-name="$TENANT_DB_NAME" --host="$TENANT_DB_HOST")
 if [ "$DB_ENGINE" = "postgres" ]; then
@@ -121,7 +126,12 @@ if [ "$DB_ENGINE" = "postgres" ]; then
 fi
 
 bin/cake platform:migrate
-bin/cake platform_admin:seed --email="$PLATFORM_ADMIN_SEED_EMAIL"
+bin/cake platform_admin:seed \
+	--email="$PLATFORM_ADMIN_SEED_EMAIL" \
+	--password=TestPassword \
+	--force \
+	--no-require-change \
+	--allow-weak-password
 bin/cake tenant:create "$TENANT_SLUG" \
 	--display-name="$TENANT_DISPLAY_NAME" \
 	--primary-host=localhost \
