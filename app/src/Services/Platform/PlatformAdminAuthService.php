@@ -3,12 +3,14 @@ declare(strict_types=1);
 
 namespace App\Services\Platform;
 
+use App\Mailer\PlatformAdminMailer;
 use App\Model\Entity\PlatformAdmin;
 use Cake\Datasource\EntityInterface;
 use Cake\Http\ServerRequest;
 use Cake\I18n\DateTime;
 use Cake\ORM\Locator\LocatorAwareTrait;
 use RuntimeException;
+use Throwable;
 
 /**
  * Authenticates dedicated platform admin accounts.
@@ -21,13 +23,18 @@ class PlatformAdminAuthService
     private const MAX_FAILED_ATTEMPTS = 5;
     private const LOCK_MINUTES = 15;
     private const SESSION_HOURS = 8;
+    private const EMAIL_CODE_MINUTES = 10;
+    private const EMAIL_CODE_ATTEMPTS = 5;
+    private const LOGIN_CODE_PURPOSE = 'login';
+    private const ACTION_CODE_PURPOSE = 'action';
+    private const INVALID_CREDENTIALS_MESSAGE = 'Invalid platform admin credentials.';
     private const ACTION_VERIFICATION_MESSAGE = 'Action verification failed. Use your current platform admin password '
-        . 'and an unused one-time action code.';
+        . 'and the emailed action verification code.';
 
     /**
-     * Create a platform admin and return one-time MFA recovery codes.
+     * Create a platform admin.
      *
-     * @return array{admin: \Cake\Datasource\EntityInterface, recoveryCodes: array<int, string>}
+     * @return array{admin: \Cake\Datasource\EntityInterface}
      */
     public function createAdmin(
         string $email,
@@ -46,46 +53,59 @@ class PlatformAdminAuthService
             'failed_attempts' => 0,
         ]);
         $admins->saveOrFail($admin);
-        $codes = $this->replaceRecoveryCodes((int)$admin->id);
 
-        return ['admin' => $admin, 'recoveryCodes' => $codes];
+        return ['admin' => $admin];
     }
 
     /**
-     * Ensure a seed platform admin exists, optionally replacing its password and codes.
+     * Ensure a seed platform admin exists, optionally replacing its password.
      *
      * @return array{
      *   admin: \App\Model\Entity\PlatformAdmin,
-     *   recoveryCodes: array<int, string>,
      *   created: bool,
      *   updated: bool
      * }
      */
-    public function seedAdmin(string $email, string $displayName, string $password, bool $force = false): array
-    {
+    public function seedAdmin(
+        string $email,
+        string $displayName,
+        string $password,
+        bool $force = false,
+        bool $requirePasswordChange = true,
+        bool $enforcePasswordPolicy = true,
+    ): array {
+        if ($enforcePasswordPolicy) {
+            $this->assertPasswordPolicy($password);
+        }
         $admins = $this->fetchTable('PlatformAdmins');
         $normalizedEmail = strtolower(trim($email));
         $admin = $admins->find()
             ->where(['email' => $normalizedEmail])
             ->first();
         if (!$admin instanceof PlatformAdmin) {
-            $created = $this->createAdmin($normalizedEmail, $displayName, $password, true);
+            $admin = $admins->newEntity([
+                'email' => $normalizedEmail,
+                'display_name' => $displayName,
+                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+                'status' => PlatformAdmin::STATUS_ACTIVE,
+                'require_password_change' => $requirePasswordChange,
+                'failed_attempts' => 0,
+            ]);
+            $admins->saveOrFail($admin);
 
             return [
-                'admin' => $created['admin'],
-                'recoveryCodes' => $created['recoveryCodes'],
+                'admin' => $admin,
                 'created' => true,
                 'updated' => false,
             ];
         }
         if (!$force) {
-            return ['admin' => $admin, 'recoveryCodes' => [], 'created' => false, 'updated' => false];
+            return ['admin' => $admin, 'created' => false, 'updated' => false];
         }
-        $this->assertPasswordPolicy($password);
         $admin->display_name = $displayName;
         $admin->password_hash = password_hash($password, PASSWORD_DEFAULT);
         $admin->status = PlatformAdmin::STATUS_ACTIVE;
-        $admin->require_password_change = true;
+        $admin->require_password_change = $requirePasswordChange;
         $admin->failed_attempts = 0;
         $admin->locked_until = null;
         $admins->saveOrFail($admin);
@@ -93,18 +113,15 @@ class PlatformAdminAuthService
 
         return [
             'admin' => $admin,
-            'recoveryCodes' => $this->replaceRecoveryCodes((int)$admin->id),
             'created' => false,
             'updated' => true,
         ];
     }
 
     /**
-     * Change an authenticated admin password and rotate recovery codes.
-     *
-     * @return array<int, string>
+     * Change an authenticated admin password.
      */
-    public function changePassword(PlatformAdmin $admin, string $currentPassword, string $newPassword): array
+    public function changePassword(PlatformAdmin $admin, string $currentPassword, string $newPassword): void
     {
         if (!password_verify($currentPassword, (string)$admin->password_hash)) {
             throw new RuntimeException('Current password is incorrect.');
@@ -117,16 +134,12 @@ class PlatformAdminAuthService
         $admin->locked_until = null;
         $admins->saveOrFail($admin);
         $this->revokeSessions((int)$admin->id);
-
-        return $this->replaceRecoveryCodes((int)$admin->id);
     }
 
     /**
      * Reset a platform admin password from a trusted CLI context.
-     *
-     * @return array<int, string>
      */
-    public function resetPassword(string $email, string $newPassword, bool $requirePasswordChange = true): array
+    public function resetPassword(string $email, string $newPassword, bool $requirePasswordChange = true): void
     {
         $this->assertPasswordPolicy($newPassword);
         $admins = $this->fetchTable('PlatformAdmins');
@@ -143,30 +156,6 @@ class PlatformAdminAuthService
         $admin->locked_until = null;
         $admins->saveOrFail($admin);
         $this->revokeSessions((int)$admin->id);
-
-        return $this->replaceRecoveryCodes((int)$admin->id);
-    }
-
-    /**
-     * Replace all unused recovery codes for an admin.
-     *
-     * @return array<int, string>
-     */
-    public function replaceRecoveryCodes(int $adminId): array
-    {
-        $codesTable = $this->fetchTable('PlatformAdminRecoveryCodes');
-        $codesTable->deleteAll(['platform_admin_id' => $adminId, 'used_at IS' => null]);
-        $codes = [];
-        for ($i = 0; $i < 10; $i++) {
-            $code = strtoupper(bin2hex(random_bytes(4)) . '-' . bin2hex(random_bytes(4)));
-            $codes[] = $code;
-            $codesTable->saveOrFail($codesTable->newEntity([
-                'platform_admin_id' => $adminId,
-                'code_hash' => password_hash($code, PASSWORD_DEFAULT),
-            ]));
-        }
-
-        return $codes;
     }
 
     /**
@@ -180,32 +169,63 @@ class PlatformAdminAuthService
     }
 
     /**
-     * Authenticate with password plus one-time MFA recovery code.
+     * Verify password and email a one-time login code.
+     *
+     * @return array{challengeId: int, email: string, expiresAt: \Cake\I18n\DateTime}
      */
-    public function authenticate(string $email, string $password, string $mfaCode, ServerRequest $request): string
+    public function beginLogin(string $email, string $password, ServerRequest $request): array
     {
-        $admins = $this->fetchTable('PlatformAdmins');
-        $admin = $admins->find()
-            ->where(['email' => strtolower(trim($email))])
-            ->first();
+        $admin = $this->adminForLogin($email);
         if (!$admin instanceof PlatformAdmin || !$admin->isActive() || $this->isLocked($admin)) {
-            throw new RuntimeException('Invalid platform admin credentials.');
+            throw new RuntimeException(self::INVALID_CREDENTIALS_MESSAGE);
         }
         if (!password_verify($password, (string)$admin->password_hash)) {
             $this->recordFailure($admin);
-            throw new RuntimeException('Invalid platform admin credentials.');
-        }
-        if (!$this->consumeRecoveryCode((int)$admin->id, trim($mfaCode))) {
-            $this->recordFailure($admin);
-            throw new RuntimeException('Invalid platform admin credentials.');
+            throw new RuntimeException(self::INVALID_CREDENTIALS_MESSAGE);
         }
 
+        return $this->issueEmailCode($admin, self::LOGIN_CODE_PURPOSE, $request, 'Platform admin sign-in');
+    }
+
+    /**
+     * Verify an emailed login code and create a platform admin session.
+     */
+    public function completeLogin(int $challengeId, string $emailCode, ServerRequest $request): string
+    {
+        $challenge = $this->fetchTable('PlatformAdminEmailCodes')->find()
+            ->where(['id' => $challengeId, 'purpose' => self::LOGIN_CODE_PURPOSE])
+            ->first();
+        $admin = null;
+        if ($challenge !== null) {
+            $admin = $this->fetchTable('PlatformAdmins')->get((int)$challenge->platform_admin_id);
+        }
+        if (!$admin instanceof PlatformAdmin || !$admin->isActive() || $this->isLocked($admin)) {
+            throw new RuntimeException(self::INVALID_CREDENTIALS_MESSAGE);
+        }
+        if (!$this->consumeEmailCode((int)$admin->id, self::LOGIN_CODE_PURPOSE, trim($emailCode), $challengeId)) {
+            $this->recordFailure($admin);
+            throw new RuntimeException(self::INVALID_CREDENTIALS_MESSAGE);
+        }
+        $admins = $this->fetchTable('PlatformAdmins');
         $admin->failed_attempts = 0;
         $admin->locked_until = null;
         $admin->last_login_at = DateTime::now();
         $admins->saveOrFail($admin);
 
         return $this->createSession($admin, $request);
+    }
+
+    /**
+     * Email a one-time code for a high-risk platform admin action.
+     *
+     * @return array{challengeId: int, email: string, expiresAt: \Cake\I18n\DateTime}
+     */
+    public function requestActionCode(
+        PlatformAdmin $admin,
+        ServerRequest $request,
+        string $actionLabel = 'Platform admin action',
+    ): array {
+        return $this->issueEmailCode($admin, self::ACTION_CODE_PURPOSE, $request, $actionLabel);
     }
 
     /**
@@ -252,14 +272,14 @@ class PlatformAdminAuthService
     }
 
     /**
-     * Require password plus one-time code before destructive operations.
+     * Require password plus emailed one-time code before destructive operations.
      */
-    public function verifyAction(PlatformAdmin $admin, string $password, string $mfaCode): void
+    public function verifyAction(PlatformAdmin $admin, string $password, string $emailCode, int $challengeId): void
     {
         if (!password_verify($password, (string)$admin->password_hash)) {
             throw new RuntimeException(self::ACTION_VERIFICATION_MESSAGE);
         }
-        if (!$this->consumeRecoveryCode((int)$admin->id, trim($mfaCode))) {
+        if (!$this->consumeEmailCode((int)$admin->id, self::ACTION_CODE_PURPOSE, trim($emailCode), $challengeId)) {
             throw new RuntimeException(self::ACTION_VERIFICATION_MESSAGE);
         }
     }
@@ -299,28 +319,127 @@ class PlatformAdminAuthService
     }
 
     /**
-     * Consume one unused recovery/MFA code.
-     *
-     * @param int $adminId Platform admin id
-     * @param string $code Submitted code
-     * @return bool
+     * Look up a platform admin by normalized login email.
      */
-    private function consumeRecoveryCode(int $adminId, string $code): bool
+    private function adminForLogin(string $email): ?PlatformAdmin
+    {
+        $admin = $this->fetchTable('PlatformAdmins')->find()
+            ->where(['email' => strtolower(trim($email))])
+            ->first();
+
+        return $admin instanceof PlatformAdmin ? $admin : null;
+    }
+
+    /**
+     * @return array{challengeId: int, email: string, expiresAt: \Cake\I18n\DateTime}
+     */
+    private function issueEmailCode(
+        PlatformAdmin $admin,
+        string $purpose,
+        ServerRequest $request,
+        string $actionLabel,
+    ): array {
+        $codesTable = $this->fetchTable('PlatformAdminEmailCodes');
+        $now = DateTime::now();
+        $codesTable->updateAll(
+            ['used_at' => $now],
+            [
+                'platform_admin_id' => (int)$admin->id,
+                'purpose' => $purpose,
+                'used_at IS' => null,
+            ],
+        );
+        $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $expiresAt = $now->addMinutes(self::EMAIL_CODE_MINUTES);
+        $record = $codesTable->newEntity([
+            'platform_admin_id' => (int)$admin->id,
+            'purpose' => $purpose,
+            'code_hash' => password_hash($code, PASSWORD_DEFAULT),
+            'expires_at' => $expiresAt,
+            'attempts' => 0,
+            'max_attempts' => self::EMAIL_CODE_ATTEMPTS,
+            'ip_address' => $request->clientIp(),
+            'user_agent' => substr($request->getHeaderLine('User-Agent'), 0, 512),
+        ]);
+        $codesTable->saveOrFail($record);
+
+        try {
+            $this->sendEmailCode($admin, $code, $purpose, $actionLabel, $expiresAt, $request);
+        } catch (Throwable $e) {
+            $record->used_at = DateTime::now();
+            $codesTable->saveOrFail($record);
+
+            throw $e;
+        }
+
+        return [
+            'challengeId' => (int)$record->id,
+            'email' => (string)$admin->email,
+            'expiresAt' => $expiresAt,
+        ];
+    }
+
+    /**
+     * Deliver the verification code synchronously using platform email config.
+     */
+    private function sendEmailCode(
+        PlatformAdmin $admin,
+        string $code,
+        string $purpose,
+        string $actionLabel,
+        DateTime $expiresAt,
+        ServerRequest $request,
+    ): void {
+        (new PlatformRuntimeConfigService())->applyEmailConfig();
+        $mailer = new PlatformAdminMailer();
+        $mailer->send('emailCode', [
+            (string)$admin->email,
+            (string)$admin->display_name,
+            $code,
+            $purpose,
+            $actionLabel,
+            $expiresAt,
+            $request->clientIp(),
+            substr($request->getHeaderLine('User-Agent'), 0, 512),
+        ]);
+    }
+
+    /**
+     * Consume an unused, unexpired email code for the requested purpose.
+     */
+    private function consumeEmailCode(int $adminId, string $purpose, string $code, ?int $challengeId = null): bool
     {
         if ($code === '') {
             return false;
         }
-        $codesTable = $this->fetchTable('PlatformAdminRecoveryCodes');
+        $codesTable = $this->fetchTable('PlatformAdminEmailCodes');
+        $conditions = [
+            'platform_admin_id' => $adminId,
+            'purpose' => $purpose,
+            'used_at IS' => null,
+        ];
+        if ($challengeId !== null) {
+            $conditions['id'] = $challengeId;
+        }
         $codes = $codesTable->find()
-            ->where(['platform_admin_id' => $adminId, 'used_at IS' => null])
+            ->where($conditions)
+            ->orderByDesc('created')
             ->all();
         foreach ($codes as $record) {
+            if ($record->expires_at < DateTime::now() || (int)$record->attempts >= (int)$record->max_attempts) {
+                continue;
+            }
             if (password_verify($code, (string)$record->code_hash)) {
                 $record->used_at = DateTime::now();
                 $codesTable->saveOrFail($record);
 
                 return true;
             }
+            $record->attempts = ((int)$record->attempts) + 1;
+            if ((int)$record->attempts >= (int)$record->max_attempts) {
+                $record->used_at = DateTime::now();
+            }
+            $codesTable->saveOrFail($record);
         }
 
         return false;

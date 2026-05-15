@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use Migrations\BaseSeed;
 use Cake\I18n\DateTime;
+use Migrations\BaseSeed;
 
 require_once __DIR__ . '/Lib/SeedHelpers.php'; // Added
 
@@ -105,26 +105,25 @@ class InitWarrantsSeed extends BaseSeed
         $adminMemberId = SeedHelpers::getMemberId('admin@test.com');
         $adminRoleId = SeedHelpers::getRoleId('Admin'); // Assuming 'Admin' role exists
 
-        $rosterData = $this->getData()["warrant_rosters"];
+        $rosterData = $this->getData()['warrant_rosters'];
         $rosterTable = $this->table('warrant_rosters');
         $rosterTable->insert($rosterData)->save();
 
-        $periodData = $this->getData()["warrant_periods"];
+        $periodData = $this->getData()['warrant_periods'];
         $periodTable = $this->table('warrant_periods');
         $periodTable->insert($periodData)->save();
         // Ensure the System Admin Warrant Set exists
 
-        $warrantRostersTable = \Cake\ORM\TableRegistry::getTableLocator()->get('WarrantRosters');
-        $systemAdminRoster = $warrantRostersTable->find()->where(['name' => 'System Admin Warrant Set'])->firstOrFail();
-        $systemAdminRosterId = $systemAdminRoster->id;
+        $systemAdminRoster = $this->fetchRow(
+            "SELECT id FROM warrant_rosters WHERE name = 'System Admin Warrant Set'",
+        );
+        $systemAdminRosterId = (int)$systemAdminRoster['id'];
 
         // Ensure the Admin member role exists or create it before creating the warrant
-        $memberRolesTable = \Cake\ORM\TableRegistry::getTableLocator()->get('MemberRoles');
-        $adminMemberRole = $memberRolesTable->find()->where(['member_id' => $adminMemberId, 'role_id' => $adminRoleId])->first();
-        if (!$adminMemberRole) {
-            $adminMemberRole = $memberRolesTable->find()->where(['member_id' => $adminMemberId, 'role_id' => $adminRoleId])->firstOrFail();
-        }
-        $adminMemberRoleId = $adminMemberRole->id;
+        $adminMemberRole = $this->fetchRow(
+            "SELECT id FROM member_roles WHERE member_id = {$adminMemberId} AND role_id = {$adminRoleId}",
+        );
+        $adminMemberRoleId = (int)$adminMemberRole['id'];
 
         $warrantData = [
             [
@@ -138,8 +137,8 @@ class InitWarrantsSeed extends BaseSeed
                 'start_on' => '2020-01-01 00:00:00',
                 'approved_date' => '2020-01-01 00:00:00',
                 'status' => 'Current',
-                'revoked_reason' => NULL,
-                'revoker_id' => NULL,
+                'revoked_reason' => null,
+                'revoker_id' => null,
                 'created_by' => $adminMemberId,
                 'created' => DateTime::now(),
             ],
@@ -157,7 +156,7 @@ class InitWarrantsSeed extends BaseSeed
         $approvalTable = $this->table('warrant_roster_approvals');
         $approvalTable->insert($approvalData)->save();
 
-        $permissionData = $this->getData()["permissions"];
+        $permissionData = $this->getData()['permissions'];
         $permissionTable = $this->table('permissions');
         $permissionTable->insert($permissionData)->save();
     }

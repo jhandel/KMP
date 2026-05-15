@@ -34,7 +34,7 @@ class PlatformAdminResetPasswordCommand extends Command
     public function buildOptionParser(ConsoleOptionParser $parser): ConsoleOptionParser
     {
         return parent::buildOptionParser($parser)
-            ->setDescription('Reset a platform admin password and rotate one-time recovery/MFA codes.')
+            ->setDescription('Reset a platform admin password from a trusted shell.')
             ->addArgument('email', ['required' => true, 'help' => 'Platform admin email address.'])
             ->addOption('password', [
                 'default' => null,
@@ -58,7 +58,7 @@ class PlatformAdminResetPasswordCommand extends Command
     {
         $password = (string)($args->getOption('password') ?: $this->generatePassword());
         try {
-            $codes = (new PlatformAdminAuthService())->resetPassword(
+            (new PlatformAdminAuthService())->resetPassword(
                 (string)$args->getArgument('email'),
                 $password,
                 !(bool)$args->getOption('no-require-change'),
@@ -74,10 +74,7 @@ class PlatformAdminResetPasswordCommand extends Command
             $io->warning('This account must change its password on next login.');
         }
         $io->out('New password: ' . $password);
-        $io->warning('Store these replacement one-time MFA/recovery codes securely. They will not be shown again.');
-        foreach ($codes as $code) {
-            $io->out($code);
-        }
+        $io->out('Login and action verification codes will be emailed to the platform admin address.');
 
         return Command::CODE_SUCCESS;
     }

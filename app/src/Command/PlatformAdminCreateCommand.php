@@ -34,7 +34,9 @@ class PlatformAdminCreateCommand extends Command
     public function buildOptionParser(ConsoleOptionParser $parser): ConsoleOptionParser
     {
         return parent::buildOptionParser($parser)
-            ->setDescription('Create a platform admin account and print one-time recovery/MFA codes.')
+            ->setDescription(
+                'Create a platform admin account. Email codes are sent during login and action verification.',
+            )
             ->addArgument('email', ['required' => true, 'help' => 'Platform admin email address.'])
             ->addOption('display-name', ['required' => true, 'help' => 'Display name.'])
             ->addOption('password', [
@@ -59,10 +61,7 @@ class PlatformAdminCreateCommand extends Command
                 (string)$args->getOption('password'),
             );
             $io->success(sprintf('Platform admin %s created.', $result['admin']->email));
-            $io->warning('Store these one-time MFA/recovery codes securely. They will not be shown again.');
-            foreach ($result['recoveryCodes'] as $code) {
-                $io->out($code);
-            }
+            $io->out('Login and action verification codes will be emailed to the platform admin address.');
 
             return Command::CODE_SUCCESS;
         } catch (Throwable $e) {

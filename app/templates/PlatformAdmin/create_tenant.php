@@ -9,6 +9,17 @@
     <code>env:TENANT_SMTP_PASSWORD</code> or enter secret values to store encrypted platform-managed references.
     Raw secret values are never displayed after saving.
 </div>
+<div class="card mb-3">
+    <div class="card-body">
+        <p class="text-muted mb-2">
+            Request an emailed action verification code before submitting this high-risk operation.
+        </p>
+        <?= $this->Form->create(null, ['url' => ['action' => 'requestActionCode']]) ?>
+        <?= $this->Form->hidden('action_label', ['value' => 'Create or update tenant']) ?>
+        <?= $this->Form->button('Email action verification code', ['class' => 'btn btn-outline-primary']) ?>
+        <?= $this->Form->end() ?>
+    </div>
+</div>
 <?= $this->Form->create(null) ?>
 <div class="row">
     <div class="col-md-6">
@@ -58,10 +69,14 @@
         <?= $this->Form->control('activate', ['type' => 'checkbox', 'checked' => true]) ?>
         <hr>
         <?= $this->Form->control('verify_password', ['type' => 'password', 'required' => true]) ?>
-        <?= $this->Form->control('verify_mfa_code', [
-            'label' => 'One-time action verification code',
+        <?= $this->Form->control('verify_email_code', [
+            'label' => 'Email action verification code',
             'required' => true,
-            'help' => 'Use an unused code; each login and high-risk action consumes one code.',
+            'autocomplete' => 'one-time-code',
+            'inputmode' => 'numeric',
+            'pattern' => '[0-9]*',
+            'maxlength' => 6,
+            'help' => 'Use the 6-digit code emailed to your platform admin address.',
         ]) ?>
     </div>
 </div>

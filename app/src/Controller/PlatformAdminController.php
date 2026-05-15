@@ -30,6 +30,9 @@ use Throwable;
 class PlatformAdminController extends Controller
 {
     private const COOKIE_NAME = '__Host-KMPPlatformAdmin';
+    private const LOGIN_CHALLENGE_KEY = 'PlatformAdmin.loginChallengeId';
+    private const LOGIN_EMAIL_KEY = 'PlatformAdmin.loginEmail';
+    private const ACTION_CHALLENGES_KEY = 'PlatformAdmin.actionChallengeIds';
 
     /**
      * Initialize platform admin controller dependencies.
@@ -73,7 +76,7 @@ class PlatformAdminController extends Controller
     }
 
     /**
-     * Authenticate a platform admin.
+     * Authenticate a platform admin with password then emailed code.
      *
      * @return \Cake\Http\Response|null
      */
@@ -82,16 +85,45 @@ class PlatformAdminController extends Controller
         if ($this->platformAdmin() !== null) {
             return $this->redirect(['action' => 'index']);
         }
+        $session = $this->request->getSession();
+        $pendingEmail = $session->read(self::LOGIN_EMAIL_KEY);
         if ($this->request->is('post')) {
             $auth = new PlatformAdminAuthService();
             $audit = new PlatformAuditService();
             try {
-                $token = $auth->authenticate(
-                    (string)$this->request->getData('email'),
-                    (string)$this->request->getData('password'),
-                    (string)$this->request->getData('mfa_code'),
-                    $this->request,
-                );
+                if ($this->request->getData('restart_login') !== null) {
+                    $session->delete(self::LOGIN_CHALLENGE_KEY);
+                    $session->delete(self::LOGIN_EMAIL_KEY);
+
+                    return $this->redirect(['action' => 'login']);
+                }
+                if ($this->request->getData('email_code') !== null) {
+                    $challengeId = $session->read(self::LOGIN_CHALLENGE_KEY);
+                    if (!is_numeric($challengeId)) {
+                        throw new RuntimeException('Start sign-in again to request a new email code.');
+                    }
+                    $token = $auth->completeLogin(
+                        (int)$challengeId,
+                        (string)$this->request->getData('email_code'),
+                        $this->request,
+                    );
+                    $session->delete(self::LOGIN_CHALLENGE_KEY);
+                    $session->delete(self::LOGIN_EMAIL_KEY);
+                    $session->renew();
+                } else {
+                    $challenge = $auth->beginLogin(
+                        (string)$this->request->getData('email'),
+                        (string)$this->request->getData('password'),
+                        $this->request,
+                    );
+                    $session->write(self::LOGIN_CHALLENGE_KEY, $challenge['challengeId']);
+                    $session->write(self::LOGIN_EMAIL_KEY, $challenge['email']);
+                    $pendingEmail = $challenge['email'];
+                    $this->Flash->success(__('Verification code sent to {0}.', $challenge['email']));
+                    $this->set(compact('pendingEmail'));
+
+                    return null;
+                }
                 $admin = $auth->adminFromToken($token);
                 if ($admin instanceof PlatformAdmin) {
                     $audit->record('platform_admin.login', 'success', [], $admin, $this->request);
@@ -110,6 +142,7 @@ class PlatformAdminController extends Controller
                 $this->Flash->error(__('Invalid platform admin credentials.'));
             }
         }
+        $this->set(compact('pendingEmail'));
 
         return null;
     }
@@ -133,7 +166,7 @@ class PlatformAdminController extends Controller
     }
 
     /**
-     * Change a platform admin password and rotate one-time codes.
+     * Change a platform admin password.
      *
      * @return \Cake\Http\Response|null
      */
@@ -143,7 +176,6 @@ class PlatformAdminController extends Controller
         if ($admin === null) {
             return $this->redirect(['action' => 'login']);
         }
-        $recoveryCodes = [];
         if ($this->request->is('post')) {
             try {
                 $newPassword = (string)$this->request->getData('new_password');
@@ -151,7 +183,7 @@ class PlatformAdminController extends Controller
                 if ($newPassword !== $confirmPassword) {
                     throw new RuntimeException('New password confirmation does not match.');
                 }
-                $recoveryCodes = (new PlatformAdminAuthService())->changePassword(
+                (new PlatformAdminAuthService())->changePassword(
                     $admin,
                     (string)$this->request->getData('current_password'),
                     $newPassword,
@@ -163,8 +195,10 @@ class PlatformAdminController extends Controller
                     $admin,
                     $this->request,
                 );
-                $this->response = $this->response->withExpiredCookie(new Cookie(self::COOKIE_NAME));
-                $this->Flash->success(__('Password changed. Sign in again with one of your new one-time codes.'));
+                $this->Flash->success(__('Password changed. Sign in again; verification codes will be emailed.'));
+
+                return $this->redirect(['action' => 'login'])
+                    ->withExpiredCookie(new Cookie(self::COOKIE_NAME));
             } catch (Throwable $e) {
                 (new PlatformAuditService())->record(
                     'platform_admin.password_change',
@@ -176,9 +210,52 @@ class PlatformAdminController extends Controller
                 $this->Flash->error($e->getMessage());
             }
         }
-        $this->set(compact('admin', 'recoveryCodes'));
+        $this->set(compact('admin'));
 
         return null;
+    }
+
+    /**
+     * Email a one-time code for high-risk platform admin actions.
+     */
+    public function requestActionCode(): Response
+    {
+        $admin = $this->requirePlatformAdmin();
+        if ($admin === null) {
+            return $this->redirect(['action' => 'login']);
+        }
+        $this->request->allowMethod(['post']);
+        $actionLabel = trim((string)$this->request->getData('action_label', 'Platform admin action'));
+        try {
+            $challenge = (new PlatformAdminAuthService())->requestActionCode(
+                $admin,
+                $this->request,
+                $actionLabel,
+            );
+            $session = $this->request->getSession();
+            $challenges = (array)$session->read(self::ACTION_CHALLENGES_KEY);
+            $challenges[$actionLabel] = $challenge['challengeId'];
+            $session->write(self::ACTION_CHALLENGES_KEY, $challenges);
+            (new PlatformAuditService())->record(
+                'platform_admin.action_code',
+                'success',
+                ['purpose' => 'action', 'action_label' => $actionLabel],
+                $admin,
+                $this->request,
+            );
+            $this->Flash->success(__('Action verification code sent to {0}.', $challenge['email']));
+        } catch (Throwable $e) {
+            (new PlatformAuditService())->record(
+                'platform_admin.action_code',
+                'failure',
+                ['error' => $e->getMessage()],
+                $admin,
+                $this->request,
+            );
+            $this->Flash->error(__('Unable to send an action verification code.'));
+        }
+
+        return $this->redirect($this->referer(['action' => 'index'], true));
     }
 
     /**
@@ -257,7 +334,7 @@ class PlatformAdminController extends Controller
         if ($this->request->is('post')) {
             try {
                 $this->assertManagedSecretsReadyForRequest();
-                $this->verifyAction($admin);
+                $this->verifyAction($admin, 'Create or update tenant');
                 $data = $this->tenantPayloadFromRequest();
                 $service = new TenantProvisioningService();
                 if ((bool)$this->request->getData('create_database')) {
@@ -315,7 +392,7 @@ class PlatformAdminController extends Controller
         }
         $this->request->allowMethod(['post']);
         try {
-            $this->verifyAction($admin);
+            $this->verifyAction($admin, 'Set tenant ' . $slug . ' status to ' . $status);
             $tenant = (new TenantProvisioningService())->setStatus($slug, $status);
             $this->recordJob($admin, $tenant, 'tenant_status', 'completed', ['status' => $status]);
             (new PlatformAuditService())->record(
@@ -349,7 +426,7 @@ class PlatformAdminController extends Controller
         $this->request->allowMethod(['post']);
         try {
             $this->assertManagedSecretsReadyForRequest();
-            $this->verifyAction($admin);
+            $this->verifyAction($admin, 'Update managed secrets for tenant ' . $slug);
             $tenant = (new TenantProvisioningService())->getTenant($slug);
             $changed = $this->storeTenantSecrets($admin, $tenant);
             if ($changed === []) {
@@ -397,7 +474,7 @@ class PlatformAdminController extends Controller
         }
         $this->request->allowMethod(['post']);
         try {
-            $this->verifyAction($admin);
+            $this->verifyAction($admin, 'Create backup for tenant ' . $slug);
             $tenant = (new TenantProvisioningService())->getTenant($slug);
             $this->configureTenant($tenant);
             $key = (string)$this->request->getData('backup_key');
@@ -461,7 +538,7 @@ class PlatformAdminController extends Controller
         }
         $this->request->allowMethod(['post']);
         try {
-            $this->verifyAction($admin);
+            $this->verifyAction($admin, 'Restore backup for tenant ' . $slug);
             $tenant = (new TenantProvisioningService())->getTenant($slug);
             $newDatabase = trim((string)$this->request->getData('new_database_name'));
             if ($newDatabase === '' || !preg_match('/^[A-Za-z0-9_]+$/', $newDatabase)) {
@@ -565,22 +642,31 @@ class PlatformAdminController extends Controller
     }
 
     /**
-     * Verify high-risk action with password plus one-time code.
+     * Verify high-risk action with password plus emailed one-time code.
      *
      * @param \App\Model\Entity\PlatformAdmin $admin Platform admin
      * @return void
      */
-    private function verifyAction(PlatformAdmin $admin): void
+    private function verifyAction(PlatformAdmin $admin, string $actionLabel): void
     {
+        $session = $this->request->getSession();
+        $challenges = (array)$session->read(self::ACTION_CHALLENGES_KEY);
+        $challengeId = $challenges[$actionLabel] ?? null;
+        if (!is_numeric($challengeId)) {
+            throw new RuntimeException('Request a new emailed action verification code before continuing.');
+        }
         (new PlatformAdminAuthService())->verifyAction(
             $admin,
             (string)$this->request->getData('verify_password'),
-            (string)$this->request->getData('verify_mfa_code'),
+            (string)$this->request->getData('verify_email_code'),
+            (int)$challengeId,
         );
+        unset($challenges[$actionLabel]);
+        $session->write(self::ACTION_CHALLENGES_KEY, $challenges);
     }
 
     /**
-     * Fail before consuming one-time action codes if submitted managed secrets cannot be stored.
+     * Fail before consuming emailed action codes if submitted managed secrets cannot be stored.
      *
      * @return void
      */
