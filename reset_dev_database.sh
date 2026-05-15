@@ -145,6 +145,7 @@ bin/cake tenant:create "$TENANT_SLUG" \
 	--email-secret-reference=env:LOCALDEV_SMTP_PASSWORD \
 	--storage-adapter=local \
 	--storage-config-json='{"local":{"path":"tmp/tenant-storage/localdev"}}' \
+	--migrate \
 	--activate
 
 echo "[post] Setting ALL member passwords to TestPassword via ORM..."
