@@ -141,7 +141,7 @@ layout: default
 
 | Document | Description |
 |----------|-------------|
-| **[Docker Development](docker-development.md)** | Docker multi-container setup for local and hosted development |
+| **[Docker Development](docker-development.md)** | Docker Compose workflow for local, hosted, and agentic development |
 | **[Office Reporting Structure](office-reporting-structure.md)** | Hierarchical reporting relationships between offices |
 | **[Documentation Migration Summary](DOCUMENTATION_MIGRATION_SUMMARY.md)** | Summary of documentation migration efforts |
 | **[Activity Groups Controller Migration](ACTIVITY_GROUPS_CONTROLLER_MIGRATION.md)** | ActivityGroupsController documentation migration notes |

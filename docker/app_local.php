@@ -9,7 +9,10 @@
  */
 $databaseUrl = env('DATABASE_URL', null);
 $databaseTestUrl = env('DATABASE_TEST_URL', null);
+$platformDatabaseUrl = env('PLATFORM_DATABASE_URL', null);
+$tenantDatabaseUrl = env('TENANT_DATABASE_URL', $databaseUrl);
 $isPostgresUrl = str_starts_with(strtolower((string)$databaseUrl), 'postgres');
+$isTenantPostgresUrl = str_starts_with(strtolower((string)$tenantDatabaseUrl), 'postgres');
 $mysqlSsl = filter_var(env('MYSQL_SSL', false), FILTER_VALIDATE_BOOLEAN);
 
 // Build PDO connection flags based on driver and SSL requirements
@@ -32,6 +35,17 @@ return [
         'variablesPanelMaxDepth' => 10,
     ],
 
+    'PlatformAdmin' => [
+        'hosts' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string)env('PLATFORM_ADMIN_HOSTS', 'admin.localhost')),
+        ))),
+        'redirectFromHosts' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string)env('PLATFORM_ADMIN_REDIRECT_FROM_HOSTS', 'localhost,127.0.0.1')),
+        ))),
+    ],
+
     'Security' => [
         'salt' => env('SECURITY_SALT', '7479eaa68e57fc0bf648af17da085950a16c47f3b31af4eb1548a661b545a3fb'),
     ],
@@ -42,15 +56,34 @@ return [
             'username' => env('MYSQL_USERNAME'),
             'password' => env('MYSQL_PASSWORD'),
             'database' => env('MYSQL_DB_NAME'),
-            'url' => $databaseUrl,
+            'url' => $tenantDatabaseUrl,
+            'flags' => $pdoFlags,
+        ],
+        'platform' => [
+            'host' => env('PLATFORM_DB_HOST', env('MYSQL_HOST', 'db')),
+            'port' => env('PLATFORM_DB_PORT', env('MYSQL_PORT', 3306)),
+            'username' => env('PLATFORM_DB_USERNAME', env('MYSQL_USERNAME')),
+            'password' => env('PLATFORM_DB_PASSWORD', env('MYSQL_PASSWORD')),
+            'database' => env('PLATFORM_DB_DATABASE', 'KMP_PLATFORM'),
+            'url' => $platformDatabaseUrl,
+            'flags' => $pdoFlags,
+        ],
+        'tenant' => [
+            'host' => env('TENANT_DB_HOST', env('MYSQL_HOST', 'db')),
+            'port' => env('TENANT_DB_PORT', env('MYSQL_PORT', 3306)),
+            'username' => env('TENANT_DB_USERNAME', env('MYSQL_USERNAME')),
+            'password' => env('TENANT_DB_PASSWORD', env('MYSQL_PASSWORD')),
+            'database' => env('TENANT_DB_DATABASE', env('MYSQL_DB_NAME')),
+            'url' => $tenantDatabaseUrl,
             'flags' => $pdoFlags,
         ],
         'test' => [
-            'host' => env('MYSQL_HOST', 'db'),
-            'username' => env('MYSQL_USERNAME'),
-            'password' => env('MYSQL_PASSWORD'),
-            'database' => env('MYSQL_DB_NAME') . '_test',
-            'url' => $databaseTestUrl ?? ($isPostgresUrl ? $databaseUrl : null),
+            'host' => env('TENANT_DB_HOST', env('MYSQL_HOST', 'db')),
+            'port' => env('TENANT_DB_PORT', env('MYSQL_PORT', 3306)),
+            'username' => env('TENANT_DB_USERNAME', env('MYSQL_USERNAME')),
+            'password' => env('TENANT_DB_PASSWORD', env('MYSQL_PASSWORD')),
+            'database' => env('TENANT_TEST_DB_DATABASE', env('TENANT_DB_DATABASE', env('MYSQL_DB_NAME')) . '_test'),
+            'url' => $databaseTestUrl ?? ($isTenantPostgresUrl ? $tenantDatabaseUrl : null),
         ],
     ],
 

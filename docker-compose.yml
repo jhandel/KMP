@@ -57,13 +57,20 @@ services:
         condition: service_started
     ports:
       - "8080:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      # Mount local code - changes reflect immediately
+      # Mount the repo root for git-aware tools and repo-level test fixtures.
+      - .:/var/www:cached
+      # Mount app code at Apache's working directory; changes reflect immediately.
       - ./app:/var/www/html:cached
-      # Persist composer cache for faster rebuilds
+      # Keep heavyweight dependencies and tool caches in Docker volumes so
+      # host worktrees stay clean while app code remains live-mounted.
+      - vendor:/var/www/html/vendor
       - composer-cache:/root/.composer/cache
-      # Persist node_modules to avoid reinstalling
       - node-modules:/var/www/html/node_modules
+      - npm-cache:/root/.npm
+      - playwright-cache:/ms-playwright
     environment:
       # App identification (prevents .env loading - we use container env vars)
       APP_NAME: KMP_DOCKER
@@ -92,6 +99,8 @@ services:
       # PHP/App settings
       PHP_MEMORY_LIMIT: 256M
       APACHE_DOCUMENT_ROOT: /var/www/html
+      # Browser binaries are installed in a named Docker volume.
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s
@@ -104,5 +113,11 @@ volumes:
     name: kmp-db-data
   composer-cache:
     name: kmp-composer-cache
+  vendor:
+    name: kmp-vendor
   node-modules:
     name: kmp-node-modules
+  npm-cache:
+    name: kmp-npm-cache
+  playwright-cache:
+    name: kmp-playwright-cache

@@ -53,6 +53,7 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
         intl \
         gd \
         mysqli \
+        pcntl \
         pdo_mysql \
         zip \
         opcache
@@ -70,7 +71,7 @@ RUN mv "$PHP_INI_DIR/php.ini-development" "$PHP_INI_DIR/php.ini" \
 
 # Configure Xdebug for development
 RUN echo "xdebug.mode=debug,develop" >> "$PHP_INI_DIR/conf.d/xdebug.ini" \
-    && echo "xdebug.start_with_request=trigger" >> "$PHP_INI_DIR/conf.d/xdebug.ini" \
+    && echo "xdebug.start_with_request=yes" >> "$PHP_INI_DIR/conf.d/xdebug.ini" \
     && echo "xdebug.client_host=host.docker.internal" >> "$PHP_INI_DIR/conf.d/xdebug.ini" \
     && echo "xdebug.client_port=9003" >> "$PHP_INI_DIR/conf.d/xdebug.ini"
 
@@ -87,6 +88,13 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Install PHPUnit
 RUN curl -sSL https://phar.phpunit.de/phpunit-10.phar -o /usr/local/bin/phpunit \
     && chmod +x /usr/local/bin/phpunit
+
+# Install browser system dependencies used by the app's Playwright tests.
+# Browser binaries themselves are populated into PLAYWRIGHT_BROWSERS_PATH at runtime.
+RUN npm install -g playwright@1.58.2 \
+    && playwright install-deps chromium
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Set working directory
 WORKDIR /var/www/html

@@ -5,11 +5,20 @@ layout: default
 
 # 2. Getting Started
 
-This section guides developers through the process of setting up the Kingdom Management Portal (KMP) for development using Dev Containers.
+This section guides developers through the process of setting up the Kingdom Management Portal (KMP) for development. KMP supports both a Docker Compose workflow for host-based/agentic development and a VS Code Dev Container workflow for developers who want the whole IDE inside a container.
 
 ## 2.1 Installation
 
-KMP uses Dev Containers to provide a consistent, fully-configured development environment. This approach eliminates the need to manually install PHP, MySQL, Node.js, or any other dependencies on your local machine.
+KMP uses containers to provide a consistent, fully-configured development environment. This approach eliminates the need to manually install PHP, MySQL, Node.js, or browser test dependencies on your local machine.
+
+Choose the workflow that matches how you are working:
+
+| Workflow | Best for | Documentation |
+|----------|----------|---------------|
+| Docker Compose agentic workflow | GitHub Copilot App, Copilot CLI, other host-based agents, or any editor working on a local checkout | [Docker Development](docker-development.md) |
+| VS Code Dev Container | Interactive VS Code development where the editor and terminal run inside the container | This page |
+
+For host-based agentic development, prefer the Docker Compose workflow. The agent edits the host worktree, while PHP, Composer dependencies, Node dependencies, Playwright browsers, MariaDB, and Mailpit run in Docker.
 
 ### Prerequisites
 
@@ -19,13 +28,32 @@ Before you begin, install the following:
    - Windows/Mac: Install Docker Desktop
    - Linux: Install Docker Engine and Docker Compose
 
-2. **[Visual Studio Code](https://code.visualstudio.com/)** - Code editor
+2. **[Visual Studio Code](https://code.visualstudio.com/)** - Code editor for the Dev Container workflow
 
-3. **[Dev Containers Extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)** - VS Code extension for container-based development
+3. **[Dev Containers Extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)** - VS Code extension for the Dev Container workflow
 
-> **Tip:** You can install the Dev Containers extension by searching for "Dev Containers" in the VS Code Extensions panel or by pressing `Ctrl+P` and running `ext install ms-vscode-remote.remote-containers`.
+> **Tip:** You only need VS Code and the Dev Containers extension when using the Dev Container workflow. For agentic Docker Compose development, Docker is the only required runtime dependency.
 
-### Option 1: Open Directly from GitHub (Recommended)
+### Recommended for Agentic Development: Docker Compose
+
+When using GitHub Copilot App or another host-based agent, keep the repo on the host and run the application stack with Docker Compose:
+
+```bash
+# First time or after Dockerfile/dependency changes
+./dev-up.sh --build
+
+# Run checks inside the app container
+./dev-test.sh build
+./dev-test.sh js
+./dev-test.sh php
+./dev-test.sh ui-smoke
+```
+
+The app is available at http://localhost:8080 and Mailpit is available at http://localhost:8025. See [Docker Development](docker-development.md) for details, including environment variables, dependency volumes, database reset commands, and the comparison with Dev Containers.
+
+The remaining setup options describe the VS Code Dev Container workflow.
+
+### Option 1: Open Directly from GitHub
 
 The fastest way to start developing is to open the repository directly in a Dev Container without cloning first.
 
@@ -179,6 +207,8 @@ In the Dev Container environment, environment variables are pre-configured in th
 - `SECURITY_SALT`: Automatically generated
 
 You can modify these variables by editing the `.devcontainer/devcontainer.json` file or the `config/.env` file within the container.
+
+In the Docker Compose agentic workflow, environment variables are configured in `docker-compose.yml` and optionally overridden by a repo-root `.env` file. The app service sets `APP_NAME=KMP_DOCKER`, so CakePHP skips `app/config/.env` and reads container environment variables through `docker/app_local.php`.
 
 ## 2.3 CakePHP Basics
 
