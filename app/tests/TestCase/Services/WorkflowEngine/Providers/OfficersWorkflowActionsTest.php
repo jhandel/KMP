@@ -1,11 +1,10 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Test\TestCase\Services\WorkflowEngine\Providers;
 
-use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Model\Entity\Warrant;
+use App\Services\ActiveWindowManager\ActiveWindowManagerInterface;
 use App\Services\ServiceResult;
 use App\Services\WarrantManager\WarrantManagerInterface;
 use App\Services\WarrantManager\WarrantRequest;
@@ -17,9 +16,10 @@ use Cake\I18n\DateTime;
 use Cake\ORM\TableRegistry;
 use Officers\Model\Entity\Officer;
 use Officers\Services\OfficerManagerInterface;
+use Officers\Services\OfficersWorkflowProvider;
 use Officers\Services\OfficerWorkflowActions;
 use Officers\Services\OfficerWorkflowConditions;
-use Officers\Services\OfficersWorkflowProvider;
+use RuntimeException;
 
 /**
  * Tests for Officers plugin workflow actions and conditions.
@@ -36,6 +36,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->skipIfPostgres();
 
         $this->activeWindowManager = $this->createMock(ActiveWindowManagerInterface::class);
         $this->warrantManager = $this->createMock(WarrantManagerInterface::class);
@@ -132,7 +133,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
 
     public function testCreateOfficerRecordThrowsWhenWarrantRequiredMemberIsNotWarrantable(): void
     {
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Member is not warrantable');
 
         $this->actions->createOfficerRecord(
@@ -160,8 +161,8 @@ class OfficersWorkflowActionsTest extends BaseTestCase
                 'Officers.Officers',
                 $this->isType('int'),
                 self::ADMIN_MEMBER_ID,
-                $this->callback(fn (DateTime $value) => $value->toDateTimeString() === $startOn->toDateTimeString()),
-                $this->callback(fn (?DateTime $value) => $value?->toDateTimeString() === $expiresOn->toDateTimeString()),
+                $this->callback(fn(DateTime $value) => $value->toDateTimeString() === $startOn->toDateTimeString()),
+                $this->callback(fn(?DateTime $value) => $value?->toDateTimeString() === $expiresOn->toDateTimeString()),
                 $this->isType('int'),
                 $this->isType('int'),
                 false,
@@ -634,7 +635,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $officerTable->saveOrFail($officer);
 
         $releaseDate = DateTime::now();
-        $matchesReleaseDate = $this->callback(fn ($value) => $value instanceof DateTime
+        $matchesReleaseDate = $this->callback(fn($value) => $value instanceof DateTime
             && $value->format('Y-m-d H:i:s') === $releaseDate->format('Y-m-d H:i:s'));
 
         $this->activeWindowManager->expects($this->once())
@@ -737,7 +738,7 @@ class OfficersWorkflowActionsTest extends BaseTestCase
         $this->warrantManager->expects($this->never())
             ->method('cancelByEntity');
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Failed to release officer active window: Unable to stop active window');
 
         $this->actions->releaseOfficer(

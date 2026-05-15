@@ -153,10 +153,41 @@ if (SeedManager::isPostgres('test')) {
     // Seed essential AppSettings that tests expect
     $conn = ConnectionManager::get('test');
     $now = date('Y-m-d H:i:s');
+
+    // Seed stable branch IDs used by Postgres-safe tests. The MySQL job gets
+    // these from dev_seed_clean.sql, which is intentionally not loaded here.
+    $branches = [
+        [2, 'Ansteorra', 'Texas & Oklahoma', null, 1, 108, 'Kingdom', 'ansteorra.org'],
+        [12, 'Central Region', 'Central Region', 2, 35, 52, 'Region', 'central.ansteorra.org'],
+        [13, 'Southern Region', 'Southern Region', 2, 53, 66, 'Region', 'southern.ansteorra.org'],
+        [14, 'Shire of Adlersruhe', 'Amarillo, TX', 12, 36, 37, 'Local Group', 'adlersruhe.ansteorra.org'],
+        [31, 'Test Branch', 'Test Branch', 2, 67, 68, 'Local Group', 'test.ansteorra.org'],
+    ];
+    foreach ($branches as [$id, $name, $location, $parentId, $lft, $rght, $type, $domain]) {
+        $conn->execute(
+            "INSERT INTO branches (id, public_id, name, location, parent_id, can_have_members, can_have_officers, lft, rght, type, domain, created, modified, created_by, modified_by)
+             VALUES (?, ?, ?, ?, ?, TRUE, TRUE, ?, ?, ?, ?, ?, ?, 1, 1)
+             ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                location = EXCLUDED.location,
+                parent_id = EXCLUDED.parent_id,
+                can_have_members = EXCLUDED.can_have_members,
+                can_have_officers = EXCLUDED.can_have_officers,
+                lft = EXCLUDED.lft,
+                rght = EXCLUDED.rght,
+                type = EXCLUDED.type,
+                domain = EXCLUDED.domain,
+                modified = EXCLUDED.modified,
+                modified_by = EXCLUDED.modified_by",
+            [$id, 'pg' . str_pad((string)$id, 6, '0', STR_PAD_LEFT), $name, $location, $parentId, $lft, $rght, $type, $domain, $now, $now],
+        );
+    }
+
     $settings = [
         ['KMP.KingdomName', 'Test Kingdom'],
         ['KMP.ShortSiteTitle', 'KMP Test'],
         ['KMP.LongSiteTitle', 'KMP Test Environment'],
+        ['KMP.SiteAdminSignature', 'KMP Test Administrators'],
         ['KMP.RequireActiveWarrantForSecurity', 'false'],
         ['Warrant.LastCheck', $now],
     ];
