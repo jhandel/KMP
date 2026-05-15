@@ -35,7 +35,6 @@ app/.editorconfig
 # Docker dev files that are not needed in the build context.
 # Keep files copied by docker/Dockerfile.app available to BuildKit.
 docker/Dockerfile.app
-docker/.env.example
 
 # Dev scripts
 dev-up.sh
@@ -73,7 +72,6 @@ test-waiver.png
 *.log
 .env
 .env.*
-!docker/.env.example
 app/config/.env
 app/config/.env.*
 

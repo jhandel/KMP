@@ -11,9 +11,15 @@ cd "$(dirname "$0")"
 
 KMP_VOLUMES=("kmp-db-data" "kmp-composer-cache" "kmp-node-modules")
 
+ENV_FILE="app/config/.env"
+COMPOSE=(docker compose)
+if [ -f "$ENV_FILE" ]; then
+    COMPOSE+=(--env-file "$ENV_FILE")
+fi
+
 if [ "$1" == "--volumes" ]; then
     echo "⚠️  Stopping containers AND removing volumes (database will be deleted)..."
-    docker compose down -v
+    "${COMPOSE[@]}" down -v
     for volume in "${KMP_VOLUMES[@]}"; do
         if docker volume inspect "$volume" >/dev/null 2>&1; then
             docker volume rm "$volume" >/dev/null
@@ -22,7 +28,7 @@ if [ "$1" == "--volumes" ]; then
     echo "✅ All containers and volumes removed."
 else
     echo "🛑 Stopping KMP Development Environment..."
-    docker compose down
+    "${COMPOSE[@]}" down
     echo "✅ Containers stopped. Database data preserved in Docker volume."
     echo ""
     echo "To also remove database data: ./dev-down.sh --volumes"
