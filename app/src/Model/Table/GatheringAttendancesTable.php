@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Model\Table;
@@ -18,6 +19,7 @@ use Cake\Validation\Validator;
  * and various sharing permission options.
  *
  * @property \App\Model\Table\GatheringsTable&\Cake\ORM\Association\BelongsTo $Gatherings
+ * @property \Officers\Model\Table\ProgressTable&\Cake\ORM\Association\HasOne $Progress
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Members
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Creators
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Modifiers

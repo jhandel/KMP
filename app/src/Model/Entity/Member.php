@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Model\Entity;
@@ -41,6 +42,7 @@ use JeremyHarris\LazyLoad\ORM\LazyLoadEntityTrait;
  * @property int|null $branch_id Associated branch
  * @property bool $warrantable Calculated warrant eligibility
  * @property \App\Model\Entity\Role[] $roles Assigned roles
+ * @property \Officers\Model\Entity\Progress[] $progresses
  */
 class Member extends BaseEntity implements
     KmpIdentityInterface,
@@ -127,6 +129,7 @@ class Member extends BaseEntity implements
         'pronunciation' => true,
         'timezone' => true,
         'profile_photo_document_id' => false,
+        'progresses' => true,
     ];
 
     /**

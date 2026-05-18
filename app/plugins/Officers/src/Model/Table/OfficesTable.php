@@ -29,6 +29,7 @@ use Officers\Model\Entity\Officer;
  * @property \Officers\Model\Table\OfficersTable&\Cake\ORM\Association\HasMany $CurrentOfficers
  * @property \Officers\Model\Table\OfficersTable&\Cake\ORM\Association\HasMany $UpcomingOfficers
  * @property \Officers\Model\Table\OfficersTable&\Cake\ORM\Association\HasMany $PreviousOfficers
+ * @property \Officers\Model\Table\ProgressTable&\Cake\ORM\Association\HasMany $Progresses
  *
  * @method \Officers\Model\Entity\Office newEmptyEntity()
  * @method \Officers\Model\Entity\Office newEntity(array $data, array $options = [])
@@ -133,6 +134,10 @@ class OfficesTable extends BaseTable
         $validator
             ->boolean('only_one_per_branch')
             ->notEmptyString('only_one_per_branch');
+
+        $validator
+            ->boolean('tracks_progress')
+            ->notEmptyString('tracks_progress');
 
         $validator
             ->integer('deputy_to_id')

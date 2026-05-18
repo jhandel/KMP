@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Model\Entity;
@@ -12,6 +13,7 @@ namespace App\Model\Entity;
  * @property int $id
  * @property int $gathering_id
  * @property int $member_id
+ * @property \Officers\Model\Entity\Progress $progress
  * @property string|null $public_note
  * @property bool $share_with_kingdom
  * @property bool $share_with_hosting_group
@@ -38,6 +40,7 @@ class GatheringAttendance extends BaseEntity
     protected array $_accessible = [
         'gathering_id' => true,
         'member_id' => true,
+        'progress' => true,
         'public_note' => true,
         'share_with_kingdom' => true,
         'share_with_hosting_group' => true,

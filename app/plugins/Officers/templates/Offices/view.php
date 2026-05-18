@@ -123,6 +123,13 @@ echo $this->KMP->startBlock("pageTitle") ?>
                         ])
                         : "" ?></td>
 </tr>
+<tr scope="row">
+    <th class='col'><?= __("Tracks Progress") ?></th>
+    <td class="col-10"><?= $this->Kmp->bool(
+                            $office->tracks_progress,
+                            $this->Html,
+                        ) ?></td>
+</tr>
 <?php $this->KMP->endBlock() ?>
 <?php $this->KMP->startBlock("tabButtons") ?>
 <?php $this->KMP->endBlock() ?>
@@ -172,6 +179,7 @@ echo $this->KMP->startBlock("modals"); ?>
     echo $this->Form->control("can_skip_report", ["switch" => true, 'label' => 'Skip Report']);
     echo $this->Form->control("requires_warrant", ["switch" => true, 'label' => 'Warrant']);
     echo $this->Form->control("only_one_per_branch", ["switch" => true, 'label' => 'One Per Branch']);
+    echo $this->Form->control("tracks_progress", ["switch" => true, 'label' => 'Tracks Progress']);
     echo $this->Form->control("is_deputy", [
         "type" => "checkbox",
         "switch" => true,

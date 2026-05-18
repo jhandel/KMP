@@ -525,6 +525,10 @@ class GatheringsController extends AppController
                         ],
                     ],
                 ],
+                'Progresses' => [
+                    "Members" => ['fields' => ['sca_name']],
+                    "Offices" => ['fields' => ['name']]
+                ],
                 'Creators' => ['fields' => ['id', 'sca_name']],
             ])
             ->select([

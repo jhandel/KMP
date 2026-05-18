@@ -20,6 +20,7 @@ use App\Model\Entity\BaseEntity;
  * @property bool $required_office Organizational requirement flag
  * @property bool $only_one_per_branch Branch-level uniqueness constraint
  * @property bool $can_skip_report Reporting exemption permission
+ * @property bool $tracks_progress Progress requirement flag
  * @property int|null $deputy_to_id Foreign key for deputy office relationships
  * @property int|null $reports_to_id Foreign key for reporting hierarchy
  * @property int|null $grants_role_id Foreign key to role granted upon assignment
@@ -46,6 +47,7 @@ use App\Model\Entity\BaseEntity;
  * @property \Officers\Model\Entity\Office[] $deputies Child deputy offices
  * @property \Officers\Model\Entity\Office[] $direct_reports Child offices in reporting hierarchy
  * @property \Officers\Model\Entity\Officer[] $officers All officer assignments
+ * @property \Officers\Model\Entity\Progress[] $progresses
  *
  * @see /docs/5.1-officers-plugin.md
  * @see \Officers\Model\Table\OfficesTable
@@ -64,6 +66,7 @@ class Office extends BaseEntity
         'can_skip_report' => true,
         'required_office' => true,
         'only_one_per_branch' => true,
+        'tracks_progress' => true,
         'deputy_to_id' => true,
         'reports_to_id' => true,
         'grants_role_id' => true,
@@ -73,6 +76,7 @@ class Office extends BaseEntity
         'officers' => true,
         'branch_types' => true,
         'default_contact_address' => true,
+        'progresses' => true,
     ];
 
     /**

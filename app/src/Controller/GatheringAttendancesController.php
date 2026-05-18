@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Controller;
@@ -37,8 +38,8 @@ class GatheringAttendancesController extends AppController
     private function wantsJson(): bool
     {
         return $this->request->is('ajax') ||
-               $this->request->accepts('application/json') ||
-               $this->request->getHeaderLine('Accept') === 'application/json';
+            $this->request->accepts('application/json') ||
+            $this->request->getHeaderLine('Accept') === 'application/json';
     }
 
     /**
@@ -95,6 +96,19 @@ class GatheringAttendancesController extends AppController
 
             // Set created_by from current user
             $currentUser = $this->Authentication->getIdentity();
+            $progressOffices = $this->getTableLocator()->get("Officers.Offices")
+                ->find()->select(['id', 'name', 'tracks_progress'])
+                ->contain('Officers')
+                ->where([
+                    'tracks_progress' => 'true',
+                    'Officers.id' => $currentUser->id
+                ]);
+            // $userOffices = $progressOffices->where(['office.officers.id' => $currentUser->id]);
+            if (!empty($progressOffices)) {
+                $Progress = $this->fetchTable("Officers.Progress");
+                $Progress->save($Progress->newEntity(["gathering_id" => $gathering->id, "attendance_id" => 1, "office_id" => '1', "member_id" => $currentUser->id]));
+            }
+
             $data['created_by'] = $currentUser->id;
 
             $gatheringAttendance = $this->GatheringAttendances->patchEntity($gatheringAttendance, $data);
