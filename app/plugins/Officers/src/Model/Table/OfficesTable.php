@@ -103,6 +103,12 @@ class OfficesTable extends BaseTable
             "foreignKey" => "office_id",
             "finder" => "previous",
         ]);
+
+        $this->hasMany('Progresses', [
+            'className' => 'Officers\Model\Table\ProgressTable',
+            'foreignKey' => 'office_id',
+            'dependent' => false,
+        ]);
         $this->addBehavior("Timestamp");
         $this->addBehavior('Muffin/Footprint.Footprint');
         $this->addBehavior("Muffin/Trash.Trash");

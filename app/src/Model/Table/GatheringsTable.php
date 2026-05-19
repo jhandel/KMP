@@ -99,6 +99,7 @@ class GatheringsTable extends Table
             'className' => 'Officers\Model\Table\ProgressTable',
             'foreignKey' => 'gathering_id',
             'dependent' => true,
+            'cascadeCallbacks' => true,
         ]);
 
         // One-to-many relationship with scheduled activities

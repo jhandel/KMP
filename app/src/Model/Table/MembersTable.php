@@ -109,6 +109,13 @@ class MembersTable extends BaseTable
             'foreignKey' => 'member_id',
         ]);
 
+        $this->hasMany('Progresses', [
+            'className' => 'Officers\Model\Table\ProgressTable',
+            'foreignKey' => 'member_id',
+            'dependent' => true,
+            'cascadeCallbacks' => true,
+        ]);
+
         $this->addBehavior('Timestamp');
         $this->addBehavior('Muffin/Footprint.Footprint');
         $this->addBehavior('Muffin/Trash.Trash');
