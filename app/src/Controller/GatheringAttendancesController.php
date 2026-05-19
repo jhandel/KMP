@@ -96,21 +96,7 @@ class GatheringAttendancesController extends AppController
 
             // Set created_by from current user
             $currentUser = $this->Authentication->getIdentity();
-            $progressOffices = $this->getTableLocator()->get("Officers.Offices")
-                ->find()->select(['id', 'name', 'tracks_progress'])
-                ->contain('Officers')
-                ->where([
-                    'tracks_progress' => 'true',
-                    'Officers.id' => $currentUser->id
-                ]);
-            // $userOffices = $progressOffices->where(['office.officers.id' => $currentUser->id]);
-            if (!empty($progressOffices)) {
-                $Progress = $this->fetchTable("Officers.Progress");
-                $Progress->save($Progress->newEntity(["gathering_id" => $gathering->id, "attendance_id" => 1, "office_id" => '1', "member_id" => $currentUser->id]));
-            }
-
             $data['created_by'] = $currentUser->id;
-
             $gatheringAttendance = $this->GatheringAttendances->patchEntity($gatheringAttendance, $data);
 
             if (!$gatheringAttendance->member_id) {
@@ -122,6 +108,28 @@ class GatheringAttendancesController extends AppController
             $this->Authorization->authorize($gatheringAttendance);
 
             if ($this->GatheringAttendances->save($gatheringAttendance)) {
+
+                //Determine if user has an office that tracks progress
+                $progressOffices = $this->getTableLocator()->get("Officers.Offices")
+                    ->find("all")
+                    ->matching('Officers', function ($q) use ($currentUser) {
+                        return $q->where(['Officers.member_id' => $currentUser->id]);
+                    })
+                    ->contain(['Officers' => function ($q) use ($currentUser) {
+                        return $q->where(['member_id' => $currentUser->id]);
+                    }])
+                    ->select(['Offices.id', 'Offices.name', 'tracks_progress'])
+                    ->where([
+                        'tracks_progress' => true,
+                    ]);
+
+                $trackingOffices = $progressOffices->toArray();
+                if (!empty($trackingOffices)) {
+                    //Save user progress for the first office with tracked progress
+                    $Progress = $this->fetchTable("Officers.Progress");
+                    $Progress->save($Progress->newEntity(["gathering_id" => $gathering->id, "attendance_id" => $gatheringAttendance->id, "office_id" => $trackingOffices[0]->id, "member_id" => $currentUser->id]));
+                }
+
                 if ($this->wantsJson()) {
                     return $this->jsonResponse([
                         'success' => true,
@@ -236,6 +244,8 @@ class GatheringAttendancesController extends AppController
         $this->Authorization->authorize($gatheringAttendance);
 
         if ($this->GatheringAttendances->delete($gatheringAttendance)) {
+
+
             if ($this->wantsJson()) {
                 return $this->jsonResponse([
                     'success' => true,

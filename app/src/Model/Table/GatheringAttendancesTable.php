@@ -71,6 +71,12 @@ class GatheringAttendancesTable extends Table
             'className' => 'Members',
             'foreignKey' => 'modified_by',
         ]);
+        $this->hasOne('Progress', [
+            'className' => 'Officers\Model\Table\ProgressTable',
+            'foreignKey' => 'attendance_id',
+            'dependent' => true,
+            'cascadeCallbacks' => true,
+        ]);
     }
 
     /**
