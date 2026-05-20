@@ -17,7 +17,7 @@ class AddKingdomCalendarEventToGatherings extends BaseMigration
     {
         $table = $this->table('gatherings');
         $table
-            ->addColumn('kingdom_calendar_event', 'boolean', [
+            ->addColumn('published', 'boolean', [
                 'default' => false,
                 'null' => false,
                 'comment' => 'Whether this gathering should appear on the Kingdom Calendar',

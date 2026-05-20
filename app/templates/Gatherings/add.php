@@ -181,21 +181,6 @@ $this->KMP->endBlock();
                 </small>
             </div>
         </div>
-        <div class="mb-3">
-            <div class="form-check">
-                <?= $this->Form->checkbox('kingdom_calendar_event', [
-                    'checked' => false,
-                    'id' => 'kingdom_calendar_event',
-                    'class' => 'form-check-input'
-                ]) ?>
-                <label class="form-check-label" for="kingdom_calendar_event">
-                    <?= __('Kingdom Calendar Event') ?>
-                </label>
-                <small class="form-text text-muted d-block">
-                    <?= __('Add or remove this event on the Kingdom Calendar') ?>
-                </small>
-            </div>
-        </div>
     </fieldset>
 
     <div class="mt-3">

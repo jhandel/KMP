@@ -3,7 +3,7 @@
 /**
  * Kingdom Calendar - List View
  *
- * Displays all gatherings marked as kingdom calendar events
+ * Displays all published gatherings, kingdom calendar events
  *
  * @var \App\View\AppView $this
  * @var \Cake\Datasource\ResultSetInterface $gatherings

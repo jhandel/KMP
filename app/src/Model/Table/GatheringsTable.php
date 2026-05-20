@@ -206,8 +206,8 @@ class GatheringsTable extends Table
             ->notEmptyString('created_by');
 
         $validator
-            ->boolean('kingdom_calendar_event')
-            ->notEmptyString('kingdom_calendar_event');
+            ->boolean('published')
+            ->notEmptyString('published');
 
         return $validator;
     }
@@ -280,14 +280,14 @@ class GatheringsTable extends Table
     }
 
     /**
-     * Find kingdom calendar events
+     * Find kingdom calendar events, these are events that are currently published
      *
      * @param \Cake\ORM\Query\SelectQuery $query Query object
      * @return \Cake\ORM\Query\SelectQuery
      */
     public function findKingdomCalendarEvents(SelectQuery $query): SelectQuery
     {
-        return $query->where(['Gatherings.kingdom_calendar_event' => true]);
+        return $query->where(['Gatherings.published' => true]);
     }
 
     /**
