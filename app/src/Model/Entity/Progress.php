@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Officers\Model\Entity;
+namespace App\Model\Entity;
 
 use Cake\ORM\Entity;
 use App\Model\Entity\BaseEntity;
@@ -25,7 +25,7 @@ use App\Model\Entity\BaseEntity;
  * 
  * @property \App\Model\Entity\Gathering $gathering
  * @property \App\Model\Entity\GatheringAttendance $attendance
- * @property \Officers\Model\Entity\Office $office
+ * @property \Officers\Model\Entity\Officer $officer
  * @property \App\Model\Entity\Member $member
  * 
  * 
@@ -40,7 +40,7 @@ class Progress extends BaseEntity
     protected array $_accessible = [
         'gathering_id' => true,
         'attendance_id' => true,
-        'office_id' => true,
+        'officer_id' => true,
         'member_id' => true,
         'sort_order' => true,
         'created' => true,
@@ -51,7 +51,7 @@ class Progress extends BaseEntity
 
         'gathering' => true,
         'attendance' => true,
-        'office' => true,
+        'officer' => true,
         'member' => true,
 
     ];

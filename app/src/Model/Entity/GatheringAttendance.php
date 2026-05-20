@@ -13,7 +13,7 @@ namespace App\Model\Entity;
  * @property int $id
  * @property int $gathering_id
  * @property int $member_id
- * @property \Officers\Model\Entity\Progress $progress
+ * @property \App\Model\Entity\Progress $progress
  * @property string|null $public_note
  * @property bool $share_with_kingdom
  * @property bool $share_with_hosting_group

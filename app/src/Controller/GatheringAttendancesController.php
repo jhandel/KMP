@@ -110,24 +110,22 @@ class GatheringAttendancesController extends AppController
             if ($this->GatheringAttendances->save($gatheringAttendance)) {
 
                 //Determine if user has an office that tracks progress
-                $progressOffices = $this->getTableLocator()->get("Officers.Offices")
+                $progressOffices = $this->getTableLocator()->get("Officers.Officers")
                     ->find("all")
-                    ->matching('Officers', function ($q) use ($currentUser) {
-                        return $q->where(['Officers.member_id' => $currentUser->id]);
+                    ->matching('Offices', function ($q) use ($currentUser) {
+                        return $q->where(['Offices.tracks_progress' => true]);
                     })
-                    ->contain(['Officers' => function ($q) use ($currentUser) {
-                        return $q->where(['member_id' => $currentUser->id]);
-                    }])
-                    ->select(['Offices.id', 'Offices.name', 'tracks_progress'])
+                    ->contain(['Offices' => ['fields' => ['Offices.id', 'Offices.name',]]])
                     ->where([
-                        'tracks_progress' => true,
+                        'member_id' => $currentUser->id
                     ]);
 
                 $trackingOffices = $progressOffices->toArray();
                 if (!empty($trackingOffices)) {
+
                     //Save user progress for the first office with tracked progress
-                    $Progress = $this->fetchTable("Officers.Progress");
-                    $Progress->save($Progress->newEntity(["gathering_id" => $gathering->id, "attendance_id" => $gatheringAttendance->id, "office_id" => $trackingOffices[0]->id, "member_id" => $currentUser->id]));
+                    $Progress = $this->fetchTable("Progress");
+                    $Progress->save($Progress->newEntity(["gathering_id" => $gathering->id, "attendance_id" => $gatheringAttendance->id, "officer_id" => $trackingOffices[0]->id, "member_id" => $currentUser->id]));
                 }
 
                 if ($this->wantsJson()) {

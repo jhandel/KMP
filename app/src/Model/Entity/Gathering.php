@@ -35,7 +35,7 @@ use App\KMP\TimezoneHelper;
  * @property \App\Model\Entity\Member $creator
  * @property \App\Model\Entity\GatheringActivity[] $gathering_activities
  * @property \App\Model\Entity\GatheringAttendance[] $gathering_attendances
- * @property \Officers\Model\Entity\Progress[] $progresses
+ * @property \App\Model\Entity\Progress[] $progresses
  * @property \App\Model\Entity\GatheringScheduledActivity[] $gathering_scheduled_activities
  * @property \App\Model\Entity\GatheringStaff[] $gathering_staff
  * @property \Waivers\Model\Entity\GatheringWaiver[] $gathering_waivers

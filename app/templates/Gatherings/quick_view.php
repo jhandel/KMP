@@ -200,7 +200,7 @@ $showAttendanceControls = isset($canAttend)
 
                 <?php if (isset($progress->member)): ?>
                 <span class="badge bg-light text-dark border">
-                    <?= h($progress->office->name) ?> :
+                    <?= h($progress->officer->office->name) ?> :
                     <?= h($progress->member->sca_name) ?>
 
                 </span>

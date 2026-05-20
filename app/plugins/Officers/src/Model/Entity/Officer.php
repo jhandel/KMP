@@ -43,6 +43,7 @@ use App\Model\Entity\ActiveWindowBaseEntity;
  * @property \App\Model\Entity\Warrant[] $pending_warrants
  * @property \Officers\Model\Entity\Officer[] $reports_to_currently
  * @property \Officers\Model\Entity\Officer[] $deputy_to_currently
+ * @property \App\Model\Entity\Progress[] $progresses
  *
  * @see /docs/5.1-officers-plugin.md
  * @see \Officers\Model\Table\OfficersTable
@@ -83,6 +84,7 @@ class Officer extends ActiveWindowBaseEntity
         'office' => true,
         'deputy_description' => true,
         'email_address' => true,
+        'progresses' => true,
     ];
 
     /**

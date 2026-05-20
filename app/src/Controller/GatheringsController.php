@@ -527,7 +527,10 @@ class GatheringsController extends AppController
                 ],
                 'Progresses' => [
                     "Members" => ['fields' => ['sca_name']],
-                    "Offices" => ['fields' => ['name']]
+                    "Officers" => [
+                        'fields' => ['id', 'member_id'],
+                        'Offices' => ['fields' => ['name']],
+                    ]
                 ],
                 'Creators' => ['fields' => ['id', 'sca_name']],
             ])

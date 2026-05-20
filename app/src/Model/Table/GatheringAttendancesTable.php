@@ -19,7 +19,7 @@ use Cake\Validation\Validator;
  * and various sharing permission options.
  *
  * @property \App\Model\Table\GatheringsTable&\Cake\ORM\Association\BelongsTo $Gatherings
- * @property \Officers\Model\Table\ProgressTable&\Cake\ORM\Association\HasOne $Progress
+ * @property \App\Model\Table\ProgressTable&\Cake\ORM\Association\HasOne $Progress
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Members
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Creators
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Modifiers
@@ -72,7 +72,7 @@ class GatheringAttendancesTable extends Table
             'foreignKey' => 'modified_by',
         ]);
         $this->hasOne('Progress', [
-            'className' => 'Officers\Model\Table\ProgressTable',
+            'className' => 'App\Model\Table\ProgressTable',
             'foreignKey' => 'attendance_id',
             'dependent' => true,
             'cascadeCallbacks' => true,

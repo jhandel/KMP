@@ -36,6 +36,7 @@ use App\Model\Table\BaseTable;
  * @property \App\Model\Table\WarrantsTable&\Cake\ORM\Association\HasMany $Warrants
  * @property \Officers\Model\Table\OfficersTable&\Cake\ORM\Association\HasMany $ReportsToCurrently
  * @property \Officers\Model\Table\OfficersTable&\Cake\ORM\Association\HasMany $DeputyToCurrently
+ * @property \App\Model\Table\ProgressTable&\Cake\ORM\Association\HasMany $Progresses
  *
  * @method \Officers\Model\Entity\Officer newEmptyEntity()
  * @method \Officers\Model\Entity\Officer newEntity(array $data, array $options = [])
@@ -159,6 +160,12 @@ class OfficersTable extends BaseTable
                 'DeputyToCurrently.expires_on >=' => $now,
                 'DeputyToCurrently.status' => Officer::CURRENT_STATUS
             ]
+        ]);
+
+        $this->hasMany('Progresses', [
+            'className' => 'App\Model\Table\ProgressTable',
+            'foreignKey' => 'officers_id',
+            'dependent' => false,
         ]);
 
         $this->addBehavior("Timestamp");

@@ -42,7 +42,7 @@ use JeremyHarris\LazyLoad\ORM\LazyLoadEntityTrait;
  * @property int|null $branch_id Associated branch
  * @property bool $warrantable Calculated warrant eligibility
  * @property \App\Model\Entity\Role[] $roles Assigned roles
- * @property \Officers\Model\Entity\Progress[] $progresses
+ * @property \App\Model\Entity\Progress[] $progresses
  */
 class Member extends BaseEntity implements
     KmpIdentityInterface,

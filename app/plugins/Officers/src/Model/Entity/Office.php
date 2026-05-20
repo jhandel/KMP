@@ -47,7 +47,7 @@ use App\Model\Entity\BaseEntity;
  * @property \Officers\Model\Entity\Office[] $deputies Child deputy offices
  * @property \Officers\Model\Entity\Office[] $direct_reports Child offices in reporting hierarchy
  * @property \Officers\Model\Entity\Officer[] $officers All officer assignments
- * @property \Officers\Model\Entity\Progress[] $progresses
+ * 
  *
  * @see /docs/5.1-officers-plugin.md
  * @see \Officers\Model\Table\OfficesTable
@@ -76,7 +76,7 @@ class Office extends BaseEntity
         'officers' => true,
         'branch_types' => true,
         'default_contact_address' => true,
-        'progresses' => true,
+
     ];
 
     /**

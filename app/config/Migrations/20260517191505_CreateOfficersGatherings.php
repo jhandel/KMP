@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Migrations\BaseMigration;
 
-class CreateOfficeProgress extends BaseMigration
+class CreateOfficersGatherings extends BaseMigration
 {
     /**
      * Change Method.
@@ -15,7 +15,7 @@ class CreateOfficeProgress extends BaseMigration
      */
     public function change(): void
     {
-        $table = $this->table('office_progress', ['id' => false]);
+        $table = $this->table('officers_gatherings', ['id' => false]);
 
         // Primary key
         $table->addColumn('id', 'integer', [
@@ -42,11 +42,11 @@ class CreateOfficeProgress extends BaseMigration
         ]);
 
         // Foreign key to office
-        $table->addColumn('office_id', 'integer', [
+        $table->addColumn('officer_id', 'integer', [
             'default' => null,
             'limit' => 11,
             'null' => false,
-            'comment' => 'The office this progress is associated with'
+            'comment' => 'The officer this progress is associated with'
         ]);
 
         // Foreign key to members 
@@ -99,7 +99,7 @@ class CreateOfficeProgress extends BaseMigration
         // Indexes
         $table->addIndex(['gathering_id']);
         $table->addIndex(['attendance_id']);
-        $table->addIndex(['office_id']);
+        $table->addIndex(['officer_id']);
         $table->addIndex(['member_id']);
         $table->addIndex(['sort_order']);
         $table->addIndex(['deleted']);
@@ -125,8 +125,8 @@ class CreateOfficeProgress extends BaseMigration
         );
 
         $table->addForeignKey(
-            'office_id',
-            'officers_offices',
+            'officer_id',
+            'officers_officers',
             'id',
             [
                 'update' => 'NO_ACTION',

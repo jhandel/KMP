@@ -28,7 +28,7 @@ use Exception;
  * @property \App\Model\Table\MemberRolesTable&\Cake\ORM\Association\HasMany $UpcomingMemberRoles
  * @property \App\Model\Table\MemberRolesTable&\Cake\ORM\Association\HasMany $PreviousMemberRoles
  * @property \App\Model\Table\BranchesTable&\Cake\ORM\Association\BelongsTo $Branches
- * @property \Officers\Model\Table\ProgressTable&\Cake\ORM\Association\HasMany $Progresses
+ * @property \App\Model\Table\ProgressTable&\Cake\ORM\Association\HasMany $Progresses
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Parents
  * @property \App\Model\Table\RolesTable&\Cake\ORM\Association\BelongsToMany $Roles
  * @property \App\Model\Table\PendingAuthorizationsTable&\Cake\ORM\Association\HasMany $PendingAuthorizations
@@ -110,7 +110,7 @@ class MembersTable extends BaseTable
         ]);
 
         $this->hasMany('Progresses', [
-            'className' => 'Officers\Model\Table\ProgressTable',
+            'className' => 'App\Model\Table\ProgressTable',
             'foreignKey' => 'member_id',
             'dependent' => true,
             'cascadeCallbacks' => true,

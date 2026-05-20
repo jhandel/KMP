@@ -23,7 +23,7 @@ use Exception;
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Creators
  * @property \App\Model\Table\GatheringActivitiesTable&\Cake\ORM\Association\BelongsToMany $GatheringActivities
  * @property \App\Model\Table\GatheringAttendancesTable&\Cake\ORM\Association\HasMany $GatheringAttendances
- * @property \Officers\Model\Table\ProgressTable&\Cake\ORM\Association\HasMany $Progresses
+ * @property \App\Model\Table\ProgressTable&\Cake\ORM\Association\HasMany $Progresses
  * @property \App\Model\Table\GatheringScheduledActivitiesTable&\Cake\ORM\Association\HasMany $GatheringScheduledActivities
  * @property \App\Model\Table\GatheringStaffTable&\Cake\ORM\Association\HasMany $GatheringStaff
  * @property \Waivers\Model\Table\GatheringWaiversTable&\Cake\ORM\Association\HasMany $GatheringWaivers
@@ -96,7 +96,7 @@ class GatheringsTable extends Table
         ]);
         // One-to-many relationship with progress records
         $this->hasMany('Progresses', [
-            'className' => 'Officers\Model\Table\ProgressTable',
+            'className' => 'App\Model\Table\ProgressTable',
             'foreignKey' => 'gathering_id',
             'dependent' => true,
             'cascadeCallbacks' => true,

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Officers\Model\Table;
+namespace App\Model\Table;
 
 use ArrayObject;
 use Cake\Datasource\EntityInterface;
@@ -20,7 +20,7 @@ use Cake\Validation\Validator;
  * @property \App\Model\Table\GatheringsTable&\Cake\ORM\Association\BelongsTo $Gatherings
  * @property \App\Model\Table\GatheringAttendancesTable&\Cake\ORM\Association\BelongsTo $Attendances
  * @property \App\Model\Table\MembersTable&\Cake\ORM\Association\BelongsTo $Members
- * @property \Officers\Model\Table\OfficesTable&\Cake\ORM\Association\BelongsTo $Offices
+ * @property \Officers\Model\Table\OfficersTable&\Cake\ORM\Association\BelongsTo $Officers
  * 
  * 
  */
@@ -36,7 +36,7 @@ class ProgressTable extends Table
     {
         parent::initialize($config);
 
-        $this->setTable('office_progress');
+        $this->setTable('officers_gatherings');
         $this->setDisplayField('id');
         $this->setPrimaryKey('id');
 
@@ -55,9 +55,9 @@ class ProgressTable extends Table
             'foreignKey' => 'attendance_id',
             'joinType' => 'INNER',
         ]);
-        $this->belongsTo('Offices', [
-            'className' => ('Officers.Offices'),
-            'foreignKey' => 'office_id',
+        $this->belongsTo('Officers', [
+            'className' => ('Officers.Officers'),
+            'foreignKey' => 'officer_id',
             'joinType' => 'INNER',
         ]);
 
@@ -83,8 +83,8 @@ class ProgressTable extends Table
             ->integer('attendance_id')
             ->allowEmptyString('attendance_id');
         $validator
-            ->integer('office_id')
-            ->allowEmptyString('office_id');
+            ->integer('officer_id')
+            ->allowEmptyString('officer_id');
         $validator
             ->integer('member_id')
             ->allowEmptyString('member_id');
@@ -108,7 +108,7 @@ class ProgressTable extends Table
     {
         $rules->add($rules->existsIn(['gathering_id'], 'Gatherings'), ['errorField' => 'gathering_id']);
         $rules->add($rules->existsIn(['attendance_id'], 'Attendances'), ['errorField' => 'attendance_id']);
-        $rules->add($rules->existsIn(['office_id'], 'Offices'), ['errorField' => 'office_id']);
+        $rules->add($rules->existsIn(['officer_id'], 'Officers'), ['errorField' => 'officer_id']);
         $rules->add($rules->existsIn(['member_id'], 'Members'), ['errorField' => 'member_id']);
 
 
